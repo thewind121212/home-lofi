@@ -1192,6 +1192,8 @@ function Services({ priv }) {
   const shown = tab === 'All' ? groups : groups.filter((g) => g.section === tab)
   const locked = priv === null
   const count = (t) => (t === 'All' ? groups : groups.filter((g) => g.section === t)).reduce((a, g) => a + g.items.length, 0)
+  // shared by both tab variants (pills < lg, brush bookmarks >= lg); n = null while Internal is locked
+  const meta = (t) => ({ on: tab === t, icon: t === 'Internal' && !locked ? 'fa-lock-open' : TAB_ICON[t], n: t === 'Internal' && locked ? null : count(t) })
   let n = 0
   return (
     // lg: tab stack on the panel's right edge; the selected tab sticks out past the border like a bookmark. pr-44 keeps cards clear of it (~1/4 of the panel)
@@ -1205,14 +1207,43 @@ function Services({ priv }) {
           {tab === 'Internal' && locked ? 'locked' : `${String(count(tab)).padStart(2, '0')} apps`}
         </p>
       </div>
+      {/* < lg: wrapping pills (no hidden horizontal scroll) */}
+      <div role="group" aria-label="Choose a group" className="flex flex-wrap gap-1.5 mb-5 lg:hidden">
+        {TABS.map((t) => {
+          const { on, icon, n } = meta(t)
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => pick(t)}
+              aria-pressed={on}
+              className={`relative isolate h-9 pl-2.5 ${n == null ? 'pr-3' : 'pr-1.5'} rounded-full border flex items-center gap-1.5 font-mono font-bold uppercase text-[10px] tracking-[0.04em] transition-all duration-200 ease-out active:scale-95 ${
+                on ? 'text-lofi-base border-transparent scale-[1.04] shadow-[0_0_16px_rgba(255,138,92,0.45)]' : 'text-lofi-muted bg-white/5 border-white/10 hover:text-white hover:border-white/20'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`absolute inset-0 -z-10 rounded-full bg-linear-to-r from-lofi-primary to-lofi-secondary transition-opacity duration-200 ${on ? 'opacity-100' : 'opacity-0'}`}
+              />
+              <i className={`fa-solid ${icon} text-[11px] ${on ? '' : 'text-lofi-primary/80'}`} aria-hidden="true" />
+              {t}
+              {n != null && (
+                <span className={`min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center text-[9px] tabular-nums ${on ? 'bg-lofi-base/20' : 'bg-white/10 text-lofi-text/80'}`}>
+                  {n}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      {/* lg+: brush-stroke bookmark tabs */}
       <div
         role="group"
         aria-label="Choose a group"
-        className="flex flex-wrap gap-x-1 gap-y-1.5 mb-5 lg:mb-0 lg:absolute lg:top-24 lg:right-0 lg:w-40 lg:flex-col lg:gap-1.5 z-20"
+        className="hidden lg:flex lg:flex-wrap lg:absolute lg:top-24 lg:right-0 lg:w-40 lg:flex-col lg:gap-1.5 z-20"
       >
         {TABS.map((t) => {
-          const on = tab === t
-          const icon = t === 'Internal' && !locked ? 'fa-lock-open' : TAB_ICON[t]
+          const { on, icon, n } = meta(t)
           return (
             <button
               key={t}
@@ -1235,7 +1266,7 @@ function Services({ priv }) {
               <i className={`fa-solid ${icon} w-3.5 text-center ${on ? '' : 'text-lofi-primary/70 group-hover/tab:text-lofi-primary'}`} aria-hidden="true" />
               <span className="truncate">{t}</span>
               <span className={`ml-auto pl-1.5 text-[9px] tabular-nums ${on ? 'opacity-70' : 'opacity-50'} hidden lg:inline`}>
-                {t === 'Internal' && locked ? '--' : String(count(t)).padStart(2, '0')}
+                {n == null ? '--' : String(n).padStart(2, '0')}
               </span>
             </button>
           )
