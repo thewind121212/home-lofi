@@ -1,0 +1,52 @@
+# Runs on every PR to main (and on main itself). main is protected: these two jobs must pass before merge.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    name: test + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # same as the Dockerfile
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+  docker:
+    name: docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image (what Coolify deploys)
+        run: docker build --build-arg NEXT_PUBLIC_SCENES_URL=https://static.example.com/scenes -t home-lofi:ci .
+      - name: Smoke test
+        run: |
+          docker run -d --name lofi -e GATE_SECRET=ci-only-secret-0123456789 -p 3000:3000 home-lofi:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:3000/api/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:3000/api/health | grep -q '"ok":true'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/)" = 200
+          # fail-closed gate: no header -> 404, right header -> 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/api/private)" = 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'x-home-gate: ci-only-secret-0123456789' http://127.0.0.1:3000/api/private)" = 200
+      - if: failure()
+        run: docker logs lofi || true
