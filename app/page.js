@@ -28,6 +28,12 @@ const DOT = {
 // ponytail: details-panel responses per location for 10 min (same as the server revalidate), lost on reload
 const detailCache = memoCache(20, 10 * 60 * 1000)
 const locQuery = (l) => new URLSearchParams({ lat: l.lat, lon: l.lon, tz: l.tz, id: l.id, name: l.name ?? '' })
+// Settings > Dim scene: 50 = the original overlay (75 / 45 / 85 % of the base color), 0 = bare scene, 100 = ~opaque
+function dimOverlay(dim) {
+  const a = (p) => Math.min(100, Math.round((p * dim) / 50))
+  const stop = (p) => `color-mix(in oklab, var(--color-lofi-base) ${a(p)}%, transparent)`
+  return `linear-gradient(to bottom, ${stop(75)}, ${stop(45)}, ${stop(85)})`
+}
 const sceneName = (id) => id.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
 
 // localStorage can throw (private mode, blocked storage) -> fall back silently
@@ -165,7 +171,8 @@ export default function Home() {
         <SceneCanvas key={'c' + scene} id={scene} videoRef={videoRef} reduced={reduced} onFail={() => setSceneDown(true)} />
       )}
       <div
-        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none bg-linear-to-b from-lofi-base/75 via-lofi-base/45 to-lofi-base/85 transition-opacity duration-500 ${focus ? 'opacity-0' : ''}`}
+        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus ? 'opacity-0' : ''}`}
+        style={{ background: dimOverlay(set.dim) }}
       />
 
       <div

@@ -120,6 +120,24 @@ export function Settings({ dlg, set, update, reset }) {
           </div>
         </fieldset>
 
+        <label className="block">
+          <span className="mb-1 flex justify-between text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
+            Dim scene <span className="text-lofi-text tabular-nums">{set.dim}%</span>
+          </span>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={set.dim}
+            onChange={(e) => update({ dim: Number(e.target.value) })}
+            className="w-full h-8 accent-lofi-primary cursor-pointer"
+          />
+          <span className="flex justify-between text-[10px] font-mono text-lofi-muted" aria-hidden="true">
+            <span>more scene</span>
+            <span>more readable</span>
+          </span>
+        </label>
+
         <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-x-4 gap-y-6">
           {radio('clock', 'Clock', [[24, '24h'], [12, '12h']])}
           {radio('unit', 'Temperature', [['C', '°C'], ['F', '°F']])}
