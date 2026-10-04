@@ -127,6 +127,20 @@ docker compose up -d --build
 - Create `private-services.json` before the first `up`. Otherwise Docker creates an empty directory in its place.
 - Server stats come from `/proc` and `/sys`, which show host values inside a normal container, so no extra mounts are needed.
 
+## Deploy (Coolify)
+
+`docker-compose.coolify.yml` is the same app without the plain-Docker bits (no host port, no `.env`,
+no external network). In Coolify:
+
+1. New Resource → your GitHub repo → **Build Pack: Docker Compose**, compose file `/docker-compose.coolify.yml`.
+2. Domain of service `home-lofi`: e.g. `http://home.example.com:3000` (Coolify's proxy → container port 3000).
+3. Environment Variables: every `${VAR}` from the file is listed. Paste your `.env` in **Developer view**.
+   `SCENES_URL` is build-time, so redeploy after changing it.
+4. Deploy once, then **Persistent Storage** → `/config/private-services.json` → paste your service list
+   (it starts as `[]`; Coolify keeps your edit on later deploys) → Redeploy.
+5. Reverse proxy in front of Coolify: same `/api/private` rule as in [Private section](#private-section-how-access-works),
+   with `proxy_set_header Host $host;` so Coolify can route by domain.
+
 ## Scenes
 
 The scene videos are not in this repository: they are large, and the art is

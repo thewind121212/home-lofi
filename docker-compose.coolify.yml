@@ -1,0 +1,49 @@
+# Coolify deployment (Build Pack: Docker Compose, this file). Plain Docker: use docker-compose.yml.
+# Coolify differences: no host port (Coolify's proxy routes the domain to port 3000), no .env file
+# (every ${VAR} below shows up in Coolify > Environment Variables), and private-services.json is a
+# Coolify file mount: the placeholder content is used once, then edit it in Coolify > Persistent Storage.
+services:
+  home-lofi:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SCENES_URL: ${SCENES_URL:-} # build-time: redeploy after changing it
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      GATE_SECRET: ${GATE_SECRET:?} # openssl rand -hex 32; the proxy injects it as x-home-gate on /api/private
+      WEATHER_API_URL: ${WEATHER_API_URL:-https://api.weather.wliafdew.dev}
+      DISK_PATH: ${DISK_PATH:-/}
+      # live widget stats (a widget is on when its *_URL is set), see README "Live widget stats"
+      ADGUARD_URL: ${ADGUARD_URL:-}
+      ADGUARD_USER: ${ADGUARD_USER:-}
+      ADGUARD_PASS: ${ADGUARD_PASS:-}
+      NPM_URL: ${NPM_URL:-}
+      NPM_USER: ${NPM_USER:-}
+      NPM_PASS: ${NPM_PASS:-}
+      PORTAINER_URL: ${PORTAINER_URL:-}
+      PORTAINER_ENV: ${PORTAINER_ENV:-}
+      PORTAINER_KEY: ${PORTAINER_KEY:-}
+      NEXTCLOUD_URL: ${NEXTCLOUD_URL:-}
+      NEXTCLOUD_TOKEN: ${NEXTCLOUD_TOKEN:-}
+      WUD_URL: ${WUD_URL:-}
+      WUD_USER: ${WUD_USER:-}
+      WUD_PASS: ${WUD_PASS:-}
+      N8N_URL: ${N8N_URL:-}
+      N8N_API_KEY: ${N8N_API_KEY:-}
+      MYSPEED_URL: ${MYSPEED_URL:-}
+      MYSPEED_PASS: ${MYSPEED_PASS:-}
+    volumes:
+      - type: bind
+        source: ./private-services.json
+        target: /config/private-services.json
+        read_only: true
+        content: |
+          []
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
