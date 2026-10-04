@@ -241,3 +241,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* Settings > Motion: Reduced (or the OS setting), set by Home; also neutralizes motion-safe: utilities */
+[data-motion='reduce'] *, [data-motion='reduce'] *::before, [data-motion='reduce'] *::after,
+[data-motion='reduce'] ::backdrop {
+  animation: none !important;
+  transition: none !important;
+}
