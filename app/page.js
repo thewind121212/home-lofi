@@ -3,7 +3,7 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
-import { DEFAULTS, SETTINGS_KEY, parseSettings, themeColors } from '../lib/settings'
+import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { Prefs, Settings, closeDialog, motionOff } from './settings'
 
@@ -29,7 +29,6 @@ const DOT = {
 const detailCache = memoCache(20, 10 * 60 * 1000)
 const locQuery = (l) => new URLSearchParams({ lat: l.lat, lon: l.lon, tz: l.tz, id: l.id, name: l.name ?? '' })
 const sceneName = (id) => id.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
-const pad = (n) => String(n).padStart(2, '0')
 
 // localStorage can throw (private mode, blocked storage) -> fall back silently
 function load(key, fallback) {
@@ -232,7 +231,7 @@ export default function Home() {
             </button>
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
-              {now ? `${pad(now.getHours())}:${pad(now.getMinutes())}` : '--:--'}
+              <Clock now={now} clock={set.clock} />
             </div>
             <div className="text-xs text-lofi-muted uppercase tracking-widest">
               {now?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) ?? ' '}
@@ -267,6 +266,18 @@ export default function Home() {
       )}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} />
     </Prefs>
+  )
+}
+
+// '21:05', or '9:05' + a small 'PM'
+function Clock({ now, clock }) {
+  if (!now) return '--:--'
+  const { time, ampm } = clockParts(now, clock)
+  return (
+    <>
+      {time}
+      {ampm && <span className="text-[0.45em] ml-1 align-[0.15em]">{ampm}</span>}
+    </>
   )
 }
 
@@ -421,6 +432,7 @@ function Weather({ status, setStatus }) {
   const card = useRef(null)
   const dlg = useRef(null)
   const [detail, setDetail] = useState({ state: 'idle' }) // details panel: { key, state, data }
+  const { unit } = useContext(Prefs)
 
   useEffect(() => {
     const l = load('location', null)
@@ -623,12 +635,12 @@ function Weather({ status, setStatus }) {
 
       <div className="mb-6 z-10">
         <div className="text-6xl font-light text-white mb-1 tracking-tighter leading-none">
-          {w?.temp ?? '--'}
-          <span className="text-2xl text-lofi-muted font-normal">°C</span>
+          {toUnit(w?.temp, unit) ?? '--'}
+          <span className="text-2xl text-lofi-muted font-normal">°{unit}</span>
         </div>
         <div className="text-sm text-lofi-primary font-medium mt-2">
           {w?.desc ?? (status === 'error' ? 'Weather unavailable' : 'Loading...')}
-          {w && <span className="text-lofi-muted font-normal"> · feels like {w.feelsLike}°</span>}
+          {w && <span className="text-lofi-muted font-normal"> · feels like {toUnit(w.feelsLike, unit)}°</span>}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5">
           {w?.aqi != null ? <AqiPill aqi={w.aqi} className="grow basis-48" /> : <span />}
@@ -683,6 +695,8 @@ const Label = ({ icon, children }) => (
 const weekday = (date, i) => (i ? new Date(date + 'T12:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }) : 'Today')
 
 function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
+  const { unit } = useContext(Prefs)
+  const tc = (v) => toUnit(v, unit) // °C from the API -> display unit
   const d = detail.state === 'ok' ? detail.data : null
   // header: the panel's own fresh data once loaded, the card's meanwhile
   const now = d?.now ?? w
@@ -711,8 +725,8 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
           <div className="flex items-center gap-4 short:gap-3">
             <i className={`fa-solid ${now?.icon ?? 'fa-cloud'} text-4xl short:text-2xl ${ICON_COLOR[now?.icon] ?? 'text-white'} drop-shadow-[0_0_12px_currentColor]`} aria-hidden="true" />
             <div className="text-5xl short:text-3xl font-light text-white tracking-tighter leading-none">
-              {now?.temp ?? '--'}
-              <span className="text-xl short:text-base text-lofi-muted font-normal">°C</span>
+              {tc(now?.temp) ?? '--'}
+              <span className="text-xl short:text-base text-lofi-muted font-normal">°{unit}</span>
             </div>
             <div className="text-sm text-lofi-primary font-medium min-w-0">{now?.desc ?? ' '}</div>
           </div>
@@ -749,7 +763,7 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
                 </span>
               </div>
             </div>
-            {d.hours.length ? <HourChart hours={d.hours} /> : <p className="text-xs font-mono text-lofi-muted">No hourly data</p>}
+            {d.hours.length ? <HourChart hours={d.hours.map((h) => ({ ...h, temp: tc(h.temp) }))} unit={unit} /> : <p className="text-xs font-mono text-lofi-muted">No hourly data</p>}
           </section>
 
           <section>
@@ -759,7 +773,7 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
                 <li key={x.date} className="grid grid-cols-[3rem_1.5rem_2.25rem_1fr_2.25rem_2.75rem] items-center gap-2 sm:gap-3 py-2 border-b border-white/5 last:border-0 font-mono text-sm">
                   <span className={i ? 'text-lofi-text' : 'text-lofi-primary font-bold'}>{weekday(x.date, i)}</span>
                   <i className={`fa-solid ${x.icon} text-center ${ICON_COLOR[x.icon] ?? 'text-white'}`} aria-hidden="true" />
-                  <span className="text-right text-lofi-muted">{x.min ?? '--'}°</span>
+                  <span className="text-right text-lofi-muted">{tc(x.min) ?? '--'}°</span>
                   <span className="relative h-1.5 rounded-full bg-lofi-base/60" aria-hidden="true">
                     {x.min != null && x.max != null && d.range && (
                       <span
@@ -768,7 +782,7 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
                       />
                     )}
                   </span>
-                  <span className="text-white">{x.max ?? '--'}°</span>
+                  <span className="text-white">{tc(x.max) ?? '--'}°</span>
                   <span className={`text-right text-xs ${x.rain >= 50 ? 'text-blue-300' : 'text-lofi-muted'}`}>
                     <i className="fa-solid fa-droplet text-[9px] mr-1 opacity-70" aria-hidden="true" />
                     {x.rain ?? '--'}%
@@ -857,7 +871,7 @@ const hourLabel = (h, i) => (i ? h.t.slice(11, 16) : 'Now')
 
 // 24 hours, no scrolling: temp curve (SVG stretched to the width), rain bars, HTML labels on the same x positions.
 // Desktop labels every 3 h, phones every 6 h (max-sm:hidden), the curve and bars always show every hour.
-function HourChart({ hours }) {
+function HourChart({ hours, unit }) {
   const [sel, setSel] = useState(null)
   const n = hours.length
   const c = chartPoints(hours, 100, CH, { top: CH_TOP, bottom: CH_BOT })
@@ -870,7 +884,7 @@ function HourChart({ hours }) {
   const vis = (wide, narrow) => `${wide ? '' : 'sm:hidden'} ${narrow ? '' : 'max-sm:hidden'}`
   const maxRain = Math.max(0, ...hours.map((h) => h.rain ?? 0))
   const summary =
-    `Next 24 hours: ${c.lo} to ${c.hi}°C, warmest at ${hourLabel(hours[c.iHi], c.iHi)}, coolest at ${hourLabel(hours[c.iLo], c.iLo)}; ` +
+    `Next 24 hours: ${c.lo} to ${c.hi}°${unit}, warmest at ${hourLabel(hours[c.iHi], c.iHi)}, coolest at ${hourLabel(hours[c.iLo], c.iLo)}; ` +
     `rain chance up to ${maxRain}%. Arrow keys step through the hours.`
   const at = (e) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -1007,7 +1021,7 @@ function HourChart({ hours }) {
         </div>
       )}
       <p className="sr-only" aria-live="polite">
-        {s ? `${hourLabel(s.h, sel)}: ${s.h.temp ?? 'no data'}°C, rain ${s.h.rain ?? 'no data'}%` : ''}
+        {s ? `${hourLabel(s.h, sel)}: ${s.h.temp ?? 'no data'}°${unit}, rain ${s.h.rain ?? 'no data'}%` : ''}
       </p>
     </div>
   )
