@@ -120,7 +120,11 @@ export function Settings({ dlg, set, update, reset }) {
           </div>
         </fieldset>
 
-        {radio('motion', 'Motion', [['system', 'System'], ['reduce', 'Reduced']])}
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-x-4 gap-y-6">
+          {radio('clock', 'Clock', [[24, '24h'], [12, '12h']])}
+          {radio('unit', 'Temperature', [['C', '°C'], ['F', '°F']])}
+          {radio('motion', 'Motion', [['system', 'System'], ['reduce', 'Reduced']])}
+        </div>
 
         <div className="pt-2 border-t border-white/5 flex justify-end">
           <button
