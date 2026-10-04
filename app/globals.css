@@ -109,15 +109,16 @@ body {
 
   .glass-panel {
     background: rgba(42, 42, 74, 0.72);
+    /* standard property only: the build adds -webkit-. Listing both made the minifier keep just the prefixed one,
+       so Chrome/Firefox never blurred */
     backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     border: 1px solid rgba(255, 255, 255, 0.05);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
   }
 
   /* service cards (was Tailwind backdrop-blur-sm, same 8px) */
   .card-blur {
-    backdrop-filter: blur(8px); /* unprefixed only: the CSS minifier adds -webkit- (listing both keeps just one) */
+    backdrop-filter: blur(8px); /* standard only, see .glass-panel */
   }
 
   /* Phones/tablets: every blurred panel re-blurs the 24 fps scene canvas on each frame while scrolling -> jank.
