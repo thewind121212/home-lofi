@@ -3,9 +3,9 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
-import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneWeather, themeColors, toUnit } from '../lib/settings'
+import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneName, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
-import { Prefs, Settings, closeDialog, motionOff } from './settings'
+import { Gallery, Prefs, Settings, closeDialog, motionOff, randomScene } from './settings'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -34,7 +34,6 @@ function dimOverlay(dim) {
   const stop = (p) => `color-mix(in oklab, var(--color-lofi-base) ${a(p)}%, transparent)`
   return `linear-gradient(to bottom, ${stop(75)}, ${stop(45)}, ${stop(85)})`
 }
-const sceneName = (id) => id.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
 
 // localStorage can throw (private mode, blocked storage) -> fall back silently
 function load(key, fallback) {
@@ -63,6 +62,7 @@ export default function Home() {
   const priv = usePrivate()
   const videoRef = useRef(null)
   const setDlg = useRef(null)
+  const galDlg = useRef(null)
   const [wx, setWx] = useState() // the Weather card's /api/weather data: undefined = loading, null = failed
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
   // A variant that failed to load falls back to the signature files for that scene.
@@ -76,14 +76,15 @@ export default function Home() {
   const onSceneFail = () => (mode === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${mode}/${scene}`)))
 
   useEffect(() => {
-    const s = load('scene', 'london')
-    setScene(SCENES.includes(s) ? s : 'london')
     let raw
     try {
       raw = localStorage.getItem(SETTINGS_KEY)
     } catch {}
     const st = parseSettings(raw)
     setSettings(st)
+    const s = load('scene', 'london')
+    // On load: Random picks a new scene each visit without overwriting the saved one
+    setScene(st.onLoad === 'random' ? randomScene(s) : SCENES.includes(s) ? s : 'london')
     const mq = matchMedia('(prefers-reduced-motion: reduce)')
     const onMq = () => setSysReduced(mq.matches)
     onMq()
@@ -124,6 +125,19 @@ export default function Home() {
     setSettings(next)
     save('settings', next)
   }
+  function openGallery() {
+    const d = galDlg.current
+    if (d.open) return
+    d.showModal()
+    const cur = d.querySelector('[aria-current]') // start on the current scene
+    cur?.focus({ preventScroll: true })
+    cur?.scrollIntoView({ block: 'center' })
+  }
+  function pickScene(id) {
+    setScene(id)
+    save('scene', id)
+    closeDialog(galDlg.current)
+  }
   function reset() {
     setSettings(DEFAULTS)
     try {
@@ -162,7 +176,7 @@ export default function Home() {
         <video
           key={base}
           ref={videoRef}
-          className="fixed top-0 left-0 w-full h-lvh object-cover"
+          className="fixed top-0 left-0 w-full h-lvh object-cover motion-safe:animate-[fade-in_0.6s_ease-out]"
           style={{ imageRendering: 'pixelated' }}
           poster={`${base}.webp`}
           autoPlay={!reduced}
@@ -187,7 +201,7 @@ export default function Home() {
       <div
         className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-opacity duration-500 ${focus ? 'opacity-0 invisible' : ''}`}
       >
-        {/* phones: greeting, then clock | scene + focus on one row. sm+: one row (also landscape phones) */}
+        {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-4 min-w-0">
             <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
@@ -198,10 +212,13 @@ export default function Home() {
               <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
-            <label
-              className="order-2 sm:order-none ml-auto sm:ml-0 min-w-0 flex items-center gap-2 bg-lofi-base/50 border border-white/5 rounded-full pl-3 pr-1 text-xs font-mono text-lofi-muted"
-              title={sceneDown ? 'Scene could not load, showing the night sky' : 'Background scene'}
+          <div className="flex items-center gap-2 min-[375px]:gap-3 sm:gap-4 shrink-0">
+            <button
+              onClick={openGallery}
+              aria-haspopup="dialog"
+              aria-label={`Background scene: ${sceneName(scene ?? 'london')}${sceneDown ? ' (could not load)' : ''}. Choose a scene`}
+              title={sceneDown ? 'Scene could not load, showing the night sky' : 'Choose a scene'}
+              className="order-2 sm:order-none ml-auto sm:ml-0 min-w-0 h-8 flex items-center gap-2 bg-lofi-base/50 border border-white/5 rounded-full pl-2.5 pr-2 sm:pl-3 sm:pr-2.5 text-xs font-mono text-lofi-muted hover:text-white hover:border-white/20 transition-colors"
             >
               {sceneDown ? (
                 <i className="fa-solid fa-moon text-lofi-highlight" aria-hidden="true" />
@@ -210,24 +227,13 @@ export default function Home() {
                   <i className="fa-solid fa-image" aria-hidden="true" />
                 </span>
               )}
-              {/* phones: the moon (+ the label's title) says it */}
+              {/* phones: the moon (+ the title) says it */}
               {sceneDown && <span className="hidden sm:inline text-[10px] text-lofi-secondary">offline</span>}
-              <select
-                value={scene ?? 'london'}
-                onChange={(e) => {
-                  setScene(e.target.value)
-                  save('scene', e.target.value)
-                }}
-                className="h-8 min-w-0 w-24 sm:w-28 bg-transparent text-white cursor-pointer text-ellipsis"
-                aria-label="Background scene"
-              >
-                {SCENES.map((id) => (
-                  <option key={id} value={id} className="bg-lofi-base">
-                    {sceneName(id)}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <span className="min-w-0 sm:max-w-28 truncate text-white">{sceneName(scene ?? 'london')}</span>
+              <span className="max-[374px]:hidden text-[9px]" aria-hidden="true">
+                <i className="fa-solid fa-chevron-down" />
+              </span>
+            </button>
             <button
               onClick={() => setFocus(true)}
               aria-label="Focus mode: hide panels"
@@ -280,7 +286,8 @@ export default function Home() {
           <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
         </button>
       )}
-      <Settings dlg={setDlg} set={set} update={update} reset={reset} scene={{ want: wantMode, mode, from: wx?.name }} />
+      <Settings dlg={setDlg} set={set} update={update} reset={reset} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
+      <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </Prefs>
   )
 }
@@ -1156,7 +1163,8 @@ function SceneCanvas({ base, variant, videoRef, reduced, onFail }) {
       rvfc ? v.cancelVideoFrameCallback(handle) : cancelAnimationFrame(handle)
     }
   }, [base, videoRef])
-  return <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh" aria-hidden="true" />
+  // fade-in: a cheap cross-fade (through the night sky) on scene switches
+  return <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh motion-safe:animate-[fade-in_0.6s_ease-out]" aria-hidden="true" />
 }
 
 function Stat({ icon, label, value, pct, title }) {
