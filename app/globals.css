@@ -208,6 +208,20 @@ body {
     .wx-sticky { padding-top: 1rem; }
   }
 
+  /* full-screen scene gallery <dialog>: opaque, fades + scales in, same data-closing exit as .wx-sheet */
+  .gallery {
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    overflow-y: auto;
+    background: rgb(26 26 46 / 0.98);
+  }
+  .gallery::backdrop { background: transparent; }
+  .gallery[open] { animation: panel-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .gallery[data-closing] { animation: panel-out 0.2s cubic-bezier(0.4, 0, 1, 1) forwards; }
+
   @keyframes sheet-up {
     from { transform: translateY(100%); }
   }

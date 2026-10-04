@@ -1,7 +1,8 @@
 'use client'
 
-import { createContext } from 'react'
-import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme } from '../lib/settings'
+import { createContext, useRef, useState } from 'react'
+import { SCENES, SCENES_URL } from '../lib/data'
+import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
 export const Prefs = createContext({ ...DEFAULTS, reduced: false })
@@ -133,6 +134,22 @@ export function Settings({ dlg, set, update, reset, scene }) {
           </div>
         </fieldset>
 
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+          <div>
+            <p className="mb-2 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">Scene</p>
+            <button
+              onClick={scene.open}
+              aria-haspopup="dialog"
+              className="h-8 pl-3 pr-2.5 rounded-full border border-white/10 bg-white/5 font-mono text-xs text-white hover:border-lofi-primary/50 transition-colors flex items-center gap-2"
+            >
+              <i className="fa-solid fa-image text-lofi-primary" aria-hidden="true" />
+              {sceneName(scene.id ?? 'london')}
+              <i className="fa-solid fa-chevron-right text-[9px] text-lofi-muted" aria-hidden="true" />
+            </button>
+          </div>
+          {radio('onLoad', 'On load', [['keep', 'Keep'], ['random', 'Random']])}
+        </div>
+
         {radio(
           'weather',
           'Scene weather',
@@ -175,4 +192,140 @@ export function Settings({ dlg, set, update, reset, scene }) {
       </div>
     </dialog>
   )
+}
+
+// Full-screen scene picker. Posters come in the wanted weather variant, falling back to the signature poster, then to
+// the night-sky placeholder (scene not uploaded yet).
+export function Gallery({ dlg, scene, variant, onPick }) {
+  const [q, setQ] = useState('')
+  const grid = useRef(null)
+  const t = q.trim().toLowerCase()
+  const shown = SCENES.filter((id) => sceneName(id).toLowerCase().includes(t))
+  const v = variant && variant !== 'signature' ? variant : null
+
+  // arrows move between tiles; up/down jump one row (= tiles sharing the first tile's top)
+  function onKeyDown(e) {
+    const tiles = [...grid.current.querySelectorAll('button')]
+    const i = tiles.indexOf(document.activeElement)
+    if (i < 0) return
+    const cols = tiles.filter((b) => b.offsetTop === tiles[0].offsetTop).length
+    const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[e.key]
+    if (!step) return
+    e.preventDefault()
+    tiles[Math.min(tiles.length - 1, Math.max(0, i + step))].focus()
+  }
+
+  const onImgError = (e) => {
+    const img = e.currentTarget
+    if (img.dataset.fallback) {
+      img.src = img.dataset.fallback
+      delete img.dataset.fallback
+    } else img.style.visibility = 'hidden'
+  }
+
+  return (
+    <dialog
+      ref={dlg}
+      aria-labelledby="gal-title"
+      onCancel={(e) => {
+        e.preventDefault()
+        closeDialog(dlg.current)
+      }}
+      onClose={() => {
+        delete dlg.current.dataset.closing
+        setQ('')
+      }}
+      className="gallery text-lofi-text overscroll-contain"
+    >
+      <div className="min-h-full flex flex-col">
+        <div className="sticky top-0 z-10 bg-lofi-base/95 border-b border-white/5 px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-x-4 gap-y-3">
+            <h2 id="gal-title" className="grow text-lg sm:text-xl font-medium text-white flex items-center gap-3">
+              <i className="fa-solid fa-images text-lofi-primary" aria-hidden="true" /> Choose a scene
+            </h2>
+            <div className="order-last sm:order-none basis-full sm:basis-64 relative">
+              <input
+                type="search"
+                aria-label="Filter scenes by city"
+                placeholder="Search city…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="w-full h-10 bg-lofi-surface/60 border border-white/10 rounded-xl pl-10 pr-3 text-white placeholder:text-lofi-muted focus:outline-none focus:border-lofi-primary/50 font-mono text-sm"
+              />
+              <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-lofi-muted text-sm" aria-hidden="true" />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onPick(randomScene(scene))}
+                aria-label="Random scene"
+                className="h-10 min-w-10 px-2.5 sm:px-4 rounded-full bg-lofi-base/50 border border-white/10 font-mono text-xs text-lofi-text hover:text-white hover:border-lofi-primary/40 transition-colors flex items-center justify-center gap-2"
+              >
+                <span aria-hidden="true">🎲</span>
+                <span className="hidden sm:inline" aria-hidden="true">Random</span>
+              </button>
+              <button
+                onClick={() => closeDialog(dlg.current)}
+                aria-label="Close scene gallery"
+                className="w-10 h-10 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
+              >
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="grow px-4 sm:px-6 lg:px-8 py-5 sm:py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+          <div
+            ref={grid}
+            onKeyDown={onKeyDown}
+            className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 sm:gap-4"
+          >
+            {shown.map((id) => {
+              const on = id === scene
+              const sig = `${SCENES_URL}/${id}.webp`
+              return (
+                <button
+                  key={id + v}
+                  onClick={() => onPick(id)}
+                  aria-current={on || undefined}
+                  className="group min-w-0 text-left rounded-2xl p-1 focus-visible:outline-offset-0"
+                >
+                  <span
+                    className={`night-sky block relative aspect-video overflow-hidden rounded-xl border transition-shadow duration-300 group-hover:shadow-[0_0_24px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)] group-focus-visible:shadow-[0_0_24px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)] ${
+                      on ? 'border-transparent ring-2 ring-lofi-primary' : 'border-white/10'
+                    }`}
+                  >
+                    <img
+                      src={v ? `${SCENES_URL}/${v}/${id}.webp` : sig}
+                      data-fallback={v ? sig : undefined}
+                      onError={onImgError}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 group-focus-visible:scale-110"
+                      style={{ imageRendering: 'pixelated' }}
+                    />
+                    {on && (
+                      <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center text-[11px] shadow-lg">
+                        <i className="fa-solid fa-check" aria-hidden="true" />
+                      </span>
+                    )}
+                  </span>
+                  <span className={`block mt-2 px-1 text-sm truncate transition-colors ${on ? 'text-lofi-primary font-medium' : 'text-white group-hover:text-lofi-primary'}`}>
+                    {sceneName(id)}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {!shown.length && <p className="py-16 text-center font-mono text-sm text-lofi-muted">No scene matches “{q.trim()}”</p>}
+        </div>
+      </div>
+    </dialog>
+  )
+}
+
+export const randomScene = (not) => {
+  const pool = SCENES.filter((id) => id !== not)
+  return pool[Math.floor(Math.random() * pool.length)]
 }
