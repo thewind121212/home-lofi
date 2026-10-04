@@ -175,13 +175,13 @@ export function Settings({ dlg, set, update, reset, scene }) {
           </span>
         </label>
 
-        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-x-4 gap-y-6">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-6">
           {radio('clock', 'Clock', [[24, '24h'], [12, '12h']])}
           {radio('unit', 'Temperature', [['C', '°C'], ['F', '°F']])}
           {radio('motion', 'Motion', [['system', 'System'], ['reduce', 'Reduced']])}
         </div>
 
-        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-x-4 gap-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
           {radio('idle', 'When idle', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']])}
           {radio('idleShow', 'Show', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
         </div>
