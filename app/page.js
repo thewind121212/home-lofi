@@ -184,7 +184,7 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
             <Music />
             <Weather status={status} setStatus={setStatus} />
@@ -1059,13 +1059,13 @@ function SceneCanvas({ id, videoRef, reduced, onFail }) {
   return <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh" aria-hidden="true" />
 }
 
-function Stat({ icon, label, value, pct }) {
+function Stat({ icon, label, value, pct, title }) {
   return (
     <div className="bg-lofi-surface/50 p-3 rounded-xl border border-white/5 flex items-center gap-3 hover:bg-lofi-surface transition-colors">
       <i className={`fa-solid ${icon} text-lg`} aria-hidden="true" />
       <div className="min-w-0 grow">
         <div className="text-[10px] text-lofi-muted font-mono uppercase tracking-wider">{label}</div>
-        <div className="text-sm text-white font-medium truncate">{value}</div>
+        <div className="text-sm text-white font-medium truncate" title={title}>{value}</div>
         {pct !== undefined && (
           <div className="h-1 mt-1.5 rounded-full bg-lofi-base/60 overflow-hidden" aria-hidden="true">
             <div className={`h-full rounded-full transition-all duration-500 ${pct > 85 ? 'bg-lofi-secondary' : 'bg-lofi-primary'}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
@@ -1201,7 +1201,7 @@ function Services({ priv }) {
   let n = 0
   return (
     // lg: tab stack on the panel's right edge; the selected tab sticks out past the border like a bookmark. pr-44 keeps cards clear of it (~1/4 of the panel)
-    <div className="glass-panel rounded-3xl p-6 grow flex flex-col relative lg:pr-44 lg:min-h-[24rem]">
+    <div className="glass-panel rounded-3xl p-6 flex flex-col relative lg:pr-44 lg:min-h-[24rem]">
       <div className="mb-6">
         <h3 className="text-sm font-mono text-lofi-text/80 uppercase tracking-widest flex items-center gap-2">
           <i className="fa-solid fa-server text-xs" aria-hidden="true" /> Hosted Applications
@@ -1221,7 +1221,7 @@ function Services({ priv }) {
               type="button"
               onClick={() => pick(t)}
               aria-pressed={on}
-              className={`relative isolate h-9 pl-2.5 ${n == null ? 'pr-3' : 'pr-1.5'} rounded-full border flex items-center gap-1.5 font-mono font-bold uppercase text-[10px] tracking-[0.04em] transition-all duration-200 ease-out active:scale-95 ${
+              className={`relative isolate h-9 pl-2.5 ${n == null ? 'pr-3' : 'pr-1.5 max-[374px]:pr-3'} rounded-full border flex items-center gap-1.5 font-mono font-bold uppercase text-[10px] tracking-[0.04em] transition-all duration-200 ease-out active:scale-95 ${
                 on ? 'text-lofi-base border-transparent scale-[1.04] shadow-[0_0_16px_rgba(255,138,92,0.45)]' : 'text-lofi-muted bg-white/5 border-white/10 hover:text-white hover:border-white/20'
               }`}
             >
@@ -1232,7 +1232,7 @@ function Services({ priv }) {
               <i className={`fa-solid ${icon} text-[11px] ${on ? '' : 'text-lofi-primary/80'}`} aria-hidden="true" />
               {t}
               {n != null && (
-                <span className={`min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center text-[9px] tabular-nums ${on ? 'bg-lofi-base/20' : 'bg-white/10 text-lofi-text/80'}`}>
+                <span className={`max-[374px]:hidden min-w-5 h-5 px-1.5 rounded-full flex items-center justify-center text-[9px] tabular-nums ${on ? 'bg-lofi-base/20' : 'bg-white/10 text-lofi-text/80'}`}>
                   {n}
                 </span>
               )}
@@ -1280,7 +1280,7 @@ function Services({ priv }) {
         {shown.map(({ section, items }) => (
           <section key={section}>
             {tab === 'All' && <h4 data-anim className="text-[10px] font-mono text-lofi-text/80 uppercase tracking-widest mb-3">{section}</h4>}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
               {items.map((s) => (
                 <ServiceCard
                   key={s.name + s.href}
@@ -1298,7 +1298,7 @@ function Services({ priv }) {
             <div className="w-14 h-14 rounded-2xl bg-lofi-surface flex items-center justify-center border border-white/5">
               <i className="fa-solid fa-lock text-2xl text-lofi-primary" aria-hidden="true" />
             </div>
-            <p className="text-sm text-lofi-muted">Internal apps are private. Sign in to see them.</p>
+            <p className="text-sm text-lofi-muted text-balance">Internal apps are private. Sign in to see them.</p>
             <a
               href={`${AUTH_URL}/?rd=${encodeURIComponent(location.href)}`}
               className="text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 px-4 py-2 rounded-full border border-lofi-primary/20 transition-colors"
@@ -1362,7 +1362,7 @@ function ServiceCard({ s, accent, live, stats }) {
       target="_blank"
       rel="noopener noreferrer"
       data-anim
-      className="bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden card-blur"
+      className="@container bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden card-blur"
     >
       <div className="absolute inset-0 bg-linear-to-b from-lofi-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       <div
@@ -1375,23 +1375,28 @@ function ServiceCard({ s, accent, live, stats }) {
         )}
       </div>
       <div className="z-10 mt-1 w-full min-w-0">
-        <div className="text-sm font-medium text-white group-hover:text-lofi-primary transition-colors">{s.name}</div>
+        {/* 2 lines reserved so neighbours line up whether the name wraps or not */}
+        <div className="min-h-[2lh] text-sm font-medium text-white text-balance wrap-break-word group-hover:text-lofi-primary transition-colors">{s.name}</div>
         <div className="text-[10px] text-lofi-muted mt-1 font-mono tracking-tight truncate">{new URL(s.href).hostname}</div>
         {live && (
-          <div className={`mt-1.5 text-[10px] font-mono flex items-center justify-center gap-1.5 ${live.up ? 'text-emerald-400' : 'text-lofi-secondary'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${live.up ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-lofi-secondary'}`} aria-hidden="true" />
-            {live.up ? `Online${live.ms != null ? ` · ${live.ms} ms` : ''}` : 'Down'}
+          <div
+            title={live.up ? `Online${live.ms != null ? ` · ${live.ms} ms` : ''}` : 'Down'}
+            className={`mt-1.5 text-[10px] font-mono whitespace-nowrap flex items-center justify-center gap-1.5 ${live.up ? 'text-emerald-400' : 'text-lofi-secondary'}`}
+          >
+            <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${live.up ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-lofi-secondary'}`} aria-hidden="true" />
+            {/* narrow cards: "● 239 ms" */}
+            {live.up ? live.ms == null ? 'Online' : <span><span className="@max-[8rem]:sr-only">Online · </span>{live.ms} ms</span> : 'Down'}
           </div>
         )}
       </div>
       {s.secret && <Secret />}
       {/* live widget numbers (internal services only, from /api/private) */}
       {Array.isArray(stats) && (
-        <dl className="z-10 w-full grid grid-cols-2 gap-1.5">
+        <dl className="z-10 w-full grid grid-cols-1 @[8.5rem]:grid-cols-2 gap-1.5">
           {stats.map(([label, value]) => (
-            <div key={label} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0 odd:last:col-span-2">
-              <dt className="text-[9px] font-mono uppercase tracking-wider text-lofi-muted truncate">{label}</dt>
-              <dd className="text-xs font-medium text-white tabular-nums truncate">{value}</dd>
+            <div key={label} title={`${label}: ${value}`} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0 @[8.5rem]:odd:last:col-span-2">
+              <dt className="text-[9px] font-mono uppercase text-lofi-muted truncate">{label}</dt>
+              <dd className="text-xs font-medium text-white tabular-nums truncate">{compact(value)}</dd>
             </div>
           ))}
         </dl>
@@ -1400,9 +1405,14 @@ function ServiceCard({ s, accent, live, stats }) {
   )
 }
 
+// "154,780" -> "154.8K" (exact value stays in the chip's title)
+const COMPACT = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+const compact = (v) => (/^\d{1,3}(,\d{3})+$/.test(v) && Number(v.replace(/,/g, '')) >= 10_000 ? COMPACT.format(Number(v.replace(/,/g, ''))) : v)
+
 const GB = 2 ** 30
 const pctOf = (x) => (x?.total ? Math.round((x.used / x.total) * 100) : null)
 const gb = (x) => (x ? `${(x.used / GB).toFixed(1)} / ${(x.total / GB).toFixed(1)} GB` : '--')
+const gbUsed = (x) => (x ? `${(x.used / GB).toFixed(1)} GB` : '--') // fits the tile; the full "used / total" goes in title
 function dur(sec) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60)
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`
@@ -1475,9 +1485,9 @@ function Server({ d }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <Stat icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
-        <Stat icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gb(st.mem)} pct={pctOf(st.mem)} />
+        <Stat icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
         <Stat icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${st.temp}°C`} pct={st.temp} />
-        <Stat icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gb(st.disk)} pct={pctOf(st.disk)} />
+        <Stat icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
       </div>
       {user && (
         <p className="text-[10px] font-mono text-lofi-muted">
