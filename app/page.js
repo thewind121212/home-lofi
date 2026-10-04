@@ -446,9 +446,26 @@ function Weather({ status, setStatus }) {
   }
 
   function openDetail() {
-    if (!loc || dlg.current.open) return
+    if (!loc || dlg.current.open) return // also ignores clicks while the close animation runs
     dlg.current.showModal()
     loadDetail()
+  }
+
+  // every close path (✕, Esc, backdrop) plays the exit animation, then really closes
+  function closeDetail() {
+    const d = dlg.current
+    if (!d.open || 'closing' in d.dataset) return
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return d.close()
+    d.dataset.closing = ''
+    let t
+    const done = (e) => {
+      if (e && e.target !== d) return // a child's animation (panel and ::backdrop both target the dialog)
+      d.removeEventListener('animationend', done)
+      clearTimeout(t)
+      if ('closing' in d.dataset) d.close() // already closed (onClose cleared it) -> don't touch a re-opened panel
+    }
+    d.addEventListener('animationend', done)
+    t = setTimeout(done, 400) // fallback if animationend never fires
   }
 
   function onKeyDown(e) {
@@ -590,12 +607,19 @@ function Weather({ status, setStatus }) {
     <dialog
       ref={dlg}
       aria-labelledby="wx-title"
-      onClick={(e) => e.target === dlg.current && dlg.current.close()}
+      onClick={(e) => e.target === dlg.current && closeDetail()}
+      onCancel={(e) => {
+        e.preventDefault() // Esc: animate out first
+        closeDetail()
+      }}
       // the browser restores focus to the opener; a click on the card had none -> back to the card
-      onClose={() => card.current.contains(document.activeElement) || card.current.focus({ preventScroll: true })}
+      onClose={() => {
+        delete dlg.current.dataset.closing
+        card.current.contains(document.activeElement) || card.current.focus({ preventScroll: true })
+      }}
       className="wx-sheet glass-panel text-lofi-text overscroll-contain"
     >
-      <WeatherDetail w={w} loc={loc} detail={detail} onRetry={loadDetail} onClose={() => dlg.current.close()} />
+      <WeatherDetail w={w} loc={loc} detail={detail} onRetry={loadDetail} onClose={closeDetail} />
     </dialog>
     </>
   )
