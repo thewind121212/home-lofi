@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
+import { DEFAULTS, SETTINGS_KEY, parseSettings, themeColors } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
+import { Prefs, closeDialog, motionOff } from './settings'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -47,7 +49,10 @@ function save(key, value) {
 export default function Home() {
   const [now, setNow] = useState(null)
   const [scene, setScene] = useState(null)
-  const [reduced, setReduced] = useState(false)
+  const [settings, setSettings] = useState(null) // null until read from localStorage (after hydration)
+  const [sysReduced, setSysReduced] = useState(false)
+  const set = settings ?? DEFAULTS
+  const reduced = set.motion === 'reduce' || sysReduced
   const [focus, setFocus] = useState(false)
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
@@ -58,7 +63,18 @@ export default function Home() {
   useEffect(() => {
     const s = load('scene', 'london')
     setScene(SCENES.includes(s) ? s : 'london')
-    setReduced(matchMedia('(prefers-reduced-motion: reduce)').matches)
+    let raw
+    try {
+      raw = localStorage.getItem(SETTINGS_KEY)
+    } catch {}
+    const st = parseSettings(raw)
+    setSettings(st)
+    const mq = matchMedia('(prefers-reduced-motion: reduce)')
+    const onMq = () => setSysReduced(mq.matches)
+    onMq()
+    mq.addEventListener('change', onMq)
+    // right away (not after the re-render), so mount-time animations below already see it
+    document.documentElement.dataset.motion = st.motion === 'reduce' || mq.matches ? 'reduce' : ''
     setNow(new Date())
     const t = setInterval(() => setNow(new Date()), 1000)
     const onKey = (e) => e.key === 'Escape' && setFocus(false)
@@ -66,8 +82,33 @@ export default function Home() {
     return () => {
       clearInterval(t)
       removeEventListener('keydown', onKey)
+      mq.removeEventListener('change', onMq)
     }
   }, [])
+
+  // one reduced-motion switch for everything: CSS ([data-motion] rule in globals.css), motionOff(), Prefs
+  useEffect(() => {
+    if (!settings) return
+    document.documentElement.dataset.motion = reduced ? 'reduce' : ''
+    const v = videoRef.current
+    if (v) reduced ? v.pause() : v.play().catch(() => {})
+  }, [settings, reduced])
+
+  // theme = the three @theme color variables, overridden on <html>
+  useEffect(() => {
+    if (!settings) return
+    const [a, b, c] = themeColors(settings)
+    const st = document.documentElement.style
+    st.setProperty('--color-lofi-primary', a)
+    st.setProperty('--color-lofi-secondary', b)
+    st.setProperty('--color-lofi-highlight', c)
+  }, [settings])
+
+  function update(patch) {
+    const next = { ...set, ...patch }
+    setSettings(next)
+    save('settings', next)
+  }
 
   useEffect(() => {
     if (reduced) return
@@ -92,7 +133,7 @@ export default function Home() {
         : ['Good evening', 'fa-moon', 'from-lofi-base to-lofi-surface border border-white/10']
 
   return (
-    <>
+    <Prefs value={{ ...set, reduced }}>
       {/* Night sky: shows while the scene loads, and stays as the fallback if it can't load */}
       <NightSky />
       {/* Full-screen animated scene (decorative) */}
@@ -208,7 +249,7 @@ export default function Home() {
           <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
         </button>
       )}
-    </>
+    </Prefs>
   )
 }
 
@@ -455,22 +496,7 @@ function Weather({ status, setStatus }) {
     loadDetail()
   }
 
-  // every close path (✕, Esc, backdrop) plays the exit animation, then really closes
-  function closeDetail() {
-    const d = dlg.current
-    if (!d.open || 'closing' in d.dataset) return
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return d.close()
-    d.dataset.closing = ''
-    let t
-    const done = (e) => {
-      if (e && e.target !== d) return // a child's animation (panel and ::backdrop both target the dialog)
-      d.removeEventListener('animationend', done)
-      clearTimeout(t)
-      if ('closing' in d.dataset) d.close() // already closed (onClose cleared it) -> don't touch a re-opened panel
-    }
-    d.addEventListener('animationend', done)
-    t = setTimeout(done, 400) // fallback if animationend never fires
-  }
+  const closeDetail = () => closeDialog(dlg.current)
 
   function onKeyDown(e) {
     const items = open && res.state === 'ok' ? res.items : []
@@ -1183,7 +1209,7 @@ function Services({ priv }) {
     if (t === tab) return
     save('tab', t)
     const el = box.current
-    if (!el || matchMedia('(prefers-reduced-motion: reduce)').matches) return setTab(t)
+    if (!el || motionOff()) return setTab(t)
     const id = ++run.current
     el.getAnimations({ subtree: true }).forEach((a) => a.cancel())
     const h0 = el.offsetHeight
@@ -1210,7 +1236,7 @@ function Services({ priv }) {
   }
   useEffect(() => {
     // next frame, so the tab restored from localStorage has rendered first
-    const f = requestAnimationFrame(() => box.current && !matchMedia('(prefers-reduced-motion: reduce)').matches && enter(box.current))
+    const f = requestAnimationFrame(() => box.current && !motionOff() && enter(box.current))
     return () => cancelAnimationFrame(f)
   }, [])
 
@@ -1344,8 +1370,11 @@ const framed = (m) => ('•'.repeat(Math.floor((12 - m.length) / 2)) + m).padEnd
 function Secret() {
   const [text, setText] = useState(SEAL)
   const [busy, setBusy] = useState(false)
+  const { reduced } = useContext(Prefs)
   useEffect(() => {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    setText(SEAL)
+    setBusy(false)
+    if (reduced) return
     const timers = []
     let k = Math.floor(Math.random() * SECRET_MSGS.length)
     // decrypt-style: characters settle left to right, the rest keep flickering
@@ -1366,7 +1395,7 @@ function Secret() {
     }
     timers.push(setInterval(cycle, 6500), setTimeout(cycle, 1500 + Math.random() * 2000))
     return () => timers.forEach((t) => (clearInterval(t), clearTimeout(t)))
-  }, [])
+  }, [reduced])
   return (
     <div className="z-10 w-full flex items-center justify-center gap-2 bg-lofi-base/60 border border-white/5 rounded-lg px-2 py-1.5" aria-label="Vault sealed">
       <i className={`fa-solid ${busy ? 'fa-lock-open text-lofi-primary motion-safe:animate-wiggle' : 'fa-lock text-lofi-highlight'} text-[11px] w-3`} aria-hidden="true" />
