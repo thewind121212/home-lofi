@@ -329,7 +329,7 @@ function Music() {
             <i className="fa-solid fa-volume-low" aria-hidden="true" />
           </button>
           <button
-            className="w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-all hover:scale-105 shadow-[0_0_15px_rgba(255,138,92,0.4)]"
+            className="w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-all hover:scale-105 shadow-[0_0_15px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
             title={playing ? 'Pause' : 'Play'}
             aria-label={playing ? 'Pause' : 'Play'}
             onClick={toggle}
@@ -874,13 +874,14 @@ function HourChart({ hours }) {
         <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox={`0 0 100 ${CH}`} preserveAspectRatio="none">
           <defs>
             <linearGradient id="wx-line" gradientUnits="userSpaceOnUse" x1="0" y1={CH_TOP} x2="0" y2={CH_BOT}>
-              <stop offset="0" stopColor="#e56b6f" />
-              <stop offset="0.5" stopColor="#ff8a5c" />
-              <stop offset="1" stopColor="#fce38a" />
+              {/* theme colors: style, not the stopColor attribute, so var() resolves */}
+              <stop offset="0" style={{ stopColor: 'var(--color-lofi-secondary)' }} />
+              <stop offset="0.5" style={{ stopColor: 'var(--color-lofi-primary)' }} />
+              <stop offset="1" style={{ stopColor: 'var(--color-lofi-highlight)' }} />
             </linearGradient>
             <linearGradient id="wx-area" gradientUnits="userSpaceOnUse" x1="0" y1={CH_TOP} x2="0" y2={CH}>
-              <stop offset="0" stopColor="#ff8a5c" stopOpacity="0.3" />
-              <stop offset="1" stopColor="#ff8a5c" stopOpacity="0" />
+              <stop offset="0" stopOpacity="0.3" style={{ stopColor: 'var(--color-lofi-primary)' }} />
+              <stop offset="1" stopOpacity="0" style={{ stopColor: 'var(--color-lofi-primary)' }} />
             </linearGradient>
           </defs>
           {c.pts.map((p, i) =>
@@ -930,7 +931,7 @@ function HourChart({ hours }) {
         {c.pts[0].y != null && (
           <span className="absolute -translate-x-1/2 -translate-y-1/2 w-3 h-3" style={{ left: `${c.pts[0].x}%`, top: c.pts[0].y }}>
             <span className="absolute inset-0 rounded-full bg-lofi-primary/50 motion-safe:animate-ping" />
-            <span className="absolute inset-0 rounded-full bg-lofi-primary border-2 border-lofi-base shadow-[0_0_10px_rgba(255,138,92,0.8)]" />
+            <span className="absolute inset-0 rounded-full bg-lofi-primary border-2 border-lofi-base shadow-[0_0_10px_color-mix(in_oklab,var(--color-lofi-primary)_80%,transparent)]" />
           </span>
         )}
 
@@ -1017,7 +1018,7 @@ function NightSky() {
     <div className="night-sky fixed top-0 left-0 w-full h-lvh" aria-hidden="true">
       <div className="night-stars absolute inset-0" />
       <div className="night-stars night-stars-2 absolute inset-0" />
-      <div className="absolute top-[5%] right-[4%] w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-lofi-highlight shadow-[0_0_60px_20px_rgba(252,227,138,0.35)] motion-safe:animate-float" />
+      <div className="absolute top-[5%] right-[4%] w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-lofi-highlight shadow-[0_0_60px_20px_color-mix(in_oklab,var(--color-lofi-highlight)_35%,transparent)] motion-safe:animate-float" />
     </div>
   )
 }
@@ -1243,7 +1244,7 @@ function Services({ priv }) {
               onClick={() => pick(t)}
               aria-pressed={on}
               className={`relative isolate h-9 pl-2.5 ${n == null ? 'pr-3' : 'pr-1.5 max-[374px]:pr-3'} rounded-full border flex items-center gap-1.5 font-mono font-bold uppercase text-[10px] tracking-[0.04em] transition-all duration-200 ease-out active:scale-95 ${
-                on ? 'text-lofi-base border-transparent scale-[1.04] shadow-[0_0_16px_rgba(255,138,92,0.45)]' : 'text-lofi-muted bg-white/5 border-white/10 hover:text-white hover:border-white/20'
+                on ? 'text-lofi-base border-transparent scale-[1.04] shadow-[0_0_16px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)]' : 'text-lofi-muted bg-white/5 border-white/10 hover:text-white hover:border-white/20'
               }`}
             >
               <span
@@ -1276,7 +1277,7 @@ function Services({ priv }) {
               onClick={() => pick(t)}
               aria-pressed={on}
               className={`group/tab relative isolate -rotate-3 h-8 lg:h-9 pl-2.5 pr-4 lg:pl-3 lg:pr-5 flex items-center gap-2 font-mono font-bold uppercase text-[10px] tracking-[0.08em] transition-all duration-200 ease-out ${
-                on ? 'text-lofi-base lg:translate-x-4 motion-safe:animate-tilt drop-shadow-[0_4px_10px_rgba(255,138,92,0.35)]' : 'text-lofi-muted hover:text-white lg:hover:translate-x-1'
+                on ? 'text-lofi-base lg:translate-x-4 motion-safe:animate-tilt drop-shadow-[0_4px_10px_color-mix(in_oklab,var(--color-lofi-primary)_35%,transparent)]' : 'text-lofi-muted hover:text-white lg:hover:translate-x-1'
               }`}
             >
               {on ? (
@@ -1387,7 +1388,7 @@ function ServiceCard({ s, accent, live, stats }) {
     >
       <div className="absolute inset-0 bg-linear-to-b from-lofi-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       <div
-        className={`w-14 h-14 rounded-2xl bg-lofi-surface flex items-center justify-center ${accent} group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 shadow-lg group-hover:shadow-[0_0_20px_rgba(255,138,92,0.4)] z-10 border border-white/5`}
+        className={`w-14 h-14 rounded-2xl bg-lofi-surface flex items-center justify-center ${accent} group-hover:scale-110 group-hover:-translate-y-1 transition-all duration-300 shadow-lg group-hover:shadow-[0_0_20px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)] z-10 border border-white/5`}
       >
         {s.fa ? (
           <i className={`${s.fa} text-2xl`} aria-hidden="true" />
