@@ -157,6 +157,9 @@ export default function Home() {
     st.setProperty('--color-lofi-primary', a)
     st.setProperty('--color-lofi-secondary', b)
     st.setProperty('--color-lofi-highlight', c)
+    // the tab icon too (app/icon.svg with the accent dot)
+    const icon = document.querySelector('link[rel="icon"]')
+    if (icon) icon.href = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#1a1a2e"/><circle cx="16" cy="16" r="10" fill="#2a2a4a"/><circle cx="16" cy="16" r="5" fill="${a}"/><circle cx="16" cy="16" r="1.5" fill="#1a1a2e"/></svg>`)}`
   }, [settings])
 
   function update(patch) {
