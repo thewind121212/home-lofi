@@ -181,6 +181,11 @@ export function Settings({ dlg, set, update, reset, scene }) {
           {radio('motion', 'Motion', [['system', 'System'], ['reduce', 'Reduced']])}
         </div>
 
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-x-4 gap-y-6">
+          {radio('idle', 'When idle', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']])}
+          {radio('idleShow', 'Show', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
+        </div>
+
         <div className="pt-2 border-t border-white/5 flex justify-end">
           <button
             onClick={reset}

@@ -58,6 +58,8 @@ export default function Home() {
   const set = settings ?? DEFAULTS
   const reduced = set.motion === 'reduce' || sysReduced
   const [focus, setFocus] = useState(false)
+  const [idle, setIdle] = useState(false)
+  const idleRef = useRef(false)
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
   const videoRef = useRef(null)
@@ -109,6 +111,43 @@ export default function Home() {
     const v = videoRef.current
     if (v) reduced ? v.pause() : v.play().catch(() => {})
   }, [settings, reduced])
+
+  // Idle mode: after N s without input the dashboard fades + blurs away (like focus mode); any input brings it back.
+  // Never while a dialog or the location dropdown is open, or with text typed in a field.
+  useEffect(() => {
+    if (!set.idle) return
+    let last = Date.now()
+    const busy = () => {
+      const a = document.activeElement
+      return document.querySelector('dialog[open], [role="combobox"][aria-expanded="true"]') || (a?.matches('input[type="text"], input[type="search"], textarea') && a.value)
+    }
+    const wake = (e) => {
+      if (e.type === 'pointermove' && !e.movementX && !e.movementY) return // synthetic moves from layout changes
+      last = Date.now()
+      if (!idleRef.current) return
+      idleRef.current = false
+      setIdle(false)
+      if (e.type === 'keydown') e.preventDefault() // the waking key doesn't also act (e.g. Enter on a focused card)
+      if (e.type === 'pointerdown') {
+        // swallow the click that ends this tap/press, so it doesn't land on a card that just reappeared
+        const eat = (ev) => (ev.preventDefault(), ev.stopPropagation())
+        addEventListener('click', eat, { capture: true, once: true })
+        setTimeout(() => removeEventListener('click', eat, true), 800)
+      }
+    }
+    const events = ['pointermove', 'pointerdown', 'keydown', 'touchstart', 'wheel']
+    events.forEach((n) => addEventListener(n, wake, { capture: true, passive: n !== 'keydown' }))
+    const t = setInterval(() => {
+      if (idleRef.current) return
+      if (busy()) last = Date.now()
+      else if (Date.now() - last >= set.idle * 1000) setIdle((idleRef.current = true))
+    }, 1000)
+    return () => {
+      clearInterval(t)
+      events.forEach((n) => removeEventListener(n, wake, { capture: true }))
+      setIdle((idleRef.current = false))
+    }
+  }, [set.idle])
 
   // theme = the three @theme color variables, overridden on <html>
   useEffect(() => {
@@ -194,12 +233,12 @@ export default function Home() {
         <SceneCanvas key={'c' + base} base={base} variant={mode !== 'signature'} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
       )}
       <div
-        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus ? 'opacity-0' : ''}`}
+        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus || idle ? 'opacity-0' : ''}`}
         style={{ background: dimOverlay(set.dim) }}
       />
 
       <div
-        className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-opacity duration-500 ${focus ? 'opacity-0 invisible' : ''}`}
+        className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle ? 'opacity-0 invisible' : ''} ${idle ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -276,7 +315,8 @@ export default function Home() {
       </div>
 
       {/* Header is hidden in focus mode, so the only way back is this button (or Esc) */}
-      {focus && (
+      {idle && set.idleShow === 'clock' && <IdleClock now={now} clock={set.clock} />}
+      {focus && !idle && (
         <button
           onClick={() => setFocus(false)}
           aria-label="Show panels"
@@ -301,6 +341,23 @@ function Clock({ now, clock }) {
       {time}
       {ampm && <span className="text-[0.45em] ml-1 align-[0.15em]">{ampm}</span>}
     </>
+  )
+}
+
+// Idle mode's big floating clock (decorative: the header clock is the accessible one)
+function IdleClock({ now, clock }) {
+  return (
+    <div
+      className="idle-clock fixed inset-0 z-20 flex flex-col items-center justify-center px-4 text-center pointer-events-none select-none motion-safe:animate-[fade-in_1.2s_ease-out]"
+      aria-hidden="true"
+    >
+      <div className="font-mono font-bold text-white text-7xl sm:text-9xl short:text-7xl leading-none whitespace-nowrap">
+        <Clock now={now} clock={clock} />
+      </div>
+      <div className="mt-4 sm:mt-6 font-mono font-bold text-xs sm:text-base uppercase tracking-[0.3em] text-white/90">
+        {now?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+      </div>
+    </div>
   )
 }
 
