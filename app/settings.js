@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext } from 'react'
-import { DEFAULTS, THEMES, customTheme } from '../lib/settings'
+import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme } from '../lib/settings'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
 export const Prefs = createContext({ ...DEFAULTS, reduced: false })
@@ -56,7 +56,20 @@ function Choice({ legend, name, value, options, onChange, children }) {
   )
 }
 
-export function Settings({ dlg, set, update, reset }) {
+const WEATHER_LABEL = { signature: 'Signature', live: 'Live', clear: 'Clear', drizzle: 'Drizzle', rain: 'Rain', thunderstorm: 'Storm', snow: 'Snow', leaves: 'Leaves' }
+
+// scene = { want, mode, from }: the variant asked for (null while Live waits for the weather), the one shown, Live's city
+function weatherHint(set, { want, mode, from }) {
+  const live = set.weather === 'live'
+  if (live && !want) return 'Live: waiting for the weather…'
+  if (live && want === 'signature') return `Live: ${from ? `no variant for the weather in ${from}` : 'weather unavailable'}, showing Signature`
+  let t = live ? `Live: ${WEATHER_LABEL[want].toLowerCase()}${from ? ` (from ${from})` : ''}` : ''
+  if (want !== mode) t += `${t ? ' · ' : ''}not available for this scene yet, showing Signature`
+  return t
+}
+
+export function Settings({ dlg, set, update, reset, scene }) {
+  const hint = weatherHint(set, scene)
   const radio = (key, legend, options, extra) => (
     <Choice legend={legend} name={key} value={set[key]} options={options} onChange={(v) => update({ [key]: v })}>
       {extra}
@@ -119,6 +132,13 @@ export function Settings({ dlg, set, update, reset }) {
             </span>
           </div>
         </fieldset>
+
+        {radio(
+          'weather',
+          'Scene weather',
+          SCENE_WEATHER.map((w) => [w, WEATHER_LABEL[w]]),
+          hint && <p className="mt-2 text-[11px] font-mono text-lofi-muted" aria-live="polite">{hint}</p>,
+        )}
 
         <label className="block">
           <span className="mb-1 flex justify-between text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
