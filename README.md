@@ -8,7 +8,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 ## Features
 
 - **Scenes**: full-screen, seamlessly looping pixel-art cities, drawn onto a canvas with smoothing off, so the pixels stay sharp up to 4K.
-  There's a scene picker (saved per browser) and a focus mode that hides the panels.
+  A full-screen gallery picks the scene (saved per browser), and a focus mode hides the panels.
 - **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
@@ -20,6 +20,23 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   - The reverse proxy (e.g. Authelia) decides who sees it.
   - The app fails closed: without the proxy's secret header it answers 404.
 
+## Settings
+
+The gear in the header opens Settings. Changes apply live and are stored **per browser** in one localStorage key
+(`home-lofi:settings`); **Reset all** goes back to the defaults. Nothing is sent to the server.
+
+| setting | options |
+| --- | --- |
+| Color theme | Sunset (default), Sakura, Matcha, Ocean, Lavender, Lemon, or a custom accent (the other two colors are derived from it) |
+| Scene | opens the scene gallery: search, 🎲 Random, arrow keys + Enter |
+| On load | Keep the last scene, or a Random one each visit |
+| Scene weather | Signature (default), Live, Clear, Drizzle, Rain, Storm, Snow, Leaves (see [Scenes](#scenes)) |
+| Dim scene | 0–100: more scene ↔ more readable panels (50 = default) |
+| Clock | 24h / 12h (header and idle clock) |
+| Temperature | °C / °F (converted in the browser) |
+| Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
+| When idle / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back |
+
 ## Quick start (dev)
 
 ```sh
@@ -27,7 +44,7 @@ npm install
 cp .env.example .env                                         # fill in GATE_SECRET at least
 cp private-services.example.json private-services.json      # optional
 npm run dev        # http://localhost:3000 (binds 0.0.0.0)
-npm test           # self-checks: weather mapping, AQI bands, details shaping, input validation, host stat parsers
+npm test           # self-checks: weather mapping, AQI bands, details shaping, input validation, host stat parsers, settings
 ```
 
 The scene videos are not in the repo (see [Scenes](#scenes)). Without them the page still works: the scene area is just dark.
@@ -174,7 +191,24 @@ Each scene `<id>` needs three files (in the static folder, or `public/scenes/`):
 | `<id>.mp4` | HEVC (`hvc1`) or H.264, same size (Safari) |
 | `<id>.webp` | first frame, used as the poster |
 
-Then add `<id>` to `SCENES` in `lib/data.js`. Pixel art looks best at an integer upscale with nearest-neighbour scaling
+Then add `<id>` to `SCENES` in `lib/data.js`.
+
+**Weather variants** (optional) live in one subfolder per weather, with the same three files per scene:
+
+```
+scenes/<id>.{webm,mp4,webp}              Signature (required)
+scenes/clear/<id>.{webm,mp4,webp}
+scenes/drizzle/<id>.{webm,mp4,webp}
+scenes/rain/<id>.{webm,mp4,webp}
+scenes/thunderstorm/<id>.{webm,mp4,webp}
+scenes/snow/<id>.{webm,mp4,webp}
+scenes/leaves/<id>.{webm,mp4,webp}
+```
+
+Settings › Scene weather picks one; **Live** follows the current weather of the Weather card's location (clear sky / clouds
+→ clear, fog / drizzle → drizzle, rain / showers → rain, snow → snow, thunderstorm → thunderstorm). If a variant is
+missing for a scene, that scene quietly falls back to its Signature files; only a missing Signature shows the night sky.
+So variants can be uploaded one scene at a time. Pixel art looks best at an integer upscale with nearest-neighbour scaling
 (`ffmpeg -vf scale=1920:1080:flags=neighbor`).
 
 ## Add a public service
