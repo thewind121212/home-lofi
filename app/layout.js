@@ -1,4 +1,5 @@
 import { Space_Mono, Work_Sans } from 'next/font/google'
+import { SETTINGS_KEY, THEMES, customTheme, prePaint } from '../lib/settings'
 import './globals.css'
 
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-space-mono' })
@@ -11,8 +12,10 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${spaceMono.variable} ${workSans.variable}`}>
+    // suppressHydrationWarning: the pre-paint script below sets style / data-motion on <html> before React hydrates
+    <html lang="en" className={`${spaceMono.variable} ${workSans.variable}`} suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: `(${prePaint})(${JSON.stringify(SETTINGS_KEY)},${JSON.stringify(THEMES)},${customTheme})` }} />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
