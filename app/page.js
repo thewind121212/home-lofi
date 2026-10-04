@@ -414,7 +414,7 @@ function FocusBar({ now, wx, priv, tune, onToggle, onShow }) {
             <span className="whitespace-nowrap" title="CPU temperature">
               <i className="fa-solid fa-temperature-half text-lofi-secondary mr-1.5" aria-hidden="true" />
               <span className="sr-only">temperature </span>
-              {st.temp}°C
+              {toUnit(st.temp, unit)}°{unit}
             </span>
           )}
           {ram != null && (
@@ -1844,6 +1844,7 @@ function usePrivate() {
 
 // Left column: host stats when unlocked, otherwise a small sign-in card. Internal services render inside Services.
 function Server({ d }) {
+  const { unit } = useContext(Prefs)
   if (d === undefined) return null
   const here = encodeURIComponent(location.href)
 
@@ -1879,7 +1880,7 @@ function Server({ d }) {
       <div className="grid grid-cols-2 gap-3">
         <Stat icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
         <Stat icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
-        <Stat icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${st.temp}°C`} pct={st.temp} />
+        <Stat icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`} pct={st.temp} />
         <Stat icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
       </div>
       {user && (
