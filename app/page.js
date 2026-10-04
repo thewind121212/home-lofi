@@ -325,7 +325,7 @@ function Music() {
         <p className="text-sm font-medium text-white text-center mb-1">Lofi Girl Radio</p>
         <p className="text-xs text-lofi-muted text-center mb-4 truncate">beats to relax/study to</p>
         <div className="flex justify-center items-center gap-6">
-          <button className="text-lofi-muted hover:text-white transition-colors" title="Volume Down" aria-label="Volume down" onClick={() => changeVolume(-10)}>
+          <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Down" aria-label="Volume down" onClick={() => changeVolume(-10)}>
             <i className="fa-solid fa-volume-low" aria-hidden="true" />
           </button>
           <button
@@ -336,7 +336,7 @@ function Music() {
           >
             <i className={`fa-solid ${loading ? 'fa-spinner fa-spin' : playing ? 'fa-pause' : 'fa-play ml-1'}`} aria-hidden="true" />
           </button>
-          <button className="text-lofi-muted hover:text-white transition-colors" title="Volume Up" aria-label="Volume up" onClick={() => changeVolume(10)}>
+          <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Up" aria-label="Volume up" onClick={() => changeVolume(10)}>
             <i className="fa-solid fa-volume-high" aria-hidden="true" />
           </button>
         </div>
@@ -509,7 +509,7 @@ function Weather({ status, setStatus }) {
           aria-controls="geo-list"
           aria-autocomplete="list"
           aria-activedescendant={open && active >= 0 ? `geo-opt-${active}` : undefined}
-          placeholder="Search location... (e.g., Tokyo)"
+          placeholder="Search city…"
           maxLength={80}
           value={q}
           onChange={(e) => {
@@ -592,7 +592,8 @@ function Weather({ status, setStatus }) {
           <button
             onClick={openDetail}
             aria-haspopup="dialog"
-            className="font-mono text-[11px] uppercase tracking-wider text-lofi-muted group-hover:text-lofi-primary hover:text-lofi-primary transition-colors"
+            // padding + negative margin: a 32px+ tap target, same look
+            className="py-2 -my-2 px-1 -mx-1 font-mono text-[11px] uppercase tracking-wider text-lofi-muted group-hover:text-lofi-primary hover:text-lofi-primary transition-colors"
           >
             Details <span aria-hidden="true">›</span>
           </button>
@@ -1382,7 +1383,7 @@ function ServiceCard({ s, accent, live, stats }) {
       target="_blank"
       rel="noopener noreferrer"
       data-anim
-      className="@container bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden card-blur"
+      className="@container bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 px-3 py-5 sm:p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden card-blur"
     >
       <div className="absolute inset-0 bg-linear-to-b from-lofi-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       <div
@@ -1396,7 +1397,7 @@ function ServiceCard({ s, accent, live, stats }) {
       </div>
       <div className="z-10 mt-1 w-full min-w-0">
         {/* 2 lines reserved so neighbours line up whether the name wraps or not */}
-        <div className="min-h-[2lh] text-sm font-medium text-white text-balance wrap-break-word group-hover:text-lofi-primary transition-colors">{s.name}</div>
+        <div className="min-h-[2lh] text-sm font-medium text-white text-balance wrap-break-word hyphens-auto group-hover:text-lofi-primary transition-colors">{s.name}</div>
         <div className="text-[10px] text-lofi-muted mt-1 font-mono tracking-tight truncate">{new URL(s.href).hostname}</div>
         {live && (
           <div
@@ -1412,9 +1413,9 @@ function ServiceCard({ s, accent, live, stats }) {
       {s.secret && <Secret />}
       {/* live widget numbers (internal services only, from /api/private) */}
       {Array.isArray(stats) && (
-        <dl className="z-10 w-full grid grid-cols-1 @[8.5rem]:grid-cols-2 gap-1.5">
+        <dl className="z-10 w-full grid grid-cols-1 @[9rem]:grid-cols-2 gap-1.5">
           {stats.map(([label, value]) => (
-            <div key={label} title={`${label}: ${value}`} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0 @[8.5rem]:odd:last:col-span-2">
+            <div key={label} title={`${label}: ${value}`} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0 @[9rem]:odd:last:col-span-2">
               <dt className="text-[9px] font-mono uppercase text-lofi-muted truncate">{label}</dt>
               <dd className="text-xs font-medium text-white tabular-nums truncate">{compact(value)}</dd>
             </div>
@@ -1484,7 +1485,7 @@ function Server({ d }) {
         <a
           href={`${AUTH_URL}/?rd=${here}`}
           aria-label="Sign in to see server status and internal services"
-          className="shrink-0 text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 px-3 py-1.5 rounded-full border border-lofi-primary/20 transition-colors"
+          className="shrink-0 text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 px-3 py-2 rounded-full border border-lofi-primary/20 transition-colors"
         >
           Sign in
         </a>
