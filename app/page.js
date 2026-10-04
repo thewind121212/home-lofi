@@ -267,7 +267,7 @@ export default function Home() {
                 </span>
               )}
               {/* phones: the moon (+ the title) says it */}
-              {sceneDown && <span className="hidden sm:inline text-[10px] text-lofi-secondary">offline</span>}
+              {sceneDown && <span className="hidden sm:inline text-[10px] text-red-400">offline</span>}
               <span className="min-w-0 sm:max-w-28 truncate text-white">{sceneName(scene ?? 'london')}</span>
               <span className="max-[374px]:hidden text-[9px]" aria-hidden="true">
                 <i className="fa-solid fa-chevron-down" />
@@ -490,7 +490,7 @@ function Music() {
           </button>
         </div>
         <p className="text-[10px] font-mono text-lofi-muted text-center mt-2" aria-live="polite">
-          VOL {volume}%{hint && <span className="text-lofi-secondary"> · audio unavailable</span>}
+          VOL {volume}%{hint && <span className="text-red-400"> · audio unavailable</span>}
         </p>
       </div>
 
@@ -698,7 +698,7 @@ function Weather({ status, setStatus, setWx }) {
               </li>
             ))
           ) : (
-            <li role="option" aria-selected={false} aria-disabled="true" className={`px-3 py-2 text-xs ${res.state === 'error' ? 'text-lofi-secondary' : 'text-lofi-muted'}`}>
+            <li role="option" aria-selected={false} aria-disabled="true" className={`px-3 py-2 text-xs ${res.state === 'error' ? 'text-red-400' : 'text-lofi-muted'}`}>
               {{ loading: 'Searching…', empty: 'No places found', error: 'Search unavailable' }[res.state]}
             </li>
           )}
@@ -822,7 +822,7 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
         <div className="py-10 text-center font-mono text-xs" aria-live="polite">
           {detail.state === 'error' ? (
             <>
-              <p className="text-lofi-secondary mb-3">Details unavailable</p>
+              <p className="text-red-400 mb-3">Details unavailable</p>
               <button onClick={onRetry} className="px-3 py-1.5 rounded-full border border-white/10 text-lofi-text hover:text-lofi-primary hover:border-lofi-primary/40 transition-colors">
                 Retry
               </button>
@@ -1233,7 +1233,7 @@ function Stat({ icon, label, value, pct, title }) {
         <div className="text-sm text-white font-medium truncate" title={title}>{value}</div>
         {pct !== undefined && (
           <div className="h-1 mt-1.5 rounded-full bg-lofi-base/60 overflow-hidden" aria-hidden="true">
-            <div className={`h-full rounded-full transition-all duration-500 ${pct > 85 ? 'bg-lofi-secondary' : 'bg-lofi-primary'}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
+            <div className={`h-full rounded-full transition-all duration-500 ${pct > 85 ? 'bg-red-400' : 'bg-lofi-primary'}`} style={{ width: `${Math.min(100, pct ?? 0)}%` }} />
           </div>
         )}
       </div>
@@ -1549,9 +1549,9 @@ function ServiceCard({ s, accent, live, stats }) {
         {live && (
           <div
             title={live.up ? `Online${live.ms != null ? ` · ${live.ms} ms` : ''}` : 'Down'}
-            className={`mt-1.5 text-[10px] font-mono whitespace-nowrap flex items-center justify-center gap-1.5 ${live.up ? 'text-emerald-400' : 'text-lofi-secondary'}`}
+            className={`mt-1.5 text-[10px] font-mono whitespace-nowrap flex items-center justify-center gap-1.5 ${live.up ? 'text-emerald-400' : 'text-red-400'}`}
           >
-            <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${live.up ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-lofi-secondary'}`} aria-hidden="true" />
+            <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${live.up ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-red-400'}`} aria-hidden="true" />
             {/* narrow cards: "● 239 ms" */}
             {live.up ? live.ms == null ? 'Online' : <span><span className="@max-[8rem]:sr-only">Online · </span>{live.ms} ms</span> : 'Down'}
           </div>
