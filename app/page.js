@@ -3,7 +3,7 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
-import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, themeColors, toUnit } from '../lib/settings'
+import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { Prefs, Settings, closeDialog, motionOff } from './settings'
 
@@ -63,8 +63,17 @@ export default function Home() {
   const priv = usePrivate()
   const videoRef = useRef(null)
   const setDlg = useRef(null)
-  const [sceneDown, setSceneDown] = useState(false) // scene files missing / host down -> night sky fallback
-  useEffect(() => setSceneDown(false), [scene])
+  const [wx, setWx] = useState() // the Weather card's /api/weather data: undefined = loading, null = failed
+  // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
+  // A variant that failed to load falls back to the signature files for that scene.
+  // ponytail: failures are remembered until reload, so variants uploaded later show up after a refresh
+  const [badVariants, setBadVariants] = useState(() => new Set())
+  const wantMode = set.weather !== 'live' ? set.weather : wx === undefined ? null : sceneWeather(wx?.code)
+  const mode = wantMode && badVariants.has(`${wantMode}/${scene}`) ? 'signature' : wantMode
+  const base = scene && mode && (mode === 'signature' ? `${SCENES_URL}/${scene}` : `${SCENES_URL}/${mode}/${scene}`)
+  const [sceneDown, setSceneDown] = useState(false) // signature files missing / host down -> night sky fallback
+  useEffect(() => setSceneDown(false), [base])
+  const onSceneFail = () => (mode === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${mode}/${scene}`)))
 
   useEffect(() => {
     const s = load('scene', 'london')
@@ -149,13 +158,13 @@ export default function Home() {
       {/* Night sky: shows while the scene loads, and stays as the fallback if it can't load */}
       <NightSky />
       {/* Full-screen animated scene (decorative) */}
-      {scene && !sceneDown && (
+      {base && !sceneDown && (
         <video
-          key={scene}
+          key={base}
           ref={videoRef}
           className="fixed top-0 left-0 w-full h-lvh object-cover"
           style={{ imageRendering: 'pixelated' }}
-          poster={`${SCENES_URL}/${scene}.webp`}
+          poster={`${base}.webp`}
           autoPlay={!reduced}
           preload={reduced ? 'none' : 'auto'}
           muted
@@ -163,12 +172,12 @@ export default function Home() {
           playsInline
           aria-hidden="true"
         >
-          <source src={`${SCENES_URL}/${scene}.webm`} type="video/webm" />
-          <source src={`${SCENES_URL}/${scene}.mp4`} type="video/mp4" />
+          <source src={`${base}.webm`} type="video/webm" />
+          <source src={`${base}.mp4`} type="video/mp4" />
         </video>
       )}
-      {scene && !sceneDown && (
-        <SceneCanvas key={'c' + scene} id={scene} videoRef={videoRef} reduced={reduced} onFail={() => setSceneDown(true)} />
+      {base && !sceneDown && (
+        <SceneCanvas key={'c' + base} base={base} variant={mode !== 'signature'} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
       )}
       <div
         className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus ? 'opacity-0' : ''}`}
@@ -250,7 +259,7 @@ export default function Home() {
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
             <Music />
-            <Weather status={status} setStatus={setStatus} />
+            <Weather status={status} setStatus={setStatus} setWx={setWx} />
             <Server d={priv} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
@@ -271,7 +280,7 @@ export default function Home() {
           <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
         </button>
       )}
-      <Settings dlg={setDlg} set={set} update={update} reset={reset} />
+      <Settings dlg={setDlg} set={set} update={update} reset={reset} scene={{ want: wantMode, mode, from: wx?.name }} />
     </Prefs>
   )
 }
@@ -426,7 +435,7 @@ function Music() {
   )
 }
 
-function Weather({ status, setStatus }) {
+function Weather({ status, setStatus, setWx }) {
   const [loc, setLoc] = useState(null)
   const [w, setW] = useState(null)
   const [q, setQ] = useState('')
@@ -459,10 +468,14 @@ function Weather({ status, setStatus }) {
         const data = await r.json()
         if (alive) {
           setW(data)
+          setWx(data)
           setStatus('ok')
         }
       } catch {
-        if (alive) setStatus('error')
+        if (alive) {
+          setWx(null)
+          setStatus('error')
+        }
       }
     }
     get()
@@ -471,7 +484,7 @@ function Weather({ status, setStatus }) {
       alive = false
       clearInterval(t)
     }
-  }, [loc, setStatus])
+  }, [loc, setStatus, setWx])
 
   useEffect(() => {
     if (!open) return
@@ -1090,13 +1103,13 @@ function NightSky() {
 // Pixel-sharp scene: redraws each video frame onto a device-resolution canvas with smoothing off, the way
 // loficities draws its own canvas. Browsers smooth a scaled <video> (Chrome ignores image-rendering on video),
 // which blurs pixel edges on 4K. The <video> underneath stays as the fallback and the frame source.
-function SceneCanvas({ id, videoRef, reduced, onFail }) {
+function SceneCanvas({ base, variant, videoRef, reduced, onFail }) {
   const ref = useRef(null)
   useEffect(() => {
     const c = ref.current, g = c.getContext('2d'), v = videoRef.current
     if (!g || !v) return
     const poster = new Image()
-    poster.src = `${SCENES_URL}/${id}.webp`
+    poster.src = `${base}.webp`
     let src = poster, handle = 0, running = false
     const draw = () => {
       const w = src.videoWidth || src.naturalWidth, h = src.videoHeight || src.naturalHeight
@@ -1125,11 +1138,12 @@ function SceneCanvas({ id, videoRef, reduced, onFail }) {
       if (!running) (running = true), tick()
     }
     poster.onload = () => src === poster && draw()
-    // fallback: both video sources failed (404, host down), or, when motion is reduced (no video), the poster failed
+    // fallback: both video sources failed (404, host down), or the poster failed when motion is reduced (no video)
+    // or for a weather variant (not uploaded yet)
     const fail = () => onFail()
     const lastSource = v.querySelector('source:last-of-type')
     lastSource?.addEventListener('error', fail)
-    if (reduced) poster.onerror = fail
+    if (reduced || variant) poster.onerror = fail
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(c)
@@ -1141,7 +1155,7 @@ function SceneCanvas({ id, videoRef, reduced, onFail }) {
       lastSource?.removeEventListener('error', fail)
       rvfc ? v.cancelVideoFrameCallback(handle) : cancelAnimationFrame(handle)
     }
-  }, [id, videoRef])
+  }, [base, videoRef])
   return <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh" aria-hidden="true" />
 }
 
