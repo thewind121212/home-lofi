@@ -10,7 +10,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Scenes**: full-screen, seamlessly looping pixel-art cities, drawn onto a canvas with smoothing off, so the pixels stay sharp up to 4K.
   There's a scene picker (saved per browser) and a focus mode that hides the panels.
 - **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
-- **Weather**: current conditions plus a location search. The server proxies a weather API, so the browser never calls it directly.
+- **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
+  - Click the card (or **Details ›**) for a details panel: next 24 hours, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
+  - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
   - Internal cards add live stats (AdGuard, Nginx Proxy Manager, Portainer, Nextcloud, What's Up Docker, n8n, MySpeed).
@@ -25,7 +27,7 @@ npm install
 cp .env.example .env                                         # fill in GATE_SECRET at least
 cp private-services.example.json private-services.json      # optional
 npm run dev        # http://localhost:3000 (binds 0.0.0.0)
-npm test           # self-checks: weather mapping, input validation, host stat parsers
+npm test           # self-checks: weather mapping, AQI bands, details shaping, input validation, host stat parsers
 ```
 
 The scene videos are not in the repo (see [Scenes](#scenes)). Without them the page still works: the scene area is just dark.
@@ -46,7 +48,7 @@ Change it for your own domain.
 | --- | --- | --- |
 | `GATE_SECRET` | required, ≥ 16 chars | `/api/private` (see below) |
 | `SCENES_URL` | empty = `public/scenes` | where scene videos load from, e.g. a static host; **build-time** (rebuild after changing) |
-| `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/geo` |
+| `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
 
