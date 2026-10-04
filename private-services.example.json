@@ -1,0 +1,4 @@
+[
+  {"name": "Service One", "href": "https://one.example.internal", "fa": "fa-solid fa-cube", "widget": "adguard"},
+  {"name": "Service Two", "href": "https://two.example.internal", "fa": "fa-solid fa-database"}
+]
