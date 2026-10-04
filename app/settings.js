@@ -243,7 +243,7 @@ export function Gallery({ dlg, scene, variant, onPick }) {
       className="gallery text-lofi-text overscroll-contain"
     >
       <div className="min-h-full flex flex-col">
-        <div className="sticky top-0 z-10 bg-lofi-base/95 border-b border-white/5 px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+        <div className="sticky top-0 z-10 bg-lofi-base border-b border-white/5 px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-x-4 gap-y-3">
             <h2 id="gal-title" className="grow text-lg sm:text-xl font-medium text-white flex items-center gap-3">
               <i className="fa-solid fa-images text-lofi-primary" aria-hidden="true" /> Choose a scene
