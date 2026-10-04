@@ -47,7 +47,7 @@ Change it for your own domain.
 | env | default | used by |
 | --- | --- | --- |
 | `GATE_SECRET` | required, ≥ 16 chars | `/api/private` (see below) |
-| `SCENES_URL` | empty = `public/scenes` | where scene videos load from, e.g. a static host; **build-time** (rebuild after changing) |
+| `SCENES_URL` | empty = `/scenes` (`public/scenes`) | where scene videos load from, e.g. a static host; **build-time** (rebuild after changing). The Docker image has no scenes, see [Scenes](#scenes) |
 | `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
@@ -118,7 +118,7 @@ Make sure the proxy passes the real client IP to Authelia (`X-Forwarded-For $rem
 git clone <this repo> && cd home-lofi
 cp .env.example .env && nano .env                            # GATE_SECRET + widget credentials
 cp private-services.example.json private-services.json && nano private-services.json
-# scenes: set SCENES_URL in .env to your static host, or copy files into public/scenes/ (see Scenes)
+# scenes: set SCENES_URL in .env to your static host (see Scenes)
 docker network create my-dns 2>/dev/null || true             # or use your proxy's network (docker-compose.yml)
 docker compose up -d --build
 ```
@@ -146,14 +146,27 @@ no external network). In Coolify:
 ## Scenes
 
 The scene videos are not in this repository: they are large, and the art is
-[Lofi Cities](https://loficities.com) by its creator, not mine to republish. Bring your own files and either:
+[Lofi Cities](https://loficities.com) by its creator, not mine to republish. Bring your own files.
 
-- **host them on a static server / CDN** (recommended: keeps the image small, nothing to copy per deploy). Upload to e.g.
-  `https://static.example.com/scenes/` and set `SCENES_URL` to that before `docker compose up -d --build`. The server must
-  answer byte-range requests (HTTP 206), which any normal web server does. A long `Cache-Control` on that path helps.
-- or **serve them from this app**: put them in `public/scenes/` (git-ignored) before building.
+**Host them on a static server / CDN** and point `SCENES_URL` at it. That's the built-in way: the Docker image does
+**not** contain scenes (`.dockerignore` skips `public/scenes/`), so images stay small and nothing is copied per deploy.
+Upload to e.g. `https://static.example.com/scenes/` and set `SCENES_URL` to that before `docker compose up -d --build`.
+The server must answer byte-range requests (HTTP 206), which any normal web server does. A long `Cache-Control` on that
+path helps.
 
-Each scene `<id>` needs three files in `public/scenes/`:
+Optional: to serve them from the app itself instead, leave `SCENES_URL` empty and mount the folder into the container
+with your own compose override (not in the default compose files):
+
+```yaml
+services:
+  home-lofi:
+    volumes:
+      - ./public/scenes:/app/public/scenes:ro
+```
+
+In `npm run dev` / `npm start` without Docker, files in `public/scenes/` (git-ignored) are served as-is.
+
+Each scene `<id>` needs three files (in the static folder, or `public/scenes/`):
 
 | file | format |
 | --- | --- |
