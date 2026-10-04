@@ -75,7 +75,7 @@ export default function Home() {
   const base = scene && mode && (mode === 'signature' ? `${SCENES_URL}/${scene}` : `${SCENES_URL}/${mode}/${scene}`)
   const [sceneDown, setSceneDown] = useState(false) // signature files missing / host down -> night sky fallback
   useEffect(() => setSceneDown(false), [base])
-  const onSceneFail = () => (mode === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${mode}/${scene}`)))
+  const onSceneFail = (m) => (m === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${m}/${scene}`)))
 
   useEffect(() => {
     let raw
@@ -215,25 +215,7 @@ export default function Home() {
       <NightSky />
       {/* Full-screen animated scene (decorative) */}
       {base && !sceneDown && (
-        <video
-          key={base}
-          ref={videoRef}
-          className="fixed top-0 left-0 w-full h-lvh object-cover motion-safe:animate-[fade-in_0.6s_ease-out]"
-          style={{ imageRendering: 'pixelated' }}
-          poster={`${base}.webp`}
-          autoPlay={!reduced}
-          preload={reduced ? 'none' : 'auto'}
-          muted
-          loop
-          playsInline
-          aria-hidden="true"
-        >
-          <source src={`${base}.webm`} type="video/webm" />
-          <source src={`${base}.mp4`} type="video/mp4" />
-        </video>
-      )}
-      {base && !sceneDown && (
-        <SceneCanvas key={'c' + base} base={base} variant={mode !== 'signature'} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
+        <SceneCanvas key={scene} base={base} mode={mode} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
       )}
       <div
         className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus || idle ? 'opacity-0' : ''}`}
@@ -1169,22 +1151,180 @@ function NightSky() {
 
 // Pixel-sharp scene: redraws each video frame onto a device-resolution canvas with smoothing off, the way
 // loficities draws its own canvas. Browsers smooth a scaled <video> (Chrome ignores image-rendering on video),
-// which blurs pixel edges on 4K. The <video> underneath stays as the fallback and the frame source.
-function SceneCanvas({ base, variant, videoRef, reduced, onFail }) {
+// which blurs pixel edges on 4K. The videos sit underneath as frame sources (and show their poster before the
+// first draw). Keyed by scene: a weather change for the same scene cross-fades in place. Every variant of a scene
+// is the same loop on the same timeline, so the new video starts at the old one's currentTime and only the weather
+// changes. At most two videos decode at once.
+const FADE = 1000
+const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
+
+function sceneVideo(base, holder, preload) {
+  const v = document.createElement('video')
+  v.className = 'fixed top-0 left-0 w-full h-lvh object-cover'
+  v.style.imageRendering = 'pixelated'
+  v.muted = v.loop = v.playsInline = true
+  v.setAttribute('aria-hidden', 'true')
+  v.preload = preload ? 'auto' : 'none'
+  v.poster = `${base}.webp`
+  for (const ext of ['webm', 'mp4']) {
+    const s = document.createElement('source')
+    s.src = `${base}.${ext}`
+    s.type = `video/${ext}`
+    v.append(s)
+  }
+  holder.prepend(v) // under the current one
+  return v
+}
+function dropVideo(v) {
+  v.pause()
+  v.querySelectorAll('source').forEach((s) => s.removeAttribute('src'))
+  v.load() // frees the decoder
+  v.remove()
+}
+
+function SceneCanvas({ base, mode, videoRef, reduced, onFail }) {
   const ref = useRef(null)
+  const holder = useRef(null)
+  const api = useRef(null)
+  const live = useRef({})
+  live.current = { reduced, onFail }
+
   useEffect(() => {
-    const c = ref.current, g = c.getContext('2d'), v = videoRef.current
-    if (!g || !v) return
-    const poster = new Image()
-    poster.src = `${base}.webp`
-    let src = poster, handle = 0, running = false
-    const draw = () => {
-      const w = src.videoWidth || src.naturalWidth, h = src.videoHeight || src.naturalHeight
-      if (!w) return
+    const c = ref.current, g = c.getContext('2d')
+    if (!g) return
+    let cur = null // { v, base, mode }: the shown video
+    let next = null // { v, base, mode, t0 }: the incoming variant; t0 set once its fade runs
+    let still = null // { img, t0 }: snapshot of a mix interrupted by a newer switch, fading out over cur
+    let src = null // what cur draws from: its poster until it plays, then the video
+    let raf = 0, vfc = 0, vfcVideo = null
+    const rvfc = 'requestVideoFrameCallback' in HTMLVideoElement.prototype
+
+    const cover = (img, a) => {
+      const w = img.videoWidth || img.naturalWidth || img.width, h = img.videoHeight || img.naturalHeight || img.height
+      if (!w) return false
       const k = Math.max(c.width / w, c.height / h) // object-fit: cover
-      g.imageSmoothingEnabled = false
-      g.drawImage(src, (c.width - w * k) / 2, (c.height - h * k) / 2, w * k, h * k)
+      g.globalAlpha = a
+      g.drawImage(img, (c.width - w * k) / 2, (c.height - h * k) / 2, w * k, h * k)
+      return true
     }
+    const promote = () => {
+      dropVideo(cur.v)
+      cur = next
+      next = null
+      src = videoRef.current = cur.v
+      cur.v.addEventListener('playing', onPlaying)
+    }
+    const draw = () => {
+      g.imageSmoothingEnabled = false
+      if (!src || !cover(src, 1)) return
+      if (still) {
+        const q = ease(Math.min(1, (performance.now() - still.t0) / FADE))
+        if (q >= 1) still = null
+        else cover(still.img, 1 - q)
+      }
+      if (next?.t0) {
+        const p = ease(Math.min(1, (performance.now() - next.t0) / FADE))
+        cover(next.v, p)
+        if (p >= 1) promote()
+      }
+      g.globalAlpha = 1
+    }
+    const stop = () => {
+      cancelAnimationFrame(raf)
+      vfcVideo?.cancelVideoFrameCallback(vfc)
+      vfcVideo = null
+    }
+    // rAF while fading, otherwise only on new video frames (rVFC); a paused video (hidden tab) lets the loop sleep
+    const loop = () => {
+      stop()
+      draw()
+      if (next?.t0 || still || !rvfc) raf = requestAnimationFrame(loop)
+      else if (src instanceof HTMLVideoElement) vfc = (vfcVideo = src).requestVideoFrameCallback(loop)
+    }
+    function onPlaying() {
+      src = cur.v
+      loop()
+    }
+
+    // a fresh cur: poster first, then the video once it plays. Fails = both sources, or the poster when it's all we
+    // load (reduced motion) or the file is a weather variant (not uploaded yet)
+    const start = (b, m) => {
+      const v = sceneVideo(b, holder.current, !live.current.reduced)
+      v.autoplay = !live.current.reduced
+      cur = { v, base: b, mode: m }
+      videoRef.current = v
+      const poster = new Image()
+      poster.onload = () => cur?.v === v && src !== v && ((src = poster), draw())
+      poster.onerror = () => (live.current.reduced || m !== 'signature') && cur?.v === v && live.current.onFail(m)
+      poster.src = `${b}.webp`
+      v.querySelector('source:last-of-type').addEventListener('error', () => cur?.v === v && live.current.onFail(m))
+      v.addEventListener('playing', onPlaying)
+    }
+
+    const switchTo = (b, m) => {
+      if (next?.base === b) return
+      if (next) {
+        // a newer switch mid-fade: keep the visible mix as a still that fades out, keep the stronger video
+        if (next.t0) {
+          const p = ease(Math.min(1, (performance.now() - next.t0) / FADE))
+          const s = document.createElement('canvas')
+          s.width = c.width
+          s.height = c.height
+          s.getContext('2d').drawImage(c, 0, 0)
+          still = { img: s, t0: performance.now() }
+          if (p >= 0.5) promote()
+        }
+        if (next) dropVideo(next.v)
+        next = null
+      }
+      if (b === cur.base) return loop()
+      // nothing played yet (poster only, or still loading): just replace; the canvas keeps its last frame meanwhile
+      if (src !== cur.v) {
+        dropVideo(cur.v)
+        src = null
+        return start(b, m)
+      }
+      const v = sceneVideo(b, holder.current, true)
+      const n = (next = { v, base: b, mode: m })
+      let lead = 0.05, tries = 0
+      const sync = () => {
+        const d = v.duration || cur.v.duration
+        v.currentTime = d ? (cur.v.currentTime + (cur.v.paused ? 0 : lead)) % d : cur.v.currentTime
+      }
+      v.addEventListener('loadedmetadata', sync, { once: true })
+      const check = () => {
+        if (next !== n || n.t0 || v.paused) return
+        const d = v.duration || 240
+        const drift = ((((cur.v.currentTime - v.currentTime) % d) + d * 1.5) % d) - d / 2
+        if (Math.abs(drift) > 0.08 && tries++ < 3) {
+          lead += drift // the seek took that much longer: aim further ahead
+          return sync()
+        }
+        c.dataset.drift = drift.toFixed(3) // for the e2e check
+        n.t0 = performance.now()
+        loop()
+      }
+      v.addEventListener('seeked', () => {
+        if (next !== n) return
+        // reduced motion (cur paused on a frame): swap instantly at the same time position
+        if (cur.v.paused) {
+          promote()
+          return draw()
+        }
+        if (v.paused) v.play().catch(() => {})
+        else check()
+      })
+      v.addEventListener('playing', check)
+      // missing variant: cancel, keep the current video, let Home fall back to Signature
+      v.querySelector('source:last-of-type').addEventListener('error', () => {
+        if (next !== n) return
+        dropVideo(v)
+        next = null
+        live.current.onFail(m)
+      })
+    }
+    api.current = { switchTo }
+
     // sized from its own box (h-lvh: doesn't change when the mobile toolbar slides), not window resize, which fires
     // all through a mobile scroll. ponytail: DPR capped at 2, 3x phones cost a lot more for no visible gain
     const fit = () => {
@@ -1195,36 +1335,28 @@ function SceneCanvas({ base, variant, videoRef, reduced, onFail }) {
       c.height = h
       draw()
     }
-    const rvfc = 'requestVideoFrameCallback' in v
-    const tick = () => {
-      draw()
-      handle = rvfc ? v.requestVideoFrameCallback(tick) : requestAnimationFrame(tick) // rVFC: only on new frames
-    }
-    const onPlaying = () => {
-      src = v
-      if (!running) (running = true), tick()
-    }
-    poster.onload = () => src === poster && draw()
-    // fallback: both video sources failed (404, host down), or the poster failed when motion is reduced (no video)
-    // or for a weather variant (not uploaded yet)
-    const fail = () => onFail()
-    const lastSource = v.querySelector('source:last-of-type')
-    lastSource?.addEventListener('error', fail)
-    if (reduced || variant) poster.onerror = fail
+    start(base, mode)
     fit()
     const ro = new ResizeObserver(fit)
     ro.observe(c)
-    v.addEventListener('playing', onPlaying)
-    if (!v.paused && v.readyState > 2) onPlaying()
     return () => {
       ro.disconnect()
-      v.removeEventListener('playing', onPlaying)
-      lastSource?.removeEventListener('error', fail)
-      rvfc ? v.cancelVideoFrameCallback(handle) : cancelAnimationFrame(handle)
+      stop()
+      for (const x of [cur, next]) x && dropVideo(x.v)
+      cur = next = null
+      api.current = null
     }
-  }, [base, videoRef])
+  }, [videoRef]) // base / mode changes go through switchTo below, not a remount
+
+  useEffect(() => api.current?.switchTo(base, mode), [base, mode])
+
   // fade-in: a cheap cross-fade (through the night sky) on scene switches
-  return <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh motion-safe:animate-[fade-in_0.6s_ease-out]" aria-hidden="true" />
+  return (
+    <div className="motion-safe:animate-[fade-in_0.6s_ease-out]">
+      <div ref={holder} aria-hidden="true" />
+      <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh" aria-hidden="true" />
+    </div>
+  )
 }
 
 function Stat({ icon, label, value, pct, title }) {
