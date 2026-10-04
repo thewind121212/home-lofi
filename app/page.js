@@ -100,7 +100,7 @@ export default function Home() {
         <video
           key={scene}
           ref={videoRef}
-          className="fixed inset-0 w-full h-full object-cover"
+          className="fixed top-0 left-0 w-full h-lvh object-cover"
           style={{ imageRendering: 'pixelated' }}
           poster={`${SCENES_URL}/${scene}.webp`}
           autoPlay={!reduced}
@@ -118,7 +118,7 @@ export default function Home() {
         <SceneCanvas key={'c' + scene} id={scene} videoRef={videoRef} reduced={reduced} onFail={() => setSceneDown(true)} />
       )}
       <div
-        className={`fixed inset-0 pointer-events-none bg-linear-to-b from-lofi-base/75 via-lofi-base/45 to-lofi-base/85 transition-opacity duration-500 ${focus ? 'opacity-0' : ''}`}
+        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none bg-linear-to-b from-lofi-base/75 via-lofi-base/45 to-lofi-base/85 transition-opacity duration-500 ${focus ? 'opacity-0' : ''}`}
       />
 
       <div
@@ -989,7 +989,7 @@ function AqiPill({ aqi, className = '' }) {
 // fallback when it can't load.
 function NightSky() {
   return (
-    <div className="night-sky fixed inset-0" aria-hidden="true">
+    <div className="night-sky fixed top-0 left-0 w-full h-lvh" aria-hidden="true">
       <div className="night-stars absolute inset-0" />
       <div className="night-stars night-stars-2 absolute inset-0" />
       <div className="absolute top-[5%] right-[4%] w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-lofi-highlight shadow-[0_0_60px_20px_rgba(252,227,138,0.35)] motion-safe:animate-float" />
@@ -1015,9 +1015,14 @@ function SceneCanvas({ id, videoRef, reduced, onFail }) {
       g.imageSmoothingEnabled = false
       g.drawImage(src, (c.width - w * k) / 2, (c.height - h * k) / 2, w * k, h * k)
     }
+    // sized from its own box (h-lvh: doesn't change when the mobile toolbar slides), not window resize, which fires
+    // all through a mobile scroll. ponytail: DPR capped at 2, 3x phones cost a lot more for no visible gain
     const fit = () => {
-      c.width = Math.round(innerWidth * devicePixelRatio)
-      c.height = Math.round(innerHeight * devicePixelRatio)
+      const k = Math.min(devicePixelRatio, 2)
+      const w = Math.round(c.clientWidth * k), h = Math.round(c.clientHeight * k)
+      if (w === c.width && h === c.height) return // assigning clears the canvas
+      c.width = w
+      c.height = h
       draw()
     }
     const rvfc = 'requestVideoFrameCallback' in v
@@ -1036,17 +1041,18 @@ function SceneCanvas({ id, videoRef, reduced, onFail }) {
     lastSource?.addEventListener('error', fail)
     if (reduced) poster.onerror = fail
     fit()
-    addEventListener('resize', fit)
+    const ro = new ResizeObserver(fit)
+    ro.observe(c)
     v.addEventListener('playing', onPlaying)
     if (!v.paused && v.readyState > 2) onPlaying()
     return () => {
-      removeEventListener('resize', fit)
+      ro.disconnect()
       v.removeEventListener('playing', onPlaying)
       lastSource?.removeEventListener('error', fail)
       rvfc ? v.cancelVideoFrameCallback(handle) : cancelAnimationFrame(handle)
     }
   }, [id, videoRef])
-  return <canvas ref={ref} className="fixed inset-0 w-full h-full" aria-hidden="true" />
+  return <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh" aria-hidden="true" />
 }
 
 function Stat({ icon, label, value, pct }) {
@@ -1321,7 +1327,7 @@ function ServiceCard({ s, accent, live, stats }) {
       target="_blank"
       rel="noopener noreferrer"
       data-anim
-      className="bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden backdrop-blur-sm"
+      className="bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden card-blur"
     >
       <div className="absolute inset-0 bg-linear-to-b from-lofi-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
       <div

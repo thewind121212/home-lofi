@@ -21,7 +21,7 @@ export default function RootLayout({ children }) {
           referrerPolicy="no-referrer"
         />
       </head>
-      <body className="font-sans antialiased min-h-screen overflow-x-hidden selection:bg-lofi-primary selection:text-lofi-base">
+      <body className="font-sans antialiased min-h-screen selection:bg-lofi-primary selection:text-lofi-base">
         {children}
       </body>
     </html>
