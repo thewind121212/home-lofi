@@ -138,6 +138,14 @@ body {
     text-shadow: 0 0 10px color-mix(in oklab, var(--color-lofi-primary) 50%, transparent), 0 0 20px color-mix(in oklab, var(--color-lofi-primary) 30%, transparent);
   }
 
+  /* idle mode's big clock: theme glow, plus a soft shade so it reads over a bright scene */
+  .idle-clock {
+    background: radial-gradient(ellipse 60% 40% at center, rgb(26 26 46 / 0.55), transparent 70%);
+    text-shadow:
+      0 0 24px color-mix(in oklab, var(--color-lofi-primary) 65%, transparent),
+      0 0 72px color-mix(in oklab, var(--color-lofi-primary) 40%, transparent);
+  }
+
   .interactive-hover { transition: all 0.3s ease; }
   .interactive-hover:hover {
     transform: translateY(-2px);
