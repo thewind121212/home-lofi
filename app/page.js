@@ -5,7 +5,7 @@ import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { DEFAULTS, SETTINGS_KEY, parseSettings, themeColors } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
-import { Prefs, closeDialog, motionOff } from './settings'
+import { Prefs, Settings, closeDialog, motionOff } from './settings'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -57,6 +57,7 @@ export default function Home() {
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
   const videoRef = useRef(null)
+  const setDlg = useRef(null)
   const [sceneDown, setSceneDown] = useState(false) // scene files missing / host down -> night sky fallback
   useEffect(() => setSceneDown(false), [scene])
 
@@ -108,6 +109,12 @@ export default function Home() {
     const next = { ...set, ...patch }
     setSettings(next)
     save('settings', next)
+  }
+  function reset() {
+    setSettings(DEFAULTS)
+    try {
+      localStorage.removeItem(SETTINGS_KEY)
+    } catch {}
   }
 
   useEffect(() => {
@@ -214,6 +221,15 @@ export default function Home() {
             >
               <i className="fa-solid fa-eye-slash text-xs" aria-hidden="true" />
             </button>
+            <button
+              onClick={() => setDlg.current.open || setDlg.current.showModal()}
+              aria-label="Settings"
+              aria-haspopup="dialog"
+              title="Settings"
+              className="order-4 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+            >
+              <i className="fa-solid fa-gear text-xs" aria-hidden="true" />
+            </button>
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               {now ? `${pad(now.getHours())}:${pad(now.getMinutes())}` : '--:--'}
@@ -249,6 +265,7 @@ export default function Home() {
           <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
         </button>
       )}
+      <Settings dlg={setDlg} set={set} update={update} reset={reset} />
     </Prefs>
   )
 }
