@@ -124,34 +124,38 @@ export default function Home() {
       <div
         className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-opacity duration-500 ${focus ? 'opacity-0 invisible' : ''}`}
       >
-        <header className="flex flex-col md:flex-row justify-between items-center mb-8 glass-panel rounded-2xl p-6">
-          <div className="flex items-center space-x-4 mb-4 md:mb-0">
-            <div className={`w-12 h-12 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
+        {/* phones: greeting, then clock | scene + focus on one row. sm+: one row (also landscape phones) */}
+        <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
               {icon && <i className={`fa-solid ${icon} text-white`} aria-hidden="true" />}
             </div>
             <div>
               <h1 className="text-2xl font-semibold tracking-tight text-white">{greeting}</h1>
-              <p className="text-sm text-lofi-muted font-mono">Welcome to your space.</p>
+              <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4 shrink-0">
             <label
-              className="flex items-center gap-2 bg-lofi-base/50 border border-white/5 rounded-full pl-3 pr-1 py-1.5 text-xs font-mono text-lofi-muted"
+              className="order-2 sm:order-none ml-auto sm:ml-0 min-w-0 flex items-center gap-2 bg-lofi-base/50 border border-white/5 rounded-full pl-3 pr-1 text-xs font-mono text-lofi-muted"
               title={sceneDown ? 'Scene could not load, showing the night sky' : 'Background scene'}
             >
               {sceneDown ? (
                 <i className="fa-solid fa-moon text-lofi-highlight" aria-hidden="true" />
               ) : (
-                <i className="fa-solid fa-image" aria-hidden="true" />
+                <span className="hidden sm:inline">
+                  <i className="fa-solid fa-image" aria-hidden="true" />
+                </span>
               )}
-              {sceneDown && <span className="text-[10px] text-lofi-secondary">offline</span>}
+              {/* phones: the moon (+ the label's title) says it */}
+              {sceneDown && <span className="hidden sm:inline text-[10px] text-lofi-secondary">offline</span>}
               <select
                 value={scene ?? 'london'}
                 onChange={(e) => {
                   setScene(e.target.value)
                   save('scene', e.target.value)
                 }}
-                className="bg-transparent text-white cursor-pointer max-w-28"
+                className="h-8 min-w-0 w-24 sm:w-28 bg-transparent text-white cursor-pointer text-ellipsis"
                 aria-label="Background scene"
               >
                 {SCENES.map((id) => (
@@ -165,11 +169,11 @@ export default function Home() {
               onClick={() => setFocus(true)}
               aria-label="Focus mode: hide panels"
               title="Focus mode"
-              className="w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+              className="order-3 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
             >
               <i className="fa-solid fa-eye-slash text-xs" aria-hidden="true" />
             </button>
-            <div className="text-right">
+            <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               {now ? `${pad(now.getHours())}:${pad(now.getMinutes())}` : '--:--'}
             </div>
