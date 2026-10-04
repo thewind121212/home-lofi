@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
-import { aqiBand } from '../lib/weather'
+import { AQI_BANDS, aqiBand, aqiPos, memoCache } from '../lib/weather'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -23,6 +23,9 @@ const DOT = {
   error: 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.8)]',
 }
 
+// ponytail: details-panel responses per location for 10 min (same as the server revalidate), lost on reload
+const detailCache = memoCache(20, 10 * 60 * 1000)
+const locQuery = (l) => new URLSearchParams({ lat: l.lat, lon: l.lon, tz: l.tz, id: l.id, name: l.name ?? '' })
 const sceneName = (id) => id.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
 const pad = (n) => String(n).padStart(2, '0')
 
@@ -353,6 +356,9 @@ function Weather({ status, setStatus }) {
   const ctrl = useRef(null) // AbortController of the latest search
   const debounce = useRef(null)
   const box = useRef(null)
+  const card = useRef(null)
+  const dlg = useRef(null)
+  const [detail, setDetail] = useState({ state: 'idle' }) // details panel: { key, state, data }
 
   useEffect(() => {
     const l = load('location', null)
@@ -367,8 +373,7 @@ function Weather({ status, setStatus }) {
     const get = async () => {
       setStatus('loading')
       try {
-        const q = new URLSearchParams({ lat: loc.lat, lon: loc.lon, tz: loc.tz, id: loc.id, name: loc.name ?? '' })
-        const r = await fetch('/api/weather?' + q)
+        const r = await fetch('/api/weather?' + locQuery(loc))
         if (!r.ok) throw new Error(r.status)
         const data = await r.json()
         if (alive) {
@@ -425,6 +430,27 @@ function Weather({ status, setStatus }) {
     save('location', place)
   }
 
+  // lazy: fetched only when the panel opens, then served from detailCache
+  function loadDetail() {
+    const key = locQuery(loc).toString()
+    const hit = detailCache.get(key)
+    if (hit) return setDetail({ key, state: 'ok', data: hit })
+    setDetail({ key, state: 'loading' })
+    fetch('/api/weather/detail?' + key)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((data) => {
+        detailCache.set(key, data)
+        setDetail((d) => (d.key === key ? { key, state: 'ok', data } : d))
+      })
+      .catch(() => setDetail((d) => (d.key === key ? { key, state: 'error' } : d)))
+  }
+
+  function openDetail() {
+    if (!loc || dlg.current.open) return
+    dlg.current.showModal()
+    loadDetail()
+  }
+
   function onKeyDown(e) {
     const items = open && res.state === 'ok' ? res.items : []
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -443,7 +469,14 @@ function Weather({ status, setStatus }) {
   }
 
   return (
-    <div className="glass-panel rounded-3xl p-6 interactive-hover flex flex-col h-auto min-h-[320px] relative overflow-hidden">
+    <>
+    <div
+      ref={card}
+      tabIndex={-1}
+      // whole card opens the panel, except the search box and its dropdown, and real controls
+      onClick={(e) => e.target.closest('input, button, a, [role="listbox"]') || openDetail()}
+      className="group glass-panel rounded-3xl p-6 interactive-hover flex flex-col h-auto min-h-[320px] relative overflow-hidden cursor-pointer"
+    >
       <div className="absolute -right-10 -top-10 w-40 h-40 bg-lofi-primary/5 rounded-full blur-2xl pointer-events-none" />
 
       <div ref={box} className="relative mb-5 z-20">
@@ -533,7 +566,16 @@ function Weather({ status, setStatus }) {
           {w?.desc ?? (status === 'error' ? 'Weather unavailable' : 'Loading...')}
           {w && <span className="text-lofi-muted font-normal"> · feels like {w.feelsLike}°</span>}
         </div>
-        {w?.aqi != null && <AqiPill aqi={w.aqi} className="mt-2.5" />}
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5">
+          {w?.aqi != null ? <AqiPill aqi={w.aqi} /> : <span />}
+          <button
+            onClick={openDetail}
+            aria-haspopup="dialog"
+            className="font-mono text-[11px] uppercase tracking-wider text-lofi-muted group-hover:text-lofi-primary hover:text-lofi-primary transition-colors"
+          >
+            Details <span aria-hidden="true">›</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-auto z-10">
@@ -543,8 +585,206 @@ function Weather({ status, setStatus }) {
         <Stat icon="fa-wind text-gray-400" label="Wind" value={w ? `${w.wind} km/h` : '--'} />
       </div>
     </div>
+
+    {/* native modal: focus trap, Esc and top layer for free. Click on the backdrop = click on <dialog> itself */}
+    <dialog
+      ref={dlg}
+      aria-labelledby="wx-title"
+      onClick={(e) => e.target === dlg.current && dlg.current.close()}
+      // the browser restores focus to the opener; a click on the card had none -> back to the card
+      onClose={() => card.current.contains(document.activeElement) || card.current.focus({ preventScroll: true })}
+      className="wx-sheet glass-panel text-lofi-text overscroll-contain"
+    >
+      <WeatherDetail w={w} loc={loc} detail={detail} onRetry={loadDetail} onClose={() => dlg.current.close()} />
+    </dialog>
+    </>
   )
 }
+
+const Label = ({ icon, children }) => (
+  <h3 className="flex items-center gap-2 mb-3 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
+    <i className={`fa-solid ${icon} text-lofi-primary`} aria-hidden="true" />
+    {children}
+  </h3>
+)
+
+const weekday = (date, i) => (i ? new Date(date + 'T12:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }) : 'Today')
+
+function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
+  const d = detail.state === 'ok' ? detail.data : null
+  // header: the panel's own fresh data once loaded, the card's meanwhile
+  const now = d?.now ?? w
+  const span = d?.range ? Math.max(1, d.range.max - d.range.min) : 1
+  const band = aqiBand(d?.air.aqi)
+  return (
+    <div className="p-5 sm:p-7 flex flex-col gap-6">
+      <header>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1">Weather details</p>
+            <h2 id="wx-title" className="text-xl sm:text-2xl font-medium text-white truncate">{d?.name || w?.name || loc?.name}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close weather details"
+            className="w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
+          >
+            <i className="fa-solid fa-xmark" aria-hidden="true" />
+          </button>
+        </div>
+        <div className="flex items-center gap-4 mt-3">
+          <i className={`fa-solid ${now?.icon ?? 'fa-cloud'} text-4xl ${ICON_COLOR[now?.icon] ?? 'text-white'} drop-shadow-[0_0_12px_currentColor]`} aria-hidden="true" />
+          <div className="text-5xl font-light text-white tracking-tighter leading-none">
+            {now?.temp ?? '--'}
+            <span className="text-xl text-lofi-muted font-normal">°C</span>
+          </div>
+          <div className="text-sm text-lofi-primary font-medium min-w-0">{now?.desc ?? ' '}</div>
+        </div>
+        {now?.aqi != null && <AqiPill aqi={now.aqi} className="mt-3" />}
+      </header>
+
+      {!d ? (
+        <div className="py-10 text-center font-mono text-xs" aria-live="polite">
+          {detail.state === 'error' ? (
+            <>
+              <p className="text-lofi-secondary mb-3">Details unavailable</p>
+              <button onClick={onRetry} className="px-3 py-1.5 rounded-full border border-white/10 text-lofi-text hover:text-lofi-primary hover:border-lofi-primary/40 transition-colors">
+                Retry
+              </button>
+            </>
+          ) : (
+            <p className="text-lofi-muted animate-pulse">Loading forecast…</p>
+          )}
+        </div>
+      ) : (
+        <>
+          <section className="min-w-0">
+            <Label icon="fa-clock">Next 24 hours</Label>
+            <ol className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-2 pr-6 [mask-image:linear-gradient(to_right,#000_calc(100%-2.5rem),transparent)]">
+              {d.hours.map((h, i) => (
+                <li
+                  key={h.t}
+                  className={`shrink-0 w-14 flex flex-col items-center gap-2 py-3 rounded-xl border ${
+                    h.rain >= 50 ? 'bg-blue-400/10 border-blue-400/20' : 'bg-lofi-base/30 border-white/5'
+                  }`}
+                >
+                  <span className={`text-[10px] font-mono ${i ? 'text-lofi-muted' : 'text-lofi-primary font-bold'}`}>{i ? h.t.slice(11, 16) : 'Now'}</span>
+                  <i className={`fa-solid ${h.icon} ${ICON_COLOR[h.icon] ?? 'text-white'}`} aria-hidden="true" />
+                  <span className="text-sm font-mono text-white">{h.temp ?? '--'}°</span>
+                  <span className={`text-[10px] font-mono ${h.rain >= 50 ? 'text-blue-300' : 'text-lofi-muted'}`}>{h.rain ?? '--'}%</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section>
+            <Label icon="fa-calendar-days">7 days</Label>
+            <ul className="flex flex-col">
+              {d.days.map((x, i) => (
+                <li key={x.date} className="grid grid-cols-[3rem_1.5rem_2.25rem_1fr_2.25rem_2.75rem] items-center gap-2 sm:gap-3 py-2 border-b border-white/5 last:border-0 font-mono text-sm">
+                  <span className={i ? 'text-lofi-text' : 'text-lofi-primary font-bold'}>{weekday(x.date, i)}</span>
+                  <i className={`fa-solid ${x.icon} text-center ${ICON_COLOR[x.icon] ?? 'text-white'}`} aria-hidden="true" />
+                  <span className="text-right text-lofi-muted">{x.min ?? '--'}°</span>
+                  <span className="relative h-1.5 rounded-full bg-lofi-base/60" aria-hidden="true">
+                    {x.min != null && x.max != null && d.range && (
+                      <span
+                        className="absolute inset-y-0 rounded-full bg-gradient-to-r from-blue-300 via-lofi-highlight to-lofi-primary"
+                        style={{ left: `${((x.min - d.range.min) / span) * 100}%`, right: `${((d.range.max - x.max) / span) * 100}%` }}
+                      />
+                    )}
+                  </span>
+                  <span className="text-white">{x.max ?? '--'}°</span>
+                  <span className={`text-right text-xs ${x.rain >= 50 ? 'text-blue-300' : 'text-lofi-muted'}`}>
+                    <i className="fa-solid fa-droplet text-[9px] mr-1 opacity-70" aria-hidden="true" />
+                    {x.rain ?? '--'}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <section className="rounded-2xl bg-lofi-base/40 border border-white/5 p-4">
+              <Label icon="fa-lungs">Air quality</Label>
+              {band ? (
+                <>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-4xl font-mono font-bold leading-none" style={{ color: band.color }}>{d.air.aqi}</span>
+                    <span className="text-sm text-white">{band.label}</span>
+                  </div>
+                  <div className="relative mt-4 mb-1" aria-hidden="true">
+                    <div className="flex h-2 rounded-full overflow-hidden gap-px">
+                      {AQI_BANDS.map(([max, , color]) => <span key={max} className="flex-1" style={{ backgroundColor: color }} />)}
+                    </div>
+                    <span
+                      className="absolute top-1/2 w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_8px_rgba(0,0,0,0.6)]"
+                      style={{ left: `${aqiPos(d.air.aqi)}%`, backgroundColor: band.color }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[9px] font-mono text-lofi-muted">
+                    <span>0</span>
+                    <span>500</span>
+                  </div>
+                  <p className="text-xs text-lofi-text/90 mt-3">{band.advice}</p>
+                </>
+              ) : (
+                <p className="text-xs font-mono text-lofi-muted">No air quality data</p>
+              )}
+              <dl className="grid grid-cols-3 gap-2 mt-4">
+                {[['PM2.5', d.air.pm25], ['PM10', d.air.pm10], ['O₃', d.air.o3]].map(([k, v]) => (
+                  <div key={k} className="rounded-xl bg-lofi-surface/50 border border-white/5 px-2.5 py-2">
+                    <dt className="text-[10px] font-mono text-lofi-muted">{k}</dt>
+                    <dd className="text-sm font-mono text-white">
+                      {v ?? '--'}
+                      <span className="text-[9px] text-lofi-muted"> µg/m³</span>
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+
+            <section className="rounded-2xl bg-lofi-base/40 border border-white/5 p-4">
+              <Label icon="fa-wind">Sun &amp; wind</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Tile icon="fa-sun text-lofi-highlight" k="Sunrise" v={d.sun.sunrise ?? '--'} />
+                <Tile icon="fa-moon text-lofi-highlight" k="Sunset" v={d.sun.sunset ?? '--'} />
+                <div className="col-span-2 flex items-center gap-3 rounded-xl bg-lofi-surface/50 border border-white/5 px-3 py-2.5">
+                  <span className="w-10 h-10 shrink-0 rounded-full border border-white/10 bg-lofi-base/60 flex items-center justify-center">
+                    {/* arrow points where the wind blows to (direction is where it comes from) */}
+                    <i
+                      className="fa-solid fa-arrow-down text-lofi-primary transition-transform"
+                      style={{ transform: `rotate(${d.wind.dir ?? 0}deg)` }}
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-lofi-muted">Wind{d.wind.compass && ` from ${d.wind.compass}`}</div>
+                    <div className="text-sm font-mono text-white">
+                      {d.wind.speed ?? '--'} km/h
+                      <span className="text-lofi-muted text-xs"> · gusts {d.wind.gust ?? '--'}</span>
+                    </div>
+                  </div>
+                </div>
+                <Tile icon="fa-gauge text-blue-400" k="Pressure" v={d.pressure != null ? `${d.pressure} hPa` : '--'} />
+                <Tile icon="fa-cloud text-gray-400" k="Cloud" v={d.cloud != null ? `${d.cloud}%` : '--'} />
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+const Tile = ({ icon, k, v }) => (
+  <div className="flex items-center gap-2.5 rounded-xl bg-lofi-surface/50 border border-white/5 px-3 py-2.5">
+    <i className={`fa-solid ${icon} text-sm`} aria-hidden="true" />
+    <div className="min-w-0">
+      <div className="text-[10px] font-mono uppercase tracking-wider text-lofi-muted">{k}</div>
+      <div className="text-sm font-mono text-white truncate">{v}</div>
+    </div>
+  </div>
+)
 
 // ● AQI 62 · Moderate, tinted with the EPA band color
 function AqiPill({ aqi, className = '' }) {
