@@ -77,20 +77,20 @@ body {
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: #1a1a2e; }
 ::-webkit-scrollbar-thumb { background: #2a2a4a; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #ff8a5c; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-lofi-primary); }
 
 /* components layer so Tailwind utilities can override these */
 @layer components {
   /* scene fallback (see NightSky in app/page.js) */
   .night-sky {
     background:
-      radial-gradient(ellipse at 50% 115%, rgba(229, 107, 111, 0.35), transparent 60%),
+      radial-gradient(ellipse at 50% 115%, color-mix(in oklab, var(--color-lofi-secondary) 35%, transparent), transparent 60%),
       linear-gradient(to bottom, #0d0d1f 0%, #1a1a2e 50%, #2a2a4a 85%, #3a2d4d 100%);
   }
   /* tiny stars on prime-sized tiles (two layers) so the pattern doesn't look gridded; fades out toward the horizon */
   .night-stars {
     background-image:
-      radial-gradient(#fff 1px, transparent 1.5px), radial-gradient(#fce38a 1px, transparent 1.5px),
+      radial-gradient(#fff 1px, transparent 1.5px), radial-gradient(var(--color-lofi-highlight) 1px, transparent 1.5px),
       radial-gradient(#cfd8ff 0.8px, transparent 1.3px), radial-gradient(#fff 1.2px, transparent 1.7px);
     background-size: 137px 113px, 211px 173px, 263px 241px, 379px 331px;
     background-position: 0 0, 61px 47px, 113px 89px, 197px 151px;
@@ -135,14 +135,14 @@ body {
   }
 
   .neon-text {
-    text-shadow: 0 0 10px rgba(255, 138, 92, 0.5), 0 0 20px rgba(255, 138, 92, 0.3);
+    text-shadow: 0 0 10px color-mix(in oklab, var(--color-lofi-primary) 50%, transparent), 0 0 20px color-mix(in oklab, var(--color-lofi-primary) 30%, transparent);
   }
 
   .interactive-hover { transition: all 0.3s ease; }
   .interactive-hover:hover {
     transform: translateY(-2px);
-    box-shadow: 0 10px 25px -5px rgba(255, 138, 92, 0.2);
-    border-color: rgba(255, 138, 92, 0.3);
+    box-shadow: 0 10px 25px -5px color-mix(in oklab, var(--color-lofi-primary) 20%, transparent);
+    border-color: color-mix(in oklab, var(--color-lofi-primary) 30%, transparent);
   }
 
   /* weather details <dialog>: bottom sheet on phones, centered panel from 640px (Tailwind's sm).
