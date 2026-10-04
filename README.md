@@ -11,7 +11,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   There's a scene picker (saved per browser) and a focus mode that hides the panels.
 - **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
-  - Click the card (or **Details ›**) for a details panel: next 24 hours, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
+  - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
