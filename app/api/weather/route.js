@@ -1,19 +1,5 @@
-import { parseWeatherParams, wmo, uvLabel } from '../../../lib/weather'
-
-const BASE = process.env.WEATHER_API_URL || 'https://api.weather.wliafdew.dev'
-
-async function upstream(path, p) {
-  const url = new URL(path, BASE)
-  url.search = new URLSearchParams({
-    latitudeRequest: p.lat,
-    longitudeRequest: p.lon,
-    manualTimezone: p.tz,
-    locationIdRequest: p.id,
-  })
-  const res = await fetch(url, { next: { revalidate: 600 }, signal: AbortSignal.timeout(8000) })
-  if (!res.ok) throw new Error(`upstream ${res.status}`)
-  return (await res.json()).data
-}
+import { parseWeatherParams, wmo, uvLabel, aqiBand } from '../../../lib/weather'
+import { upstream } from '../../../lib/upstream'
 
 export async function GET(request) {
   const s = request.nextUrl.searchParams
@@ -28,6 +14,7 @@ export async function GET(request) {
     const uvRaw = aq?.current?.uv_index ?? w.daily?.uv_index_max?.[0]
     const uv = uvRaw == null ? null : Math.round(uvRaw)
     const isDay = c.is_day === 1
+    const aqi = aq?.current?.us_aqi == null ? null : Math.round(aq.current.us_aqi)
     return Response.json({
       name: p.name,
       temp: Math.round(c.temperature_2m),
@@ -40,6 +27,8 @@ export async function GET(request) {
       rainChance,
       uv,
       uvLabel: uv == null ? null : uvLabel(uv),
+      aqi,
+      aqiLabel: aqiBand(aqi)?.label ?? null,
     })
   } catch {
     // ponytail: never forward upstream bodies/stack to the public page
