@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
-import { AQI_BANDS, aqiBand, aqiPos, memoCache } from '../lib/weather'
+import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -683,22 +683,20 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
       ) : (
         <>
           <section className="min-w-0">
-            <Label icon="fa-clock">Next 24 hours</Label>
-            <ol className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-2 pr-6 [mask-image:linear-gradient(to_right,#000_calc(100%-2.5rem),transparent)]">
-              {d.hours.map((h, i) => (
-                <li
-                  key={h.t}
-                  className={`shrink-0 w-14 flex flex-col items-center gap-2 py-3 rounded-xl border ${
-                    h.rain >= 50 ? 'bg-blue-400/10 border-blue-400/20' : 'bg-lofi-base/30 border-white/5'
-                  }`}
-                >
-                  <span className={`text-[10px] font-mono ${i ? 'text-lofi-muted' : 'text-lofi-primary font-bold'}`}>{i ? h.t.slice(11, 16) : 'Now'}</span>
-                  <i className={`fa-solid ${h.icon} ${ICON_COLOR[h.icon] ?? 'text-white'}`} aria-hidden="true" />
-                  <span className="text-sm font-mono text-white">{h.temp ?? '--'}°</span>
-                  <span className={`text-[10px] font-mono ${h.rain >= 50 ? 'text-blue-300' : 'text-lofi-muted'}`}>{h.rain ?? '--'}%</span>
-                </li>
-              ))}
-            </ol>
+            <div className="flex items-start justify-between gap-3">
+              <Label icon="fa-clock">Next 24 hours</Label>
+              <div className="flex items-center gap-3 text-[10px] font-mono text-lofi-muted" aria-hidden="true">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-0.5 rounded-full bg-gradient-to-r from-lofi-highlight to-lofi-primary" />
+                  Temp
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1 h-2.5 rounded-t-sm bg-blue-400" />
+                  Rain
+                </span>
+              </div>
+            </div>
+            {d.hours.length ? <HourChart hours={d.hours} /> : <p className="text-xs font-mono text-lofi-muted">No hourly data</p>}
           </section>
 
           <section>
@@ -796,6 +794,167 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+// Hourly chart geometry (px; x is in % of the width so it stretches to any container)
+const CH = 150, CH_TOP = 34, CH_BOT = 88, BAR = 36
+const hourLabel = (h, i) => (i ? h.t.slice(11, 16) : 'Now')
+
+// 24 hours, no scrolling: temp curve (SVG stretched to the width), rain bars, HTML labels on the same x positions.
+// Desktop labels every 3 h, phones every 6 h (max-sm:hidden), the curve and bars always show every hour.
+function HourChart({ hours }) {
+  const [sel, setSel] = useState(null)
+  const n = hours.length
+  const c = chartPoints(hours, 100, CH, { top: CH_TOP, bottom: CH_BOT })
+  const every = (k) => hours.map((_, i) => i).filter((i) => i % k === 0)
+  // min/max first so they always win a spot, then the regular steps
+  const tempWide = spread([c.iHi, c.iLo, ...every(3)], 2), tempNarrow = spread([c.iHi, c.iLo, ...every(6)], 2)
+  const wet = hours.map((h, i) => i).filter((i) => hours[i].rain >= 50).sort((a, b) => hours[b].rain - hours[a].rain)
+  const rainNarrow = spread(wet, 2)
+  // shown on wide / narrow screens -> utility classes (both false = not rendered at all)
+  const vis = (wide, narrow) => `${wide ? '' : 'sm:hidden'} ${narrow ? '' : 'max-sm:hidden'}`
+  const maxRain = Math.max(0, ...hours.map((h) => h.rain ?? 0))
+  const summary =
+    `Next 24 hours: ${c.lo} to ${c.hi}°C, warmest at ${hourLabel(hours[c.iHi], c.iHi)}, coolest at ${hourLabel(hours[c.iLo], c.iLo)}; ` +
+    `rain chance up to ${maxRain}%. Arrow keys step through the hours.`
+  const at = (e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    setSel(Math.min(n - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * n))))
+  }
+  const s = sel == null ? null : { h: hours[sel], p: c.pts[sel] }
+  const tipX = s ? (s.p.x < 18 ? '0%' : s.p.x > 82 ? '-100%' : '-50%') : 0
+
+  return (
+    <div
+      tabIndex={0}
+      role="group"
+      aria-roledescription="chart"
+      aria-label={summary}
+      onPointerDown={at}
+      onPointerMove={at}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && setSel(null)} // touch: keep the tapped hour
+      onBlur={() => setSel(null)}
+      onKeyDown={(e) => {
+        const k = { ArrowRight: 1, ArrowLeft: -1, Home: -n, End: n }[e.key]
+        if (!k) return
+        e.preventDefault()
+        setSel((v) => Math.min(n - 1, Math.max(0, (v ?? (k > 0 ? -1 : n)) + k)))
+      }}
+      className="relative select-none touch-pan-y rounded-xl cursor-crosshair"
+    >
+      {/* top row: icon + time */}
+      <div className="relative h-11" aria-hidden="true">
+        {hours.map((h, i) =>
+          i % 3 ? null : (
+            <div
+              key={h.t}
+              className={`absolute top-0 -translate-x-1/2 flex flex-col items-center gap-1 ${vis(true, i % 6 === 0)}`}
+              style={{ left: `${c.pts[i].x}%` }}
+            >
+              <i className={`fa-solid ${h.icon} text-sm ${ICON_COLOR[h.icon] ?? 'text-white'}`} />
+              <span className={`text-[10px] font-mono whitespace-nowrap ${i ? 'text-lofi-muted' : 'text-lofi-primary font-bold'}`}>{hourLabel(h, i)}</span>
+            </div>
+          ),
+        )}
+      </div>
+
+      <div className="relative border-b border-white/10" style={{ height: CH }} aria-hidden="true">
+        <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox={`0 0 100 ${CH}`} preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="wx-line" gradientUnits="userSpaceOnUse" x1="0" y1={CH_TOP} x2="0" y2={CH_BOT}>
+              <stop offset="0" stopColor="#e56b6f" />
+              <stop offset="0.5" stopColor="#ff8a5c" />
+              <stop offset="1" stopColor="#fce38a" />
+            </linearGradient>
+            <linearGradient id="wx-area" gradientUnits="userSpaceOnUse" x1="0" y1={CH_TOP} x2="0" y2={CH}>
+              <stop offset="0" stopColor="#ff8a5c" stopOpacity="0.3" />
+              <stop offset="1" stopColor="#ff8a5c" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {c.pts.map((p, i) =>
+            i % 3 ? null : <line key={i} x1={p.x} x2={p.x} y1="0" y2={CH} stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />,
+          )}
+          <path d={c.area} fill="url(#wx-area)" />
+          <path d={c.line} fill="none" stroke="url(#wx-line)" strokeWidth="2.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        </svg>
+
+        {hours.map((h, i) => {
+          const barH = ((h.rain ?? 0) / 100) * BAR, x = c.pts[i].x
+          return (
+            <div key={h.t}>
+              <span
+                className={`absolute bottom-0 -translate-x-1/2 rounded-t-sm ${h.rain >= 50 ? 'bg-blue-400' : 'bg-blue-400/40'} ${sel === i ? 'brightness-125' : ''}`}
+                style={{ left: `${x}%`, width: `${42 / n}%`, height: Math.max(1, barH) }}
+              />
+              {h.rain >= 50 && (
+                <span
+                  className={`absolute -translate-x-1/2 text-[9px] font-mono text-blue-300 ${vis(true, rainNarrow.has(i))}`}
+                  style={{ left: `${x}%`, bottom: barH + 2 }}
+                >
+                  {h.rain}%
+                </span>
+              )}
+              {(tempWide.has(i) || tempNarrow.has(i)) && c.pts[i].y != null && (
+                <>
+                  <span
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${i === c.iHi ? 'bg-lofi-secondary' : i === c.iLo ? 'bg-blue-300' : 'bg-white/70'} ${vis(tempWide.has(i), tempNarrow.has(i))}`}
+                    style={{ left: `${x}%`, top: c.pts[i].y }}
+                  />
+                  <span
+                    className={`absolute -translate-x-1/2 text-[11px] font-mono whitespace-nowrap ${
+                      i === c.iHi ? 'text-lofi-primary font-bold' : i === c.iLo ? 'text-blue-300 font-bold' : 'text-white/85'
+                    } ${vis(tempWide.has(i), tempNarrow.has(i))}`}
+                    style={{ left: `${x}%`, top: c.pts[i].y - 22 }}
+                  >
+                    {h.temp}°
+                  </span>
+                </>
+              )}
+            </div>
+          )
+        })}
+
+        {/* now */}
+        {c.pts[0].y != null && (
+          <span className="absolute -translate-x-1/2 -translate-y-1/2 w-3 h-3" style={{ left: `${c.pts[0].x}%`, top: c.pts[0].y }}>
+            <span className="absolute inset-0 rounded-full bg-lofi-primary/50 motion-safe:animate-ping" />
+            <span className="absolute inset-0 rounded-full bg-lofi-primary border-2 border-lofi-base shadow-[0_0_10px_rgba(255,138,92,0.8)]" />
+          </span>
+        )}
+
+        {s && (
+          <>
+            <span className="absolute top-0 bottom-0 border-l border-dashed border-white/35 pointer-events-none" style={{ left: `${s.p.x}%` }} />
+            {s.p.y != null && (
+              <span
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-white border-2 border-lofi-primary pointer-events-none"
+                style={{ left: `${s.p.x}%`, top: s.p.y }}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {s && (
+        <div
+          role="tooltip"
+          className="absolute top-0 z-10 pointer-events-none whitespace-nowrap rounded-lg border border-white/10 bg-lofi-base/95 backdrop-blur-md px-2.5 py-1.5 font-mono text-[11px] shadow-xl flex items-center gap-2"
+          style={{ left: `${s.p.x}%`, transform: `translateX(${tipX})` }}
+        >
+          <span className={sel ? 'text-lofi-muted' : 'text-lofi-primary font-bold'}>{hourLabel(s.h, sel)}</span>
+          <i className={`fa-solid ${s.h.icon} ${ICON_COLOR[s.h.icon] ?? 'text-white'}`} aria-hidden="true" />
+          <span className="text-white">{s.h.temp ?? '--'}°</span>
+          <span className="text-blue-300">
+            <i className="fa-solid fa-droplet text-[9px] mr-0.5" aria-hidden="true" />
+            {s.h.rain ?? '--'}%
+          </span>
+        </div>
+      )}
+      <p className="sr-only" aria-live="polite">
+        {s ? `${hourLabel(s.h, sel)}: ${s.h.temp ?? 'no data'}°C, rain ${s.h.rain ?? 'no data'}%` : ''}
+      </p>
     </div>
   )
 }
