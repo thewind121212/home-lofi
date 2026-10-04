@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        NEXT_PUBLIC_SCENES_URL: ${SCENES_URL:-} # e.g. https://static.example.com/scenes; empty = serve public/scenes
+        NEXT_PUBLIC_SCENES_URL: ${SCENES_URL:-} # e.g. https://static.example.com/scenes; empty = /scenes, which needs a public/scenes mount (README, Scenes)
     image: home-lofi
     container_name: home-lofi
     restart: unless-stopped
