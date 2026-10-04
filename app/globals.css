@@ -145,6 +145,9 @@ body {
   }
   .wx-sheet[open] { animation: sheet-up 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .wx-sheet[open]::backdrop { animation: fade-in 0.3s ease-out; }
+  /* exit mirrors the entrance; JS sets data-closing, waits for animationend, then calls close() */
+  .wx-sheet[data-closing] { animation: sheet-down 0.25s cubic-bezier(0.4, 0, 1, 1) forwards; }
+  .wx-sheet[data-closing]::backdrop { animation: fade-out 0.25s ease-in forwards; }
   @media (min-width: 640px) {
     .wx-sheet {
       width: calc(100% - 2rem);
@@ -154,6 +157,7 @@ body {
       border-radius: 1.5rem;
     }
     .wx-sheet[open] { animation-name: panel-in; }
+    .wx-sheet[data-closing] { animation-name: panel-out; }
   }
   @keyframes sheet-up {
     from { transform: translateY(100%); }
@@ -163,6 +167,15 @@ body {
   }
   @keyframes fade-in {
     from { opacity: 0; }
+  }
+  @keyframes sheet-down {
+    to { transform: translateY(100%); }
+  }
+  @keyframes panel-out {
+    to { opacity: 0; transform: translateY(16px) scale(0.97); }
+  }
+  @keyframes fade-out {
+    to { opacity: 0; }
   }
 
   /* Hidden YouTube iframe, still functional for audio */
