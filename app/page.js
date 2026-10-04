@@ -588,7 +588,7 @@ function Weather({ status, setStatus }) {
           {w && <span className="text-lofi-muted font-normal"> · feels like {w.feelsLike}°</span>}
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5">
-          {w?.aqi != null ? <AqiPill aqi={w.aqi} /> : <span />}
+          {w?.aqi != null ? <AqiPill aqi={w.aqi} className="grow basis-48" /> : <span />}
           <button
             onClick={openDetail}
             aria-haspopup="dialog"
@@ -646,29 +646,34 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
   const band = aqiBand(d?.air.aqi)
   return (
     <div className="p-5 sm:p-7 flex flex-col gap-6">
+      {/* wx-sticky: title + close stay pinned on phones and short (landscape) screens. A direct child of the
+          scrolling content (not inside <header>), so it can stick for the whole panel */}
+      <div className="wx-sticky flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1 short:hidden">Weather details</p>
+          <h2 id="wx-title" className="text-xl sm:text-2xl short:text-lg font-medium text-white truncate">{d?.name || w?.name || loc?.name}</h2>
+        </div>
+        <button
+          onClick={onClose}
+          aria-label="Close weather details"
+          className="w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
+        >
+          <i className="fa-solid fa-xmark" aria-hidden="true" />
+        </button>
+      </div>
       <header>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1">Weather details</p>
-            <h2 id="wx-title" className="text-xl sm:text-2xl font-medium text-white truncate">{d?.name || w?.name || loc?.name}</h2>
+        {/* short screens: one compact row (icon, temp, condition, AQI) instead of two big ones */}
+        <div className="flex flex-col gap-3 -mt-3 short:flex-row short:flex-wrap short:items-center short:gap-x-4 short:gap-y-1">
+          <div className="flex items-center gap-4 short:gap-3">
+            <i className={`fa-solid ${now?.icon ?? 'fa-cloud'} text-4xl short:text-2xl ${ICON_COLOR[now?.icon] ?? 'text-white'} drop-shadow-[0_0_12px_currentColor]`} aria-hidden="true" />
+            <div className="text-5xl short:text-3xl font-light text-white tracking-tighter leading-none">
+              {now?.temp ?? '--'}
+              <span className="text-xl short:text-base text-lofi-muted font-normal">°C</span>
+            </div>
+            <div className="text-sm text-lofi-primary font-medium min-w-0">{now?.desc ?? ' '}</div>
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close weather details"
-            className="w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
-          >
-            <i className="fa-solid fa-xmark" aria-hidden="true" />
-          </button>
+          {now?.aqi != null && <AqiPill aqi={now.aqi} className="short:grow short:basis-48" />}
         </div>
-        <div className="flex items-center gap-4 mt-3">
-          <i className={`fa-solid ${now?.icon ?? 'fa-cloud'} text-4xl ${ICON_COLOR[now?.icon] ?? 'text-white'} drop-shadow-[0_0_12px_currentColor]`} aria-hidden="true" />
-          <div className="text-5xl font-light text-white tracking-tighter leading-none">
-            {now?.temp ?? '--'}
-            <span className="text-xl text-lofi-muted font-normal">°C</span>
-          </div>
-          <div className="text-sm text-lofi-primary font-medium min-w-0">{now?.desc ?? ' '}</div>
-        </div>
-        {now?.aqi != null && <AqiPill aqi={now.aqi} className="mt-3" />}
       </header>
 
       {!d ? (
@@ -762,7 +767,7 @@ function WeatherDetail({ w, loc, detail, onRetry, onClose }) {
                     <dt className="text-[10px] font-mono text-lofi-muted">{k}</dt>
                     <dd className="text-sm font-mono text-white">
                       {v ?? '--'}
-                      <span className="text-[9px] text-lofi-muted"> µg/m³</span>
+                      <span className="block text-[9px] text-lofi-muted">µg/m³</span>
                     </dd>
                   </div>
                 ))}
@@ -944,7 +949,7 @@ function HourChart({ hours }) {
       {s && (
         <div
           role="tooltip"
-          className="absolute top-0 z-10 pointer-events-none whitespace-nowrap rounded-lg border border-white/10 bg-lofi-base/95 backdrop-blur-md px-2.5 py-1.5 font-mono text-[11px] shadow-xl flex items-center gap-2"
+          className="absolute top-11 z-10 pointer-events-none whitespace-nowrap rounded-lg border border-white/10 bg-lofi-base/95 backdrop-blur-md px-2.5 py-1.5 font-mono text-[11px] shadow-xl flex items-center gap-2"
           style={{ left: `${s.p.x}%`, transform: `translateX(${tipX})` }}
         >
           <span className={sel ? 'text-lofi-muted' : 'text-lofi-primary font-bold'}>{hourLabel(s.h, sel)}</span>
@@ -974,17 +979,32 @@ const Tile = ({ icon, k, v }) => (
 )
 
 // ● AQI 62 · Moderate, tinted with the EPA band color
+const AQI_SHORT = { 'Unhealthy for Sensitive Groups': 'Sensitive groups' }
+
+// One line always: a size container that swaps in the short label when the full one (~19rem) wouldn't fit.
 function AqiPill({ aqi, className = '' }) {
   const b = aqiBand(aqi)
   if (!b) return null
+  const short = AQI_SHORT[b.label]
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] text-lofi-text ${className}`}
-      style={{ borderColor: b.color + '59', backgroundColor: b.color + '1f' }}
-    >
-      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: b.color, boxShadow: `0 0 6px ${b.color}` }} aria-hidden="true" />
-      AQI {aqi} · {b.label}
-    </span>
+    <div className={`@container min-w-0 ${className}`}>
+      <span
+        title={`AQI ${aqi} · ${b.label}`}
+        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 font-mono text-[11px] text-lofi-text"
+        style={{ borderColor: b.color + '59', backgroundColor: b.color + '1f' }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: b.color, boxShadow: `0 0 6px ${b.color}` }} aria-hidden="true" />
+        AQI {aqi} ·{' '}
+        {short ? (
+          <>
+            <span className="@max-[19rem]:hidden">{b.label}</span>
+            <span className="hidden @max-[19rem]:inline">{short}</span>
+          </>
+        ) : (
+          b.label
+        )}
+      </span>
+    </div>
   )
 }
 
