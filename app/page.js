@@ -66,6 +66,8 @@ export default function Home() {
   const setDlg = useRef(null)
   const galDlg = useRef(null)
   const [wx, setWx] = useState() // the Weather card's /api/weather data: undefined = loading, null = failed
+  const music = useRef(null) // Music's toggle(), so the focus bar can drive the same player
+  const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the focus bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
   // A variant that failed to load falls back to the signature files for that scene.
   // ponytail: failures are remembered until reload, so variants uploaded later show up after a refresh
@@ -288,7 +290,7 @@ export default function Home() {
 
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <Music />
+            <Music ctl={music} onTune={setTune} />
             <Weather status={status} setStatus={setStatus} setWx={setWx} />
             <Server d={priv} />
           </div>
@@ -299,18 +301,9 @@ export default function Home() {
         </main>
       </div>
 
-      {/* Header is hidden in focus mode, so the only way back is this button (or Esc) */}
       {idle && set.idleShow === 'clock' && <IdleClock now={now} clock={set.clock} />}
-      {focus && !idle && (
-        <button
-          onClick={() => setFocus(false)}
-          aria-label="Show panels"
-          title="Show panels (Esc)"
-          className="glass-panel fixed bottom-4 left-4 z-20 w-10 h-10 rounded-full flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-colors"
-        >
-          <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
-        </button>
-      )}
+      {/* Header is hidden in focus mode, so the way back is the bar's eye button (or Esc) */}
+      {focus && !idle && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} />}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </Prefs>
@@ -346,7 +339,98 @@ function IdleClock({ now, clock }) {
   )
 }
 
-function Music() {
+// Focus mode's mini bar: show panels | music | weather | time | server. Segments without data are left out.
+// Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
+const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
+function FocusBar({ now, wx, priv, tune, onToggle, onShow }) {
+  const { unit, clock } = useContext(Prefs)
+  const st = priv?.stats
+  const ram = pctOf(st?.mem)
+  return (
+    <aside
+      aria-label="Focus bar"
+      className="glass-panel fixed z-20 inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] mx-auto w-fit max-w-[calc(100%-2rem)] rounded-3xl sm:rounded-full p-1.5 flex flex-wrap items-center justify-center gap-y-1.5 font-mono text-sm text-white motion-safe:animate-[panel-in_0.45s_cubic-bezier(0.2,0.8,0.2,1)]"
+    >
+      <button
+        onClick={onShow}
+        aria-label="Show panels"
+        title="Show panels (Esc)"
+        className="w-9 h-9 mr-1 sm:mr-2 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-colors"
+      >
+        <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
+      </button>
+
+      <div className={SEG}>
+        <button
+          onClick={onToggle}
+          title={tune.playing ? 'Pause' : 'Play'}
+          aria-label={tune.playing ? 'Pause Lofi Girl Radio' : 'Play Lofi Girl Radio'}
+          className="w-9 h-9 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-colors shadow-[0_0_12px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
+        >
+          <i className={`fa-solid text-xs ${tune.loading ? 'fa-spinner fa-spin' : tune.playing ? 'fa-pause' : 'fa-play ml-0.5'}`} aria-hidden="true" />
+        </button>
+        <span className="max-sm:hidden font-sans text-xs text-lofi-text whitespace-nowrap">Lofi Girl Radio</span>
+        {/* equalizer: dances while playing, rests low when paused (and stands still with reduced motion) */}
+        <span className="max-[374px]:hidden flex items-end gap-0.5 h-4" aria-hidden="true">
+          {[10, 16, 7, 13].map((h, i) => (
+            <span
+              key={i}
+              className={`w-[3px] rounded-full bg-lofi-primary origin-bottom ${tune.playing ? 'animate-eq' : 'scale-y-30 opacity-60'}`}
+              style={{ height: h, animationDelay: `${i * -0.23}s` }}
+            />
+          ))}
+        </span>
+      </div>
+
+      {wx && (
+        <div className={SEG} title={wx.desc}>
+          <i className={`fa-solid ${wx.icon ?? 'fa-cloud'} ${ICON_COLOR[wx.icon] ?? 'text-white'}`} aria-hidden="true" />
+          <span className="sr-only">{wx.desc}, </span>
+          <span className="whitespace-nowrap">
+            {toUnit(wx.temp, unit) ?? '--'}°<span className="text-lofi-muted">{unit}</span>
+          </span>
+          {wx.name && <span className="max-sm:hidden max-w-32 truncate font-sans text-xs text-lofi-muted">{wx.name}</span>}
+        </div>
+      )}
+
+      <div className={SEG}>
+        <span className="whitespace-nowrap">
+          <Clock now={now} clock={clock} />
+        </span>
+        <span className="max-sm:hidden text-[10px] uppercase tracking-widest text-lofi-muted whitespace-nowrap">
+          {now?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+        </span>
+      </div>
+
+      {/* signed in / LAN only (same data as the Server card); otherwise no segment at all */}
+      {st && (
+        <div className={`${SEG} text-xs max-sm:basis-full max-sm:justify-center max-sm:border-l-0 max-sm:border-t max-sm:pt-1.5`}>
+          <span className="whitespace-nowrap" title="CPU">
+            <i className="fa-solid fa-microchip text-lofi-primary mr-1.5" aria-hidden="true" />
+            <span className="sr-only">CPU </span>
+            {st.cpu ?? '--'}%
+          </span>
+          {st.temp != null && (
+            <span className="whitespace-nowrap" title="CPU temperature">
+              <i className="fa-solid fa-temperature-half text-lofi-secondary mr-1.5" aria-hidden="true" />
+              <span className="sr-only">temperature </span>
+              {st.temp}°C
+            </span>
+          )}
+          {ram != null && (
+            <span className="whitespace-nowrap" title="RAM">
+              <i className="fa-solid fa-memory text-blue-400 mr-1.5" aria-hidden="true" />
+              <span className="sr-only">RAM </span>
+              {ram}%
+            </span>
+          )}
+        </div>
+      )}
+    </aside>
+  )
+}
+
+function Music({ ctl, onTune }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hint, setHint] = useState(false)
@@ -419,6 +503,12 @@ function Music() {
       setHint(true)
     }, 10000)
   }
+
+  // the focus bar's play button calls this same toggle() straight from its click (iOS gesture rule above)
+  useEffect(() => {
+    ctl.current = toggle
+  })
+  useEffect(() => onTune({ playing, loading }), [playing, loading, onTune])
 
   function changeVolume(d) {
     const v = Math.max(0, Math.min(100, vol.current + d))

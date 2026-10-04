@@ -19,6 +19,7 @@
   --animate-tilt: tilt 0.4s ease-out both;
   --animate-wiggle: wiggle 0.35s ease-in-out infinite;
   --animate-card-in: card-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-eq: eq 0.9s ease-in-out infinite;
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
@@ -26,6 +27,11 @@
   }
   @keyframes record-spin {
     to { transform: rotate(360deg); }
+  }
+  /* focus bar equalizer bars (staggered via negative animation-delay) */
+  @keyframes eq {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
   }
   @keyframes wiggle {
     0%, 100% { rotate: -12deg; }
