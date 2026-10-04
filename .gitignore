@@ -1,0 +1,9 @@
+node_modules
+.next
+# secrets + private data: never commit (see .env.example / private-services.example.json)
+.env*
+!.env.example
+private-services.json
+# scene videos are large (~50 MB each) and third-party art: copy them to the server separately (README > Scenes)
+public/scenes/*
+!public/scenes/.gitkeep
