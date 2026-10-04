@@ -1,0 +1,24 @@
+services:
+  home-lofi:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SCENES_URL: ${SCENES_URL:-} # e.g. https://static.example.com/scenes; empty = serve public/scenes
+    image: home-lofi
+    container_name: home-lofi
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:3000" # local debugging only; the proxy reaches it as home-lofi:3000 on my-dns
+    env_file: .env # GATE_SECRET + internal widget credentials (see README); never commit it
+    environment:
+      WEATHER_API_URL: ${WEATHER_API_URL:-https://api.weather.wliafdew.dev}
+      GATE_SECRET: ${GATE_SECRET:?set GATE_SECRET in .env}
+    volumes:
+      - ./private-services.json:/config/private-services.json:ro
+    networks:
+      - my-dns
+
+networks:
+  my-dns:
+    external: true
+    name: my-dns
