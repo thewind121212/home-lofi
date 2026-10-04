@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
+import { aqiBand } from '../lib/weather'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -532,6 +533,7 @@ function Weather({ status, setStatus }) {
           {w?.desc ?? (status === 'error' ? 'Weather unavailable' : 'Loading...')}
           {w && <span className="text-lofi-muted font-normal"> · feels like {w.feelsLike}°</span>}
         </div>
+        {w?.aqi != null && <AqiPill aqi={w.aqi} className="mt-2.5" />}
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-auto z-10">
@@ -541,6 +543,21 @@ function Weather({ status, setStatus }) {
         <Stat icon="fa-wind text-gray-400" label="Wind" value={w ? `${w.wind} km/h` : '--'} />
       </div>
     </div>
+  )
+}
+
+// ● AQI 62 · Moderate, tinted with the EPA band color
+function AqiPill({ aqi, className = '' }) {
+  const b = aqiBand(aqi)
+  if (!b) return null
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] text-lofi-text ${className}`}
+      style={{ borderColor: b.color + '59', backgroundColor: b.color + '1f' }}
+    >
+      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: b.color, boxShadow: `0 0 6px ${b.color}` }} aria-hidden="true" />
+      AQI {aqi} · {b.label}
+    </span>
   )
 }
 
