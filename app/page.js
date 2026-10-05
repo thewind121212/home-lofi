@@ -2224,8 +2224,55 @@ function Shell() {
   )
 }
 
+// Steam card: live presence in Steam's colors + library numbers (/api/steam, every 60 s while the tab is visible).
+// Games owned and total hours need STEAM_API_KEY; without it only the status and the last 2 weeks show.
+const STEAM_STATE = {
+  online: ['Online', 'bg-[#57cbde]', 'text-[#57cbde]'],
+  away: ['Away', 'bg-[#57cbde]/60', 'text-[#57cbde]/80'],
+  'in-game': ['Playing', 'bg-[#90ba3c]', 'text-[#a4d007]'],
+  offline: ['Offline', 'bg-lofi-muted', 'text-lofi-muted'],
+}
+function SteamStatus() {
+  const [d, setD] = useState(null)
+  useEffect(() => {
+    let alive = true
+    const get = () =>
+      document.visibilityState === 'visible' &&
+      fetch('/api/steam')
+        .then((r) => r.json())
+        .then((v) => alive && setD(v), () => {})
+    get()
+    const t = setInterval(get, 60_000)
+    document.addEventListener('visibilitychange', get)
+    return () => ((alive = false), clearInterval(t), document.removeEventListener('visibilitychange', get))
+  }, [])
+  if (!d || d.error) return null
+  const [label, dot, text] = STEAM_STATE[d.state] ?? STEAM_STATE.offline
+  const chips = [
+    d.owned != null && ['Games', d.owned.toLocaleString('en-US')],
+    d.hours != null && ['Hours', d.hours.toLocaleString('en-US')],
+    ['2 wks', `${d.hours2w} h`],
+  ].filter(Boolean)
+  return (
+    <div className="z-10 w-full flex flex-col gap-2">
+      <div className={`flex items-center justify-center gap-1.5 text-[10px] font-mono min-w-0 ${text}`} title={d.game ? `Playing ${d.game}` : label}>
+        <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${dot} ${d.state === 'offline' ? '' : 'shadow-[0_0_6px_currentColor] motion-safe:animate-pulse'}`} aria-hidden="true" />
+        <span className="truncate">{d.game ? `Playing · ${d.game}` : label}</span>
+      </div>
+      <dl className="w-full grid grid-cols-1 @[9rem]:grid-cols-2 gap-1.5">
+        {chips.map(([k, v]) => (
+          <div key={k} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0 @[9rem]:odd:last:col-span-2">
+            <dt className="text-[9px] font-mono uppercase text-lofi-muted truncate">{k}</dt>
+            <dd className="text-xs font-medium text-white tabular-nums truncate">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
 // card decorations by `deco` key (lib/data.js / private-services.json)
-const DECOR = { vault: Secret, graph: Graph, shell: Shell }
+const DECOR = { vault: Secret, graph: Graph, shell: Shell, steam: SteamStatus }
 
 function ServiceCard({ s, accent, live, stats }) {
   const Deco = DECOR[s.deco]

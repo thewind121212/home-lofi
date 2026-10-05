@@ -34,6 +34,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
+- **Steam card** (Entertainment): live status in Steam's colors (Online / Playing · the game / Offline), games owned,
+  total hours and the last 2 weeks. Set `STEAM_ID` in `lib/data.js` to your SteamID64 (public profile); games owned and
+  total hours need `STEAM_API_KEY` (https://steamcommunity.com/dev/apikey). Steam is asked at most once a minute.
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
   - Internal cards add live stats (AdGuard, Nginx Proxy Manager, Portainer, Nextcloud, What's Up Docker, n8n, Coolify, MySpeed).
