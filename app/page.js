@@ -1,6 +1,6 @@
 'use client'
 
-import { useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneName, sceneWeather, themeColors, toUnit } from '../lib/settings'
@@ -58,6 +58,7 @@ export default function Home() {
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
   const [spotify, applySpotify] = useSpotify()
+  const steam = useSteam()
   const videoRef = useRef(null)
   const setDlg = useRef(null)
   const galDlg = useRef(null)
@@ -279,6 +280,7 @@ export default function Home() {
 
   return (
     <Prefs value={{ ...set, reduced }}>
+    <SteamData value={steam}>
       {/* Night sky: shows while the scene loads, and stays as the fallback if it can't load */}
       <NightSky />
       {/* Full-screen animated scene (decorative) */}
@@ -291,7 +293,7 @@ export default function Home() {
       />
 
       <div
-        className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
+        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -346,12 +348,19 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
-          <div className="lg:col-span-4 flex flex-col gap-6">
+        {/* Three blocks, each mounted once (the radio never restarts), placed by the grid:
+            phones: one column, Music · Steam · Weather · Hub · Services
+            lg (laptops): two columns, Music + Steam + Weather on the left, Hub + Services on the right
+            2xl (≥1536 px, e.g. 1920×1080): three columns, Music + Steam | Hub + Services | Weather, so nothing scrolls */}
+        <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
+          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 2xl:col-span-3 flex flex-col gap-6">
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} />
+            <SteamCard d={steam} />
+          </div>
+          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-2 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 flex flex-col gap-6">
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
-          <div className="lg:col-span-8 flex flex-col gap-6">
+          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-1 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-span-1 flex flex-col gap-6">
             <Hub status={status} priv={priv} />
             <Services priv={priv} />
           </div>
@@ -376,6 +385,7 @@ export default function Home() {
       {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} mini={mini} onShow={() => setFocus(false)} onLock={lock} />}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
+    </SteamData>
     </Prefs>
   )
 }
@@ -2224,15 +2234,10 @@ function Shell() {
   )
 }
 
-// Steam card: live presence in Steam's colors + library numbers (/api/steam, every 60 s while the tab is visible).
-// Games owned and total hours need STEAM_API_KEY; without it only the status and the last 2 weeks show.
-const STEAM_STATE = {
-  online: ['Online', 'bg-[#57cbde]', 'text-[#57cbde]'],
-  away: ['Away', 'bg-[#57cbde]/60', 'text-[#57cbde]/80'],
-  'in-game': ['Playing', 'bg-[#90ba3c]', 'text-[#a4d007]'],
-  offline: ['Offline', 'bg-lofi-muted', 'text-lofi-muted'],
-}
-function SteamStatus() {
+// Steam: /api/steam, polled every 60 s while the tab is visible (Steam itself is asked at most once a minute), shared
+// by the Steam card under the music and the status line on the Entertainment tab's Steam link.
+const SteamData = createContext(null)
+function useSteam() {
   const [d, setD] = useState(null)
   useEffect(() => {
     let alive = true
@@ -2240,34 +2245,115 @@ function SteamStatus() {
       document.visibilityState === 'visible' &&
       fetch('/api/steam')
         .then((r) => r.json())
-        .then((v) => alive && setD(v), () => {})
+        .then((v) => alive && !v.error && setD(v), () => {})
     get()
     const t = setInterval(get, 60_000)
     document.addEventListener('visibilitychange', get)
     return () => ((alive = false), clearInterval(t), document.removeEventListener('visibilitychange', get))
   }, [])
-  if (!d || d.error) return null
-  const [label, dot, text] = STEAM_STATE[d.state] ?? STEAM_STATE.offline
-  const chips = [
-    d.owned != null && ['Games', d.owned.toLocaleString('en-US')],
-    d.hours != null && ['Hours', d.hours.toLocaleString('en-US')],
-    ['2 wks', `${d.hours2w} h`],
+  return d
+}
+// [label, dot, text, avatar ring], in Steam's own colors
+const STEAM_STATE = {
+  online: ['Online', 'bg-[#57cbde]', 'text-[#57cbde]', 'ring-[#57cbde]'],
+  away: ['Away', 'bg-[#57cbde]/60', 'text-[#57cbde]/80', 'ring-[#57cbde]/50'],
+  'in-game': ['Playing', 'bg-[#90ba3c]', 'text-[#a4d007]', 'ring-[#90ba3c]'],
+  offline: ['Offline', 'bg-lofi-muted', 'text-lofi-muted', 'ring-white/15'],
+}
+const steamState = (d) => STEAM_STATE[d.state] ?? STEAM_STATE.offline
+function SteamDot({ d }) {
+  return <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${steamState(d)[1]} ${d.state === 'offline' ? '' : 'shadow-[0_0_6px_currentColor] motion-safe:animate-pulse'}`} aria-hidden="true" />
+}
+
+// The Entertainment tab's Steam link: just the live status (the numbers live on the Steam card)
+function SteamStatus() {
+  const d = useContext(SteamData)
+  if (!d) return null
+  const [label, , text] = steamState(d)
+  return (
+    <div className={`z-10 w-full flex items-center justify-center gap-1.5 text-[10px] font-mono min-w-0 ${text}`} title={d.game ? `Playing ${d.game}` : label}>
+      <SteamDot d={d} />
+      <span className="truncate">{d.game ? `Playing · ${d.game}` : label}</span>
+    </div>
+  )
+}
+
+// Under the music: the Steam profile. Avatar with a ring in the status color, name, level, status (or the game being
+// played), then Games / Hours / 2 weeks with icons, then the recently played games (icon + hours this fortnight).
+// Public: the same things the Steam profile shows. Nothing until /api/steam answers.
+function SteamCard({ d }) {
+  if (!d) return null
+  const [label, , text, ring] = steamState(d)
+  const tiles = [
+    d.owned != null && ['fa-gamepad', 'Games', d.owned.toLocaleString('en-US')],
+    d.hours != null && ['fa-clock', 'Hours', d.hours.toLocaleString('en-US')],
+    ['fa-calendar-week', '2 weeks', `${d.hours2w} h`],
   ].filter(Boolean)
   return (
-    <div className="z-10 w-full flex flex-col gap-2">
-      <div className={`flex items-center justify-center gap-1.5 text-[10px] font-mono min-w-0 ${text}`} title={d.game ? `Playing ${d.game}` : label}>
-        <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${dot} ${d.state === 'offline' ? '' : 'shadow-[0_0_6px_currentColor] motion-safe:animate-pulse'}`} aria-hidden="true" />
-        <span className="truncate">{d.game ? `Playing · ${d.game}` : label}</span>
+    <section aria-label="Steam" className="glass-panel rounded-3xl p-5 flex flex-col gap-4">
+      <div className="flex items-center gap-4 min-w-0">
+        <a href={d.url} target="_blank" rel="noopener noreferrer" className="relative shrink-0" aria-label={`${d.name ?? 'Steam'} on Steam: ${d.game ? `playing ${d.game}` : label}`}>
+          {d.avatar ? (
+            <img src={d.avatar} alt="" width={56} height={56} className={`w-14 h-14 rounded-2xl object-cover ring-2 ring-offset-2 ring-offset-lofi-base ${ring}`} />
+          ) : (
+            <span className={`w-14 h-14 rounded-2xl bg-lofi-surface flex items-center justify-center ring-2 ${ring}`}>
+              <i className="fa-brands fa-steam text-2xl text-lofi-muted" aria-hidden="true" />
+            </span>
+          )}
+          <i className="fa-brands fa-steam absolute -bottom-1.5 -right-1.5 text-base text-white bg-[#1b2838] rounded-full p-0.5" aria-hidden="true" />
+        </a>
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 min-w-0">
+            <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-base font-medium text-white truncate hover:text-[#57cbde] transition-colors">
+              {d.name ?? 'Steam'}
+            </a>
+            {d.level != null && (
+              <span className="shrink-0 text-[10px] font-mono text-lofi-highlight border border-lofi-highlight/30 bg-lofi-highlight/10 rounded-full px-1.5 py-px" title="Steam level">
+                Lv {d.level}
+              </span>
+            )}
+          </p>
+          <p className={`mt-0.5 flex items-center gap-1.5 text-xs font-mono min-w-0 ${text}`}>
+            <SteamDot d={d} />
+            <span className="truncate">{d.game ? `Playing · ${d.game}` : label}</span>
+          </p>
+          {d.since && <p className="mt-0.5 text-[10px] font-mono text-lofi-muted">on Steam since {d.since}</p>}
+        </div>
       </div>
-      <dl className="w-full grid grid-cols-1 @[9rem]:grid-cols-2 gap-1.5">
-        {chips.map(([k, v]) => (
-          <div key={k} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0 @[9rem]:odd:last:col-span-2">
-            <dt className="text-[9px] font-mono uppercase text-lofi-muted truncate">{k}</dt>
-            <dd className="text-xs font-medium text-white tabular-nums truncate">{v}</dd>
+      <dl className="grid grid-cols-3 gap-2">
+        {tiles.map(([icon, k, v]) => (
+          <div key={k} className="bg-lofi-base/50 border border-white/5 rounded-xl px-2.5 py-2 min-w-0">
+            <dt className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider text-lofi-muted truncate">
+              <i className={`fa-solid ${icon} text-[#57cbde]`} aria-hidden="true" />
+              {k}
+            </dt>
+            <dd className="mt-0.5 text-sm font-medium text-white tabular-nums truncate">{v}</dd>
           </div>
         ))}
       </dl>
-    </div>
+      {d.recent?.length > 0 && (
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="shrink-0 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">Recent</span>
+          <ul className="flex items-center gap-3 min-w-0">
+            {d.recent.map((g) => (
+              <li key={g.name} className="min-w-0">
+                <a
+                  href={g.appid ? `https://store.steampowered.com/app/${g.appid}` : d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`${g.name} · ${g.hours2w} h these 2 weeks · ${g.hours} h total`}
+                  className="flex items-center gap-1.5 text-[11px] font-mono text-lofi-text hover:text-white transition-colors"
+                >
+                  {g.icon ? <img src={g.icon} alt="" width={20} height={20} className="w-5 h-5 rounded shrink-0" /> : <i className="fa-solid fa-gamepad text-lofi-muted" aria-hidden="true" />}
+                  <span className="tabular-nums">{g.hours2w} h</span>
+                  <span className="sr-only"> of {g.name} these 2 weeks</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   )
 }
 
