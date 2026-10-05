@@ -21,6 +21,7 @@
   --animate-card-in: card-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   --animate-eq: eq 0.9s ease-in-out infinite;
   --animate-blink: blink 1s steps(1) infinite;
+  --animate-nudge: nudge 1s ease-in-out infinite;
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
@@ -38,6 +39,11 @@
   @keyframes hint {
     0%, 100% { opacity: 0; }
     15%, 70% { opacity: 1; }
+  }
+  /* lock screen: the swipe knob's arrow points the way */
+  @keyframes nudge {
+    0%, 100% { translate: 0; }
+    50% { translate: 4px; }
   }
   /* Termix card: terminal block cursor */
   @keyframes blink {
@@ -294,6 +300,21 @@ body {
 html[data-fade]:not([data-motion='reduce']) {
   transition: --color-lofi-primary 0.6s ease, --color-lofi-secondary 0.6s ease, --color-lofi-highlight 0.6s ease;
 }
+
+/* lock screen: "swipe to unlock" breathes with a light sweep while nobody's there (classic slide to unlock) */
+.unlock-shimmer {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.4) 0%, rgb(255 255 255 / 0.4) 40%, #fff 50%, rgb(255 255 255 / 0.4) 60%, rgb(255 255 255 / 0.4) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: unlock-shimmer 2.8s linear infinite;
+}
+@keyframes unlock-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+[data-motion='reduce'] .unlock-shimmer { background: none; color: rgb(255 255 255 / 0.7); }
 
 [data-motion='reduce'] *, [data-motion='reduce'] *::before, [data-motion='reduce'] *::after,
 [data-motion='reduce'] ::backdrop {
