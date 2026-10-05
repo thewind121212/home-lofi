@@ -25,7 +25,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
 - **Spotify now playing**: a header pill with what you're listening to (cover, track, artists, a live progress bar),
-  or the last played track. Public, see [Spotify now playing](#spotify-now-playing).
+  or a resting placeholder when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
   - Internal cards add live stats (AdGuard, Nginx Proxy Manager, Portainer, Nextcloud, What's Up Docker, n8n, Coolify, MySpeed).
@@ -197,12 +197,13 @@ the session for a month.
 
 ### Spotify now playing
 
-Optional. The header shows what you're playing on Spotify (or the last played track) to every visitor: track,
+Optional. The header shows what you're playing on Spotify to every visitor (a resting placeholder when nothing plays or
+Spotify isn't connected yet): track,
 artists, album cover and a link to the song, nothing about the account. Off until the three `SPOTIFY_*` vars are set.
 
 1. https://developer.spotify.com/dashboard → **Create app**: Redirect URI `http://127.0.0.1:8888/callback`, API **Web API**.
 2. Put its **Client ID** and **Client secret** in `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`.
-3. `node scripts/spotify-auth.mjs` prints a consent link (read-only scopes: what's playing, what played). Open it,
+3. `node scripts/spotify-auth.mjs` prints a consent link (read-only scope: what's playing). Open it,
    agree; the browser lands on a page that doesn't load. Run `node scripts/spotify-auth.mjs '<that address>'`
    and put the printed `SPOTIFY_REFRESH_TOKEN` in your env.
 

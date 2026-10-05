@@ -2147,27 +2147,26 @@ function useSpotify() {
   return sp
 }
 
-const ago = (iso, now) => {
-  const m = Math.round(((now?.getTime() ?? Date.now()) - Date.parse(iso)) / 60_000)
-  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 24 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
-}
-// Header pill: what I'm listening to on Spotify (public: track, artists, cover, link). Playing, paused, or the last
-// played track; nothing at all until Spotify is set up. The progress bar runs locally between polls.
+// Header pill: what I'm listening to on Spotify (public: track, artists, cover, link), playing or paused.
+// Nothing playing, Spotify not connected yet or unreachable: IdlePill instead. The progress bar runs locally between polls.
+const SLOT = 'order-last basis-full lg:order-none lg:basis-auto lg:flex-1 min-w-0 flex lg:justify-center'
+const PILL = 'w-full lg:max-w-sm min-w-0 flex items-center gap-3 rounded-2xl bg-lofi-base/50 border border-white/5 p-1.5 pr-3'
 function NowPlaying({ sp, now }) {
-  if (!sp?.enabled || !sp.track) return null
+  // first answer pending: an empty slot of the same size, so the header doesn't jump when it arrives
+  if (sp === undefined) return <div className={SLOT} aria-hidden="true"><div className={`${PILL} h-[3.75rem] opacity-40`} /></div>
+  if (!sp.enabled || !sp.track) return <IdlePill />
   const artists = sp.artists.join(', ')
-  const paused = !sp.playing && sp.progressMs != null
-  const label = sp.playing ? 'Now playing' : paused ? 'Paused' : `Last played${sp.playedAt ? ` · ${ago(sp.playedAt, now)}` : ''}`
-  const pos = sp.progressMs == null ? null : sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, (now?.getTime() ?? sp.seen) - sp.seen) : 0)
+  const label = sp.playing ? 'Now playing' : 'Paused'
+  const pos = sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, (now?.getTime() ?? sp.seen) - sp.seen) : 0)
   return (
-    <div className="order-last basis-full lg:order-none lg:basis-auto lg:flex-1 min-w-0 flex lg:justify-center">
+    <div className={SLOT}>
       <a
         href={sp.url}
         target="_blank"
         rel="noopener noreferrer"
         title={`${sp.track} · ${artists}${sp.album ? ` · ${sp.album}` : ''}`}
         aria-label={`${label} on Spotify: ${sp.track} by ${artists}`}
-        className="group w-full lg:max-w-sm min-w-0 flex items-center gap-3 rounded-2xl bg-lofi-base/50 border border-white/5 hover:border-[#1db954]/40 p-1.5 pr-3 transition-colors"
+        className={`group ${PILL} hover:border-[#1db954]/40 transition-colors`}
       >
         <span className="relative shrink-0">
           {sp.art ? (
@@ -2192,13 +2191,42 @@ function NowPlaying({ sp, now }) {
           </span>
           <span className="block text-sm text-white truncate group-hover:text-[#1db954] transition-colors">{sp.track}</span>
           <span className="block text-[11px] text-lofi-muted truncate">{artists}</span>
-          {pos != null && sp.durationMs > 0 && (
+          {sp.durationMs > 0 && (
             <span className="mt-1 block h-0.5 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
               <span className="block h-full bg-[#1db954] transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (pos / sp.durationMs) * 100)}%` }} />
             </span>
           )}
         </span>
       </a>
+    </div>
+  )
+}
+
+// Nothing from Spotify right now (not connected yet, nothing playing, a podcast, or Spotify unreachable): a resting
+// record and a line that changes now and then. Same size as the real pill. Not a link, no controls.
+const IDLE_LINES = ['Silence, mostly', 'Taking a music break', 'Probably debugging', 'Headphones off', 'Waiting for the next song']
+function IdlePill() {
+  const { reduced } = useContext(Prefs)
+  const [k, setK] = useState(0)
+  useEffect(() => {
+    if (reduced) return
+    const t = setInterval(() => setK((i) => i + 1), 6000)
+    return () => clearInterval(t)
+  }, [reduced])
+  return (
+    <div className={SLOT}>
+      <div className={PILL}>
+        <span className="sr-only">Spotify: not playing right now</span>
+        <span className="relative shrink-0 w-11 h-11 rounded-xl bg-lofi-surface flex items-center justify-center" aria-hidden="true">
+          <i className="fa-solid fa-compact-disc text-2xl text-lofi-muted/70" />
+          <i className="fa-brands fa-spotify absolute -bottom-1 -right-1 text-sm text-[#1db954]/60 bg-lofi-base rounded-full" />
+        </span>
+        <span className="min-w-0 flex-1" aria-hidden="true">
+          <span className="block text-[9px] font-mono uppercase tracking-widest text-lofi-muted">Spotify · not playing</span>
+          <span key={k} className="block text-sm text-white/80 truncate motion-safe:animate-card-in">{IDLE_LINES[k % IDLE_LINES.length]}</span>
+          <span className="block text-[11px] text-lofi-muted truncate">the record is resting</span>
+        </span>
+      </div>
     </div>
   )
 }
