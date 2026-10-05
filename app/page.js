@@ -327,22 +327,6 @@ export default function Home() {
               </span>
             </button>
             <button
-              onClick={() => setFocus(true)}
-              aria-label="Hide panels (H)"
-              title="Hide panels (H)"
-              className="order-3 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
-            >
-              <i className="fa-solid fa-eye-slash text-xs" aria-hidden="true" />
-            </button>
-            <button
-              onClick={lock}
-              aria-label="Lock screen (swipe to unlock)"
-              title="Lock screen (L)"
-              className="order-3 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
-            >
-              <i className="fa-solid fa-lock text-xs" aria-hidden="true" />
-            </button>
-            <button
               onClick={() => setDlg.current.open || setDlg.current.showModal()}
               aria-label="Settings"
               aria-haspopup="dialog"
@@ -374,6 +358,13 @@ export default function Home() {
         </main>
       </div>
 
+      {!focus && !idle && !softLock && (
+        // 👁 Hide and 🔒 Lock float bottom right on the dashboard (Hide's bar has its own pair)
+        <div className="fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out]">
+          <DockButton icon="fa-eye-slash" label="Hide panels (H)" onClick={() => setFocus(true)} />
+          <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
+        </div>
+      )}
       {softLock ? <ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} /> : idle && <ClockScreen now={now} clock={set.clock} look={saverLook(set)} />}
       {softLock && (
         <LockControls onUnlock={unlock} set={set} update={update}>
@@ -407,6 +398,20 @@ function Clock({ now, clock, tick }) {
       )}
       {ampm && <span className="text-[0.45em] ml-1 align-[0.15em]">{ampm}</span>}
     </>
+  )
+}
+
+// the dashboard's floating 👁 / 🔒, bottom right
+function DockButton({ icon, label, title = label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      title={title}
+      className="glass-panel w-11 h-11 rounded-full flex items-center justify-center text-lofi-text hover:text-lofi-primary hover:scale-105 transition"
+    >
+      <i className={`fa-solid ${icon} text-sm`} aria-hidden="true" />
+    </button>
   )
 }
 
@@ -478,8 +483,8 @@ function WakeHint() {
 // The lock screen's controls, bottom center: what's playing (Lock screen › Music: bright, or dim = fades when the controls
 // rest), then 🎨 (the lock screen's look: the only settings that change while locked) and the swipe to unlock.
 // After 3 s without use they fold, smoothly, into a small breathing "swipe to unlock" and the music glides down into
-// their place. Only the pointer coming to this area or a click / tap on the hint opens them again: keys (Alt+Tab to
-// another window) and moving the mouse elsewhere don't.
+// their place. The pointer coming to this area, a click / tap anywhere or holding Space opens them again; other keys
+// (Alt+Tab to another window) and moving the mouse elsewhere don't.
 const REST_MS = 3000
 function LockControls({ onUnlock, set, update, children }) {
   const [open, setOpen] = useState(true)
@@ -492,9 +497,17 @@ function LockControls({ onUnlock, set, update, children }) {
   }
   useEffect(() => {
     rest()
-    return () => clearTimeout(timer.current)
+    // a click / tap anywhere on the lock screen shows them (keys don't: Alt+Tab to another window)
+    const onDown = () => (setOpen(true), rest())
+    addEventListener('pointerdown', onDown, true)
+    return () => {
+      clearTimeout(timer.current)
+      removeEventListener('pointerdown', onDown, true)
+    }
   }, [])
   useEffect(() => (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps them open
+  // holding Space slides the knob: open while it's held, rest again after
+  const engage = (on) => (on ? (setOpen(true), clearTimeout(timer.current)) : rest())
   const shown = open || look
   // a row that folds to nothing by animating its height (grid rows 1fr <-> 0fr), so what's above glides
   const fold = (on) => `grid transition-[grid-template-rows,opacity] duration-500 ease-out ${on ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
@@ -540,7 +553,7 @@ function LockControls({ onUnlock, set, update, children }) {
             >
               <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
             </button>
-            <SwipeUnlock onUnlock={onUnlock} />
+            <SwipeUnlock onUnlock={onUnlock} onEngage={engage} />
           </div>
         </div>
       </div>
@@ -561,18 +574,58 @@ function LockControls({ onUnlock, set, update, children }) {
   )
 }
 
-// Swipe to unlock: drag the knob to the end (keyboard: → five times). A short drag springs back, so a bump, a cat or a
-// stray key can't unlock. Idle, the text breathes with a soft light sweep; hovered, it lights up and the arrow nudges.
+// Swipe to unlock: drag the knob to the end, or hold Space (~1 s: the knob slides across; letting go stops it and it
+// springs back), or → five times. A short drag springs back, so a bump, a cat or a stray key can't unlock.
+// Idle, the text breathes with a soft light sweep; hovered, it lights up and the arrow nudges.
 const KNOB = 48
-function SwipeUnlock({ onUnlock }) {
+const SPACE_MS = 1000
+function SwipeUnlock({ onUnlock, onEngage }) {
   const track = useRef(null)
   const knob = useRef(null)
   const from = useRef(0)
   const [x, setX] = useState(0) // the knob's offset, px
   const [drag, setDrag] = useState(false)
   const [hover, setHover] = useState(false)
+  const [auto, setAuto] = useState(false) // Space is sliding it
+  const raf = useRef(0)
   const max = () => (track.current ? track.current.clientWidth - KNOB - 8 : 200)
   const settle = (v) => (v >= max() * 0.9 ? (setX(max()), onUnlock()) : setX(0)) // far enough unlocks, else springs back
+  useEffect(() => {
+    const stop = () => {
+      cancelAnimationFrame(raf.current)
+      raf.current = 0
+      setAuto(false)
+    }
+    const down = (e) => {
+      if (e.code !== 'Space') return
+      e.preventDefault() // no page scroll, no click on a focused button
+      if (e.repeat || raf.current) return
+      onEngage?.(true)
+      setAuto(true)
+      const t0 = performance.now()
+      const step = (t) => {
+        const v = Math.min(1, (t - t0) / SPACE_MS) * max()
+        setX(v)
+        if (v >= max()) return stop(), onUnlock()
+        raf.current = requestAnimationFrame(step)
+      }
+      raf.current = requestAnimationFrame(step)
+    }
+    const up = (e) => {
+      if (e.code !== 'Space' || !raf.current) return
+      e.preventDefault()
+      stop()
+      setX(0) // let go early: springs back
+      onEngage?.(false)
+    }
+    addEventListener('keydown', down, true)
+    addEventListener('keyup', up, true)
+    return () => {
+      cancelAnimationFrame(raf.current)
+      removeEventListener('keydown', down, true)
+      removeEventListener('keyup', up, true)
+    }
+  }, [])
   const move = (e) => drag && setX(Math.min(max(), Math.max(0, e.clientX - from.current)))
   const key = (e) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
@@ -589,7 +642,7 @@ function SwipeUnlock({ onUnlock }) {
       className="glass-panel relative w-72 max-w-[calc(100vw-6.5rem)] h-14 rounded-full select-none touch-none [-webkit-touch-callout:none]"
     >
       <span
-        className={`absolute inset-0 pl-12 flex items-center justify-center font-mono text-sm tracking-wide pointer-events-none transition-colors ${hover || drag ? 'text-white' : 'unlock-shimmer'}`}
+        className={`absolute inset-0 pl-12 flex items-center justify-center font-mono text-sm tracking-wide pointer-events-none transition-colors ${hover || drag || auto ? 'text-white' : 'unlock-shimmer'}`}
         style={{ opacity: Math.max(0, 1 - p * 1.6) }}
         aria-hidden="true"
       >
@@ -603,14 +656,14 @@ function SwipeUnlock({ onUnlock }) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(p * 100)}
-        aria-valuetext={p > 0 ? `${Math.round(p * 100)}%` : 'locked, press right arrow to slide'}
+        aria-valuetext={p > 0 ? `${Math.round(p * 100)}%` : 'locked, hold Space or press right arrow to slide'}
         onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), (from.current = e.clientX - x), setDrag(true))}
         onPointerMove={move}
         onPointerUp={() => drag && (setDrag(false), settle(x))}
         onPointerCancel={() => (setDrag(false), setX(0))}
         onKeyDown={key}
         onContextMenu={(e) => e.preventDefault()} // long-press on phones: no menu
-        className={`absolute top-1 left-1 w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center cursor-grab active:cursor-grabbing shadow-[0_0_18px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)] ${drag ? '' : 'transition-transform duration-300 ease-out'}`}
+        className={`absolute top-1 left-1 w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center cursor-grab active:cursor-grabbing shadow-[0_0_18px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)] ${drag || auto ? '' : 'transition-transform duration-300 ease-out'}`}
         style={{ transform: `translateX(${x}px)` }}
       >
         <i className={`fa-solid ${p > 0.9 ? 'fa-lock-open' : 'fa-arrow-right'} ${hover && !drag && p === 0 ? 'motion-safe:animate-nudge' : ''}`} aria-hidden="true" />

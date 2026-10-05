@@ -13,14 +13,14 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 
   | | when | shows | back with |
   | --- | --- | --- | --- |
-  | **Hide** (I'm still here) | 👁 button or **H** | scene + a mini bar (the music that plays: radio or Spotify, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
+  | **Hide** (I'm still here) | 👁 (bottom right) or **H** | scene + a mini bar (the music that plays: radio or Spotify, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
   | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
-  | **Lock** (I'm away, hands off) | 🔒 button or **L** (the screensaver never locks) | scene + clock + weather + **swipe to unlock**, in its own look, + what's playing (Lock screen › Music) | **swiping** the knob across (keyboard: → five times) |
+  | **Lock** (I'm away, hands off) | 🔒 (bottom right) or **L** (the screensaver never locks) | scene + clock + weather + **swipe to unlock**, in its own look, + what's playing (Lock screen › Music) | **swiping** the knob across, or **holding Space** ~1 s (let go to stop); → five times |
 
   The lock has its own look (Settings › Lock screen, or 🎨 on the lock screen); the screensaver keeps the plain one.
   After 3 s without use the lock's controls fold smoothly into a small breathing *swipe to unlock* and what's playing
-  glides down into their place; only bringing the pointer to the bottom or clicking / tapping the hint opens them again
-  (keys like Alt+Tab don't). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake the screensaver either.
+  glides down into their place; bringing the pointer to the bottom, a click / tap anywhere or holding Space opens them
+  again (other keys, like Alt+Tab, don't). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake the screensaver either.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
