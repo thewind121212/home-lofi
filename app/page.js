@@ -4,10 +4,10 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
-import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneName, sceneWeather, themeColors, toUnit } from '../lib/settings'
+import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
-import { Gallery, LockLook, Prefs, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
+import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
 // a browser with no saved location starts in Đà Lạt
 const DEFAULT_LOC = { id: 1584071, name: 'Da Lat', region: 'Lam Dong', country: 'Vietnam', lat: 11.94646, lon: 108.44193, tz: 'Asia/Ho_Chi_Minh' }
@@ -314,7 +314,7 @@ export default function Home() {
       <div
         className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
-        {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
+        {/* phones: greeting, then clock | scene on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-4 min-w-0">
             <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
@@ -326,36 +326,13 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            <button
-              onClick={openGallery}
-              aria-haspopup="dialog"
-              aria-label={`Background scene: ${sceneName(scene ?? 'london')}${sceneDown ? ' (could not load)' : ''}. Choose a scene`}
-              title={sceneDown ? 'Scene could not load, showing the night sky' : 'Choose a scene'}
-              className="order-2 sm:order-none ml-auto sm:ml-0 min-w-0 h-8 flex items-center gap-2 bg-lofi-base/50 border border-white/5 rounded-full pl-2.5 pr-2 sm:pl-3 sm:pr-2.5 text-xs font-mono text-lofi-muted hover:text-white hover:border-white/20 transition-colors"
-            >
-              {sceneDown ? (
-                <i className="fa-solid fa-moon text-lofi-highlight" aria-hidden="true" />
-              ) : (
-                <span className="hidden sm:inline">
-                  <i className="fa-solid fa-image" aria-hidden="true" />
-                </span>
-              )}
-              {/* phones: the moon (+ the title) says it */}
-              {sceneDown && <span className="hidden sm:inline text-[10px] text-red-400">offline</span>}
-              <span className="min-w-0 sm:max-w-28 truncate text-white">{sceneName(scene ?? 'london')}</span>
-              <span className="max-sm:hidden text-[9px]" aria-hidden="true">
-                <i className="fa-solid fa-chevron-down" />
-              </span>
-            </button>
-            <button
-              onClick={() => setDlg.current.open || setDlg.current.showModal()}
-              aria-label="Settings"
-              aria-haspopup="dialog"
-              title="Settings"
-              className="order-4 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
-            >
-              <i className="fa-solid fa-gear text-xs" aria-hidden="true" />
-            </button>
+            <ScenePicker
+              className="order-2 sm:order-none ml-auto sm:ml-0"
+              set={set}
+              update={update}
+              scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name }}
+              onGallery={openGallery}
+            />
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               <Clock now={now} clock={set.clock} />
@@ -410,7 +387,7 @@ export default function Home() {
       {idle && !softLock && <WakeHint />}
       {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
       {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} mini={mini} onShow={() => setFocus(false)} onLock={lock} />}
-      <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
+      <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </SteamData>
     </Prefs>

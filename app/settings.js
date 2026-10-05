@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useRef, useState } from 'react'
+import { createContext, useEffect, useRef, useState } from 'react'
 import { AUTH_URL, SCENES, SCENES_URL } from '../lib/data'
 import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
 
@@ -72,16 +72,28 @@ function Choice({ legend, name, value, options, onChange, children }) {
   )
 }
 
-const WEATHER_LABEL = { signature: 'Signature', live: 'Live', clear: 'Clear', drizzle: 'Drizzle', rain: 'Rain', thunderstorm: 'Storm', snow: 'Snow', leaves: 'Leaves' }
+// Scene weather: label + icon (header scene button's badge, the scene picker's chips)
+export const SCENE_WX = {
+  signature: ['Signature', 'fa-wand-magic-sparkles'],
+  live: ['Live', 'fa-tower-broadcast'],
+  clear: ['Clear', 'fa-sun'],
+  drizzle: ['Drizzle', 'fa-cloud-rain'],
+  rain: ['Rain', 'fa-cloud-showers-heavy'],
+  thunderstorm: ['Storm', 'fa-cloud-bolt'],
+  snow: ['Snow', 'fa-snowflake'],
+  leaves: ['Leaves', 'fa-leaf'],
+}
+// 'Storm', or for Live the weather it follows: 'Live · Rain' ('Live' while it waits)
+export const wxName = (weather, want) => (weather === 'live' && want ? `Live · ${SCENE_WX[want][0]}` : SCENE_WX[weather][0])
 
 // scene = { want, mode, from }: the variant asked for (null while Live waits for the weather), the one shown, Live's city
 function weatherHint(set, { want, mode, from }) {
   const live = set.weather === 'live'
   if (live && !want) return 'Live: waiting for the weather…'
   if (live && want === 'signature') return `Live: ${from ? `no variant for the weather in ${from}` : 'weather unavailable'}, showing Signature`
-  let t = live ? `Live: ${WEATHER_LABEL[want].toLowerCase()}${from ? ` (from ${from})` : ''}` : ''
-  if (want !== mode) t += `${t ? ' · ' : ''}not available for this scene yet, showing Signature`
-  return t
+  const t = live ? `Live now: ${SCENE_WX[want][0]}${from ? ` in ${from}` : ''}` : ''
+  const miss = want !== mode ? `${SCENE_WX[want][0]} isn't available for this scene yet, showing Signature` : ''
+  return [t, miss].filter(Boolean).join(' · ')
 }
 
 // The lock screen's look (the screensaver keeps the plain one). In the Settings dialog, and alone on the lock
@@ -130,8 +142,7 @@ function SyncStatus({ status }) {
   )
 }
 
-export function Settings({ dlg, set, update, reset, sync, scene }) {
-  const hint = weatherHint(set, scene)
+export function Settings({ dlg, set, update, reset, sync }) {
   const radio = (key, legend, options, extra) => (
     <Choice legend={legend} name={key} value={set[key]} options={options} onChange={(v) => update({ [key]: v })}>
       {extra}
@@ -195,28 +206,7 @@ export function Settings({ dlg, set, update, reset, sync, scene }) {
           </div>
         </fieldset>
 
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
-          <div>
-            <p className="mb-2 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">Scene</p>
-            <button
-              onClick={scene.open}
-              aria-haspopup="dialog"
-              className="h-8 pl-3 pr-2.5 rounded-full border border-white/10 bg-white/5 font-mono text-xs text-white hover:border-lofi-primary/50 transition-colors flex items-center gap-2"
-            >
-              <i className="fa-solid fa-image text-lofi-primary" aria-hidden="true" />
-              {sceneName(scene.id ?? 'london')}
-              <i className="fa-solid fa-chevron-right text-[9px] text-lofi-muted" aria-hidden="true" />
-            </button>
-          </div>
-          {radio('onLoad', 'On load', [['keep', 'Keep'], ['random', 'Random']])}
-        </div>
-
-        {radio(
-          'weather',
-          'Scene weather',
-          SCENE_WEATHER.map((w) => [w, WEATHER_LABEL[w]]),
-          hint && <p className="mt-2 text-[11px] font-mono text-lofi-muted" aria-live="polite">{hint}</p>,
-        )}
+        {radio('onLoad', 'On load', [['keep', 'Keep'], ['random', 'Random']])}
 
         <label className="block">
           <span className="mb-1 flex justify-between text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
@@ -265,6 +255,176 @@ export function Settings({ dlg, set, update, reset, sync, scene }) {
         </div>
       </div>
     </dialog>
+  )
+}
+
+// A scene's poster (<base>.webp: the one the scene itself already loaded), cross-fading when it changes: the old one
+// stays underneath until the new one has loaded and faded in. No base (Live waiting) = night sky; down = night sky + moon.
+export function ScenePoster({ base, down, className = '', imgClass = '' }) {
+  const src = base ? `${base}.webp` : null
+  const [shown, setShown] = useState([{ src, k: 0 }]) // the last two; a fresh key per change, so even a switch back fades
+  const top = shown.at(-1)
+  if (top.src !== src) setShown([top, { src, k: top.k + 1 }]) // derived state: re-renders before paint
+  return (
+    <span className={`night-sky block relative overflow-hidden ${className}`}>
+      {down ? (
+        <i className="fa-solid fa-moon absolute top-1/2 left-1/2 -translate-1/2 text-lofi-highlight" aria-hidden="true" />
+      ) : (
+        shown.map(
+          ({ src, k }) =>
+            src && (
+              <img
+                key={k}
+                src={src}
+                alt=""
+                decoding="async"
+                onLoad={(e) => (e.currentTarget.style.opacity = 1)}
+                className={`absolute inset-0 w-full h-full object-cover opacity-0 transition duration-500 ${imgClass}`}
+              />
+            ),
+        )
+      )}
+    </span>
+  )
+}
+
+// The header's scene button (mini picture of the scene as shown + the Scene weather badge) and its popup: the scene
+// (opens the Gallery) and the Scene weather chips. Same dialog pattern as Settings; .scene-pop makes it a popover
+// under the button from sm, the bottom sheet below. scene = { id, base, down, want, mode, from } (see Home)
+export function ScenePicker({ set, update, scene, onGallery, className = '' }) {
+  const btn = useRef(null)
+  const dlg = useRef(null)
+  const name = sceneName(scene.id ?? 'london')
+  const wx = wxName(set.weather, scene.want)
+  const hint = weatherHint(set, scene)
+  // the popover hangs under the button, right edges aligned; absolute in the top layer = page coordinates, so it
+  // scrolls with the page
+  const place = () => {
+    const r = btn.current.getBoundingClientRect()
+    dlg.current.style.setProperty('--pop-top', `${r.bottom + scrollY + 8}px`)
+    dlg.current.style.setProperty('--pop-right', `${document.documentElement.clientWidth - r.right}px`)
+  }
+  useEffect(() => {
+    const onResize = () => dlg.current.open && place()
+    addEventListener('resize', onResize)
+    return () => removeEventListener('resize', onResize)
+  }, [])
+  function open() {
+    if (dlg.current.open) return // also ignores clicks while the close animation runs
+    place()
+    dlg.current.showModal()
+  }
+  // straight to the Gallery (no exit animation under it); focus on the button first, so closing the Gallery lands there
+  function toGallery() {
+    dlg.current.close()
+    btn.current.focus({ preventScroll: true })
+    onGallery()
+  }
+  return (
+    <>
+      <button
+        ref={btn}
+        onClick={open}
+        aria-haspopup="dialog"
+        aria-label={`Scene: ${name}${scene.down ? ' (could not load)' : ''}, weather ${wx}. Change scene or weather`}
+        title={scene.down ? 'Scene could not load, showing the night sky' : 'Change scene or weather'}
+        className={`${className} min-w-0 flex items-center gap-2.5 p-1 sm:pr-3 rounded-xl bg-lofi-base/50 border border-white/5 text-left hover:border-white/20 transition-colors`}
+      >
+        <span className="relative shrink-0">
+          <ScenePoster base={scene.base} down={scene.down} className="w-16 h-9 rounded-lg" />
+          <span className="absolute -bottom-1 -right-1 w-[18px] h-[18px] rounded-full bg-lofi-base border border-white/15 flex items-center justify-center text-[8px] text-lofi-primary shadow">
+            <i className={`fa-solid ${SCENE_WX[set.weather][1]}`} aria-hidden="true" />
+          </span>
+        </span>
+        <span className="max-sm:hidden min-w-0">
+          <span className="block max-w-28 truncate text-xs text-white">{name}</span>
+          <span className={`block max-w-28 truncate text-[10px] font-mono ${scene.down ? 'text-red-400' : 'text-lofi-muted'}`}>{scene.down ? 'offline' : wx}</span>
+        </span>
+        {/* wrapped: Font Awesome's unlayered display beats Tailwind's hidden on the <i> itself */}
+        <span className="max-sm:hidden text-[9px] text-lofi-muted" aria-hidden="true">
+          <i className="fa-solid fa-chevron-down" />
+        </span>
+      </button>
+
+      <dialog
+        ref={dlg}
+        aria-labelledby="pick-title"
+        onClick={(e) => e.target === dlg.current && closeDialog(dlg.current)}
+        onCancel={(e) => {
+          e.preventDefault() // Esc: animate out first
+          closeDialog(dlg.current)
+        }}
+        // the browser restores focus to the opener; a click (Safari) left none -> back to the button
+        onClose={() => {
+          delete dlg.current.dataset.closing
+          if (document.activeElement === document.body) btn.current.focus({ preventScroll: true })
+        }}
+        className="wx-sheet scene-pop glass-panel text-lofi-text overscroll-contain"
+      >
+        <div className="p-5 sm:p-4 flex flex-col gap-4">
+          {/* title + close on the phone sheet only (the hidden title still names the dialog); the popover hangs off its button */}
+          <div className="flex items-center justify-between gap-4 sm:hidden">
+            <h2 id="pick-title" className="text-lg font-medium text-white flex items-center gap-3">
+              <i className="fa-solid fa-image text-lofi-primary" aria-hidden="true" /> Scene
+            </h2>
+            <button
+              onClick={() => closeDialog(dlg.current)}
+              aria-label="Close"
+              className="w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
+            >
+              <i className="fa-solid fa-xmark" aria-hidden="true" />
+            </button>
+          </div>
+
+          <button onClick={toGallery} aria-haspopup="dialog" aria-label={`${name}. Change scene`} className="group block rounded-xl">
+            <span className="block relative rounded-xl overflow-hidden ring-2 ring-transparent transition-shadow duration-300 group-hover:ring-lofi-primary group-hover:shadow-[0_0_24px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)]">
+              <ScenePoster
+                base={scene.base}
+                down={scene.down}
+                className="aspect-video text-2xl"
+                imgClass="group-hover:scale-105 group-hover:brightness-110 group-focus-visible:scale-105 group-focus-visible:brightness-110"
+              />
+              <span className="absolute inset-x-0 bottom-0 px-3 pt-10 pb-2.5 flex items-end justify-between gap-3 bg-linear-to-t from-black/80 via-black/35 to-transparent">
+                <span className="min-w-0 truncate text-sm font-medium text-white">{name}</span>
+                <span className="shrink-0 flex items-center gap-1.5 font-mono text-[11px] text-white/90 group-hover:text-lofi-primary transition-colors">
+                  <i className="fa-solid fa-images" aria-hidden="true" /> Change scene
+                  <i className="fa-solid fa-chevron-right text-[9px]" aria-hidden="true" />
+                </span>
+              </span>
+            </span>
+          </button>
+
+          <div role="group" aria-labelledby="pick-wx">
+            <p id="pick-wx" className="mb-2 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
+              Scene weather
+            </p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {SCENE_WEATHER.map((w) => {
+                const on = set.weather === w
+                return (
+                  <button
+                    key={w}
+                    aria-pressed={on}
+                    onClick={() => update({ weather: w })}
+                    className={`h-14 min-w-0 px-0.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 font-mono text-[10px] transition-colors ${
+                      on ? 'bg-lofi-primary border-transparent text-lofi-base font-bold' : 'bg-white/5 border-white/10 text-lofi-text hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    <i className={`fa-solid ${SCENE_WX[w][1]} text-sm ${on ? '' : 'text-lofi-primary'}`} aria-hidden="true" />
+                    <span className="max-w-full truncate tracking-tight">{SCENE_WX[w][0]}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+          {hint && (
+            <p className="-mt-1 text-[11px] font-mono text-lofi-muted" aria-live="polite">
+              {hint}
+            </p>
+          )}
+        </div>
+      </dialog>
+    </>
   )
 }
 
