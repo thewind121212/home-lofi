@@ -1538,16 +1538,7 @@ function enter(el) {
     }),
   )
 }
-// Shown on the Internal tab while locked: obviously fake services, every card links to the sign-in page.
-// Nothing here comes from the real list (that one only ever arrives from /api/private).
-const DECOYS = [
-  { name: 'Skynet (beta)', fa: 'fa-solid fa-robot', stats: [['Uprising', '0%'], ['Mood', 'polite']] },
-  { name: 'Cat Feeder 3000', fa: 'fa-solid fa-cat', stats: [['Fed today', '9×'], ['Hungry', 'yes']] },
-  { name: 'Coffee API', fa: 'fa-solid fa-mug-hot', stats: [['Cups', '4.2'], ['Status', '418']] },
-  { name: 'Hamster PSU', fa: 'fa-solid fa-bolt', stats: [['RPM', '3.1K'], ['Hamster', 'happy']] },
-  { name: 'Backup of the Backup', fa: 'fa-solid fa-box-archive', stats: [['Copies', '∞'], ['Tested', 'never']] },
-  { name: 'Secret Recipes', fa: 'fa-solid fa-book-skull', deco: 'vault' },
-]
+// the auth portal, coming back to this page after login
 const signIn = () => `${AUTH_URL}/?rd=${encodeURIComponent(location.href)}`
 const TAB_ICON = { All: 'fa-border-all', Sites: 'fa-globe', Apps: 'fa-cubes', Developer: 'fa-code', Contact: 'fa-address-card', Entertainment: 'fa-gamepad', Internal: 'fa-lock' }
 // Painted-stroke edges: straight on the left, torn on the right (two layers give the rough brush look)
@@ -1558,6 +1549,7 @@ const BRUSH_2 = 'polygon(2% 0%, 97% 10%, 92% 34%, 100% 58%, 96% 88%, 88% 96%, 0%
 function Services({ priv }) {
   const [tab, setTab] = useState('Sites')
   const [health, setHealth] = useState({}) // public up/down for the Apps section
+  const [teaser, setTeaser] = useState(null) // locked: the internal services' names + up/down only (/api/internal)
   const box = useRef(null)
   useEffect(() => {
     const get = () => fetch('/api/status').then((r) => r.json()).then(setHealth, () => {})
@@ -1608,12 +1600,20 @@ function Services({ priv }) {
     return () => cancelAnimationFrame(f)
   }, [])
 
+  const locked = priv === null
+  useEffect(() => {
+    if (!locked) return
+    const get = () => fetch('/api/internal').then((r) => r.json()).then((l) => Array.isArray(l) && setTeaser(l), () => {})
+    get()
+    const t = setInterval(get, 60_000)
+    return () => clearInterval(t)
+  }, [locked])
+
   const groups = [...SERVICES, ...(priv?.services?.length ? [{ section: 'Internal', items: priv.services }] : [])]
   const shown = tab === 'All' ? groups : groups.filter((g) => g.section === tab)
-  const locked = priv === null
   const count = (t) => (t === 'All' ? groups : groups.filter((g) => g.section === t)).reduce((a, g) => a + g.items.length, 0)
   // shared by both tab variants (pills < lg, brush bookmarks >= lg); n = null while Internal is locked
-  const meta = (t) => ({ on: tab === t, icon: t === 'Internal' && !locked ? 'fa-lock-open' : TAB_ICON[t], n: t === 'Internal' && locked ? null : count(t) })
+  const meta = (t) => ({ on: tab === t, icon: t === 'Internal' && !locked ? 'fa-lock-open' : TAB_ICON[t], n: t === 'Internal' && locked ? (teaser?.length ?? null) : count(t) })
   let n = 0
   return (
     // lg: tab stack on the panel's right edge; the selected tab sticks out past the border like a bookmark. pr-44 keeps cards clear of it (~1/4 of the panel)
@@ -1713,19 +1713,20 @@ function Services({ priv }) {
           <>
             <div data-anim className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-lofi-base/40 border border-white/5 px-4 py-3">
               <p className="text-xs font-mono text-lofi-muted flex items-center gap-2.5 min-w-0">
-                <i className="fa-solid fa-user-secret text-lofi-primary" aria-hidden="true" />
-                <span>Internal apps are private. These are decoys.</span>
+                <i className="fa-solid fa-lock text-lofi-primary" aria-hidden="true" />
+                <span>Internal apps are private.</span>
               </p>
               <a
                 href={signIn()}
                 className="shrink-0 text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 px-4 py-2 rounded-full border border-lofi-primary/20 transition-colors"
               >
-                Sign in for the real ones
+                Sign in
               </a>
             </div>
+            {/* name + live status only; the card goes nowhere and every one wears the sealed vault */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-              {DECOYS.map((s) => (
-                <ServiceCard key={s.name} s={{ ...s, href: signIn(), host: '█████.lan', self: true }} accent={ACCENTS[n++ % ACCENTS.length]} stats={s.stats} />
+              {teaser?.map((s) => (
+                <ServiceCard key={s.name} s={{ ...s, href: '#', host: '█████.lan', deco: 'vault' }} accent={ACCENTS[n++ % ACCENTS.length]} live={s.live} />
               ))}
             </div>
           </>
@@ -1876,7 +1877,7 @@ function ServiceCard({ s, accent, live, stats }) {
   return (
     <a
       href={s.href}
-      {...(!s.self && { target: '_blank', rel: 'noopener noreferrer' })}
+      {...(s.href === '#' ? { onClick: (e) => e.preventDefault() } : { target: '_blank', rel: 'noopener noreferrer' })}
       data-anim
       className="@container bg-lofi-base/40 hover:bg-lofi-surface border border-white/5 hover:border-lofi-primary/40 px-3 py-5 sm:p-5 rounded-2xl transition-all duration-300 group flex flex-col items-center text-center gap-3 relative overflow-hidden card-blur"
     >
@@ -1965,54 +1966,29 @@ function usePrivate() {
   return d
 }
 
-// Signed out: the same tiles with silly values that change every few seconds and bars that wander. Nothing real is
-// shown (the real numbers only ever arrive from /api/private). Pure decoration, plus the way to sign in.
-const FAKE = [
-  ['fa-gauge text-lofi-primary', 'CPU', ['thinking…', 'overthinking', 'mining vibes', 'doing its best']],
-  ['fa-memory text-blue-400', 'RAM', ['full of memes', '64 tabs open', 'forgot why', 'remembering']],
-  ['fa-temperature-half text-lofi-secondary', 'Temp', ['cozy', 'spicy', 'toasty', 'chill']],
-  ['fa-hard-drive text-emerald-400', 'Disk', ['∞ cat pics', 'mostly logs', '99% memes', 'no space :(']],
-]
-function FakeServer() {
-  const { reduced } = useContext(Prefs)
-  const [k, setK] = useState(0)
-  const [pct, setPct] = useState([40, 70, 55, 85])
-  useEffect(() => {
-    if (reduced) return
-    const t = setInterval(() => {
-      setK((i) => i + 1)
-      setPct((p) => p.map((v) => Math.round(Math.min(97, Math.max(8, v + (Math.random() - 0.5) * 30)))))
-    }, 2500)
-    return () => clearInterval(t)
-  }, [reduced])
-  return (
-    <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">
-      <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-[10px] font-mono text-lofi-muted">
-        <p className="flex items-center gap-2">
-          <i className="fa-solid fa-microchip text-lofi-text/80" aria-hidden="true" />
-          <span className="text-lofi-text/80 uppercase tracking-widest">Server</span>
-          <span>up since the big bang · load chill chill chill</span>
-        </p>
-        <a href={signIn()} className="text-lofi-primary hover:underline flex items-center gap-1.5">
-          <i className="fa-solid fa-lock" aria-hidden="true" /> sign in for the real numbers
-        </a>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" aria-hidden="true">
-        {FAKE.map(([icon, label, values], i) => (
-          <Stat key={label} icon={icon} label={label} value={values[(k + i) % values.length]} pct={pct[i]} />
-        ))}
-      </div>
-    </section>
-  )
-}
-
-// The Hub's second row: host stats when unlocked, otherwise FakeServer's silly ones. Internal services render inside Services.
+// The Hub's second row: host stats when unlocked, otherwise a sign-in line. Internal services render inside Services.
 function Server({ d }) {
   const { unit } = useContext(Prefs)
   if (d === undefined) return null
   const here = encodeURIComponent(location.href)
 
-  if (!d) return <FakeServer />
+  if (!d) {
+    return (
+      <div className="z-10 border-t border-white/5 pt-4 flex items-center justify-between gap-4">
+        <p className="text-xs font-mono text-lofi-muted flex items-center gap-3 min-w-0">
+          <i className="fa-solid fa-lock text-lofi-primary" aria-hidden="true" />
+          <span className="truncate">Server &amp; internal apps</span>
+        </p>
+        <a
+          href={`${AUTH_URL}/?rd=${here}`}
+          aria-label="Sign in to see server status and internal services"
+          className="shrink-0 text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 px-3 py-2 rounded-full border border-lofi-primary/20 transition-colors"
+        >
+          Sign in
+        </a>
+      </div>
+    )
+  }
 
   const { stats: st = {}, user } = d
   return (

@@ -102,6 +102,8 @@ browser ──> reverse proxy (NPM) ──> home-lofi
   - On that path the proxy runs forward-auth and adds `x-home-gate: <GATE_SECRET>`.
   - Without the header the app answers **404**, so a missing proxy rule fails closed.
 - Visitors who aren't allowed see a small **Sign in** card linking to your auth portal (`AUTH_URL` in `lib/data.js`).
+- The locked **Internal** tab still lists your internal services by **name, icon and live up/down + ms** (public `/api/internal`),
+  each card sealed and going nowhere. Their links, hosts and stats only ever come from `/api/private`.
 
 Nginx Proxy Manager: on the proxy host's **Advanced** tab, add a custom location (adjust the Authelia include to your setup):
 
