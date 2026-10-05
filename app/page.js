@@ -51,8 +51,6 @@ export default function Home() {
   const [softLock, setSoftLock] = useState(false)
   const lockRef = useRef(false)
   lockRef.current = softLock
-  const wakeRef = useRef(set.idleWake) // read by the idle timer without restarting it
-  wakeRef.current = set.idleWake
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
   const spotify = useSpotify()
@@ -126,7 +124,7 @@ export default function Home() {
   }, [settings, reduced])
 
   // Screensaver (Settings > Screensaver after): after N s without input the dashboard fades + blurs away (like Hide);
-  // any input brings it back. With Wake with: Hold to unlock it locks instead (the soft lock below).
+  // any input brings it back. It never locks: only the 🔒 button / L do (the soft lock below).
   // Never while a dialog or the location dropdown is open, or with text typed in a field.
   useEffect(() => {
     if (!set.idle) return
@@ -156,7 +154,7 @@ export default function Home() {
       if (idleRef.current) return
       if (lockRef.current) return void (last = Date.now())
       if (busy()) last = Date.now()
-      else if (Date.now() - last >= set.idle * 1000) wakeRef.current === 'hold' ? lock() : setIdle((idleRef.current = true))
+      else if (Date.now() - last >= set.idle * 1000) setIdle((idleRef.current = true))
     }, 1000)
     return () => {
       clearInterval(t)
@@ -354,7 +352,7 @@ export default function Home() {
         </main>
       </div>
 
-      {(idle || softLock) && <ClockScreen now={now} set={set} />}
+      {softLock ? <ClockScreen now={now} clock={set.clock} look={lockLook(set)} /> : idle && <ClockScreen now={now} clock={set.clock} look={saverLook(set)} />}
       {softLock && <LockPill onUnlock={unlock} set={set} update={update} />}
       {idle && !softLock && <WakeHint />}
       {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
@@ -377,21 +375,24 @@ function Clock({ now, clock }) {
   )
 }
 
-// The clock screen behind Lock and Screensaver (Settings > Lock screen): blur, then overlay over the scene, then the
-// clock (big / small / off) and the date. Decorative: the header clock is the accessible one.
+// The clock screen behind Lock and Screensaver: blur, then overlay over the scene, then the clock and the date.
+// The lock has its own look (Settings > Lock screen); the screensaver keeps the plain one.
+// Decorative: the header clock is the accessible one.
+const lockLook = (s) => ({ clock: s.lockClock, date: s.lockDate, overlay: s.lockOverlay, blur: s.lockBlur })
+const saverLook = (s) => ({ clock: s.idleShow === 'clock' ? 'big' : 'off', date: true, overlay: s.idleShow === 'clock' ? 'soft' : 'off', blur: 'off' })
 const BLUR = { soft: 6, strong: 16 } // px. Re-blurs the moving scene every frame: GPU work, so Off by default
-function ClockScreen({ now, set }) {
-  const blur = BLUR[set.lockBlur]
+function ClockScreen({ now, clock, look }) {
+  const blur = BLUR[look.blur]
   return (
     <div className="fixed inset-0 z-20 pointer-events-none select-none motion-safe:animate-[fade-in_1.2s_ease-out]" aria-hidden="true">
       {blur && <div className="absolute inset-0" style={{ backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)` }} />}
-      {set.lockOverlay !== 'off' && <div className={`absolute inset-0 lock-overlay-${set.lockOverlay}`} />}
-      {set.idleShow !== 'scene' && (
+      {look.overlay !== 'off' && <div className={`absolute inset-0 lock-overlay-${look.overlay}`} />}
+      {look.clock !== 'off' && (
         <div className="idle-clock relative h-full flex flex-col items-center justify-center px-4 text-center">
-          <div className={`font-mono font-bold text-white leading-none whitespace-nowrap ${set.idleShow === 'small' ? 'text-5xl sm:text-6xl' : 'text-7xl sm:text-9xl short:text-7xl'}`}>
-            <Clock now={now} clock={set.clock} />
+          <div className={`font-mono font-bold text-white leading-none whitespace-nowrap ${look.clock === 'small' ? 'text-5xl sm:text-6xl' : 'text-7xl sm:text-9xl short:text-7xl'}`}>
+            <Clock now={now} clock={clock} />
           </div>
-          {set.lockDate && (
+          {look.date && (
             <div className="mt-4 sm:mt-6 font-mono font-bold text-xs sm:text-base uppercase tracking-[0.3em] text-white/90">
               {now?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </div>

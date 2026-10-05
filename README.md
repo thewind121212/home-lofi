@@ -15,9 +15,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   | --- | --- | --- | --- |
   | **Hide** (I'm still here) | 👁 button or **H** | scene + a mini bar (music, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
   | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
-  | **Lock** (I'm away, hands off) | 🔒 button, **L**, or the Screensaver with *Wake with: Hold to unlock* | scene + big clock + 🔒 pill | **holding** the pill (or Space / Enter) ~1 s |
+  | **Lock** (I'm away, hands off) | 🔒 button or **L** (the screensaver never locks) | scene + clock + 🔒 pill, in its own look | **holding** the pill (or Space / Enter) ~1 s |
 
-  Lock and Screensaver share one look (Settings › Lock screen, or 🎨 on the lock screen).
+  The lock has its own look (Settings › Lock screen, or 🎨 on the lock screen); the screensaver keeps the plain one.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
@@ -49,8 +49,8 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Clock | 24h / 12h (header and screensaver / lock clock) |
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
-| Screensaver after / Wake with | after 30 s – 5 min without input, fade the panels away. Wake with *Any move*, or *Hold to unlock* (the screensaver becomes the lock) |
-| Lock screen (also the screensaver) | Clock Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong. Also on the lock screen itself (🎨 next to the unlock pill): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
+| Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back; it never locks |
+| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong. Also on the lock screen itself (🎨 next to the unlock pill): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
 
