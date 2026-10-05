@@ -97,6 +97,11 @@ html {
   overflow-x: hidden;
   overflow-y: scroll;
 }
+/* 2xl: the dashboard fits a 1080p screen (Sites), so no always-on scrollbar track there; it shows only when a
+   long group (All, Internal) makes the page taller */
+@media (width >= 96rem) {
+  html { overflow-y: auto; }
+}
 
 body {
   background-color: var(--color-lofi-base);

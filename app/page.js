@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
+import { STATIONS, stationById } from '../lib/stations'
 import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneName, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
@@ -59,6 +60,12 @@ export default function Home() {
   const priv = usePrivate()
   const [spotify, applySpotify] = useSpotify()
   const steam = useSteam()
+  const streams = useStations()
+  // the radio station: the last one picked in this browser
+  const [stationId, setStationId] = useState('lofi')
+  useEffect(() => setStationId(stationById(load('station', 'lofi')).id), [])
+  const pickStation = (id) => (setStationId(id), save('station', id))
+  const station = stationById(stationId)
   const videoRef = useRef(null)
   const setDlg = useRef(null)
   const galDlg = useRef(null)
@@ -193,7 +200,7 @@ export default function Home() {
   }, [])
   const pickAudio = (t) => (setAudioTab(t), save('audioTab', t))
   const source = musicSource(audioTab, tune, spotify)
-  const mini = { source, tune, onRadio: () => music.current?.(), sp: spotify, owner, onSpotify: applySpotify }
+  const mini = { source, tune, onRadio: () => music.current?.(), sp: spotify, owner, onSpotify: applySpotify, station }
   const [wasOwner, setWasOwner] = useState(false)
   useEffect(() => {
     if (owner) save('owner', true)
@@ -305,7 +312,7 @@ export default function Home() {
       />
 
       <div
-        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
+        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -365,11 +372,12 @@ export default function Home() {
             lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Hub + Services | Weather, so nothing scrolls */}
         <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
-          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 2xl:col-span-3 flex flex-col gap-6">
+          {/* 2xl: the side columns stay put (sticky) while a long app group scrolls the middle */}
+          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 2xl:col-span-3 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} station={station} streams={streams} onStation={pickStation} />
           </div>
-          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-2 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 flex flex-col gap-6">
+          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-2 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
           <div className="lg:col-span-8 lg:col-start-5 lg:row-start-1 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-span-1 flex flex-col gap-6">
@@ -781,7 +789,7 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, streams, onStation }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hint, setHint] = useState(false)
@@ -792,6 +800,15 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) 
   const want = useRef(false) // user asked to play before the player was ready
   const isPlaying = useRef(false)
   const timer = useRef(null)
+  const [ready, setReady] = useState(false) // the YouTube player is built
+  const [list, setList] = useState(false) // the station list popup
+  const videoId = streams?.[station.id] ?? null
+  const onAir = STATIONS.filter((s) => streams?.[s.id]) // stations with a live stream right now
+  const step = (d) => {
+    const i = onAir.findIndex((s) => s.id === station.id)
+    const next = onAir[(i + d + onAir.length) % onAir.length]
+    if (next) onStation(next.id)
+  }
   const live = { radio: playing, spotify: Boolean(spotify?.enabled && spotify.track && spotify.playing) }
 
   useEffect(() => {
@@ -805,13 +822,12 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) 
         new window.YT.Player(host.current.appendChild(document.createElement('div')), {
           height: '0',
           width: '0',
-          videoId: 'jfKfPfyJRdk',
           playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, iv_load_policy: 3 },
           events: {
             onReady: (e) => {
               player.current = e.target
               e.target.setVolume(vol.current)
-              if (want.current) e.target.playVideo()
+              setReady(true) // the effect below cues the station (and plays it if Play was pressed meanwhile)
             },
             onStateChange: (e) => {
               isPlaying.current = e.data === window.YT.PlayerState.PLAYING
@@ -833,6 +849,16 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) 
       clearTimeout(timer.current)
     }
   }, [])
+
+  // the station's stream into the player: plays on if music is on (or was asked for), else just cued
+  useEffect(() => {
+    const p = player.current
+    if (!ready || !p || !videoId || p.getVideoData?.()?.video_id === videoId) return
+    if (isPlaying.current || want.current) {
+      setLoading(true)
+      p.loadVideoById(videoId)
+    } else p.cueVideoById(videoId)
+  }, [ready, videoId])
 
   function toggle() {
     const p = player.current
@@ -923,11 +949,29 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) 
                 </div>
               </div>
             </div>
-            <p className="shrink-0 text-sm font-medium text-white text-center mb-1 flex items-center justify-center gap-2">
-              <span className="text-[9px] font-mono text-lofi-primary bg-lofi-primary/10 px-1.5 py-0.5 rounded-full border border-lofi-primary/20">LIVE</span>
-              Lofi Girl Radio
+            {/* ◀ station ▾ ▶: the arrows flip stations, the name opens the list */}
+            <div className="shrink-0 flex items-center justify-center gap-1 mb-1 min-w-0">
+              <button onClick={() => step(-1)} aria-label="Previous station" disabled={onAir.length < 2} className="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 transition-colors">
+                <i className="fa-solid fa-chevron-left text-[10px]" aria-hidden="true" />
+              </button>
+              <button
+                onClick={() => setList(true)}
+                aria-haspopup="dialog"
+                aria-label={`Station: ${station.name}. Choose a station`}
+                className="min-w-0 flex items-center gap-2 px-1 text-sm font-medium text-white hover:text-lofi-primary transition-colors"
+              >
+                <span className="text-[9px] font-mono text-lofi-primary bg-lofi-primary/10 px-1.5 py-0.5 rounded-full border border-lofi-primary/20">LIVE</span>
+                <span aria-hidden="true">{station.emoji}</span>
+                <span className="truncate">{station.name}</span>
+                <i className="fa-solid fa-chevron-down text-[8px] text-lofi-muted" aria-hidden="true" />
+              </button>
+              <button onClick={() => step(1)} aria-label="Next station" disabled={onAir.length < 2} className="w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 transition-colors">
+                <i className="fa-solid fa-chevron-right text-[10px]" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="shrink-0 text-xs text-lofi-muted text-center mb-3 truncate">
+              {station.by} · {station.sub}
             </p>
-            <p className="shrink-0 text-xs text-lofi-muted text-center mb-3 truncate">beats to relax/study to</p>
             <div className="shrink-0 flex justify-center items-center gap-6">
               <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Down" aria-label="Volume down" onClick={() => changeVolume(-10)}>
                 <i className="fa-solid fa-volume-low" aria-hidden="true" />
@@ -949,6 +993,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) 
             </p>
           </>
         )}
+        {tab === 'radio' && list && <StationList current={station.id} streams={streams} playing={playing} onPick={(id) => (onStation(id), setList(false))} onClose={() => setList(false)} />}
         {tab === 'spotify' && <SpotifyPanel sp={spotify} owner={owner} wasOwner={wasOwner} onState={onSpotify} />}
         {tab === 'player' && <PlayerSoon />}
       </div>
@@ -2509,6 +2554,67 @@ function useSpotify() {
   return [sp, (d) => setSp({ ...d, seen: Date.now() })]
 }
 
+// /api/stations: each station's live stream right now ({ id: videoId | null }); refreshed hourly. null until it answers.
+function useStations() {
+  const [m, setM] = useState(null)
+  useEffect(() => {
+    let alive = true
+    const get = () =>
+      fetch('/api/stations')
+        .then((r) => r.json())
+        .then((v) => alive && !v.error && setM(v), () => {})
+    get()
+    const t = setInterval(get, 3600_000)
+    return () => ((alive = false), clearInterval(t))
+  }, [])
+  return m
+}
+
+// Radio: all the stations in a popup over the card; the current one is lit (with a dot while it plays). A station
+// without a live stream right now is greyed out. Esc, ✕ or a click outside closes it.
+function StationList({ current, streams, playing, onPick, onClose }) {
+  const close = useRef(null)
+  useEffect(() => {
+    close.current?.focus({ preventScroll: true })
+    const onKey = (e) => e.key === 'Escape' && (e.stopPropagation(), onClose())
+    addEventListener('keydown', onKey, true)
+    return () => removeEventListener('keydown', onKey, true)
+  }, [onClose])
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-3 bg-lofi-base/60 motion-safe:animate-[fade-in_0.2s_ease-out]" onClick={onClose}>
+      <div role="dialog" aria-label="Radio stations" onClick={(e) => e.stopPropagation()} className="relative w-full glass-panel rounded-2xl p-3 motion-safe:animate-[panel-in_0.25s_cubic-bezier(0.2,0.8,0.2,1)]">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted">Stations</p>
+          <button ref={close} onClick={onClose} aria-label="Close" className="w-6 h-6 rounded-full bg-lofi-base/60 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
+            <i className="fa-solid fa-xmark text-[10px]" aria-hidden="true" />
+          </button>
+        </div>
+        <ul className="grid grid-cols-2 gap-1.5">
+          {STATIONS.map((s) => {
+            const on = s.id === current
+            const off = streams && !streams[s.id]
+            return (
+              <li key={s.id}>
+                <button
+                  onClick={() => onPick(s.id)}
+                  disabled={off}
+                  aria-current={on || undefined}
+                  title={`${s.name} · ${s.by} · ${s.sub}`}
+                  className={`w-full flex items-center gap-2 rounded-xl px-2 py-1.5 text-left border transition-colors disabled:opacity-35 ${on ? 'bg-lofi-primary/15 border-lofi-primary/40 text-white' : 'border-white/5 bg-lofi-base/40 text-lofi-text hover:border-white/20 hover:text-white'}`}
+                >
+                  <span className="text-sm" aria-hidden="true">{s.emoji}</span>
+                  <span className="min-w-0 flex-1 text-xs font-medium truncate">{s.name}</span>
+                  {on && playing && <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-lofi-primary motion-safe:animate-pulse" aria-hidden="true" />}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 // Spotify tab: what I'm listening to (public: track, artists, cover, link). A still cover over a blurred, faint copy of
 // it that tints the card (no spinning: calm to look at); paused dims it. Nothing playing, not connected yet or
 // unreachable: SpotifyResting instead. The progress runs locally between polls.
@@ -2728,7 +2834,7 @@ function musicSource(tab, tune, sp) {
 // What's playing, small: in the Hide bar (variant "bar") and on the lock screen ("lock"). Radio: play / pause for
 // everyone. Spotify: cover, track, artists; the owner also gets play / pause and next. The lock shows nothing when
 // nothing plays.
-function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify }) {
+function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify, station }) {
   const ctl = useSpotifyControl(onSpotify)
   const lock = variant === 'lock'
   const eq = (on, color) => (
@@ -2776,12 +2882,14 @@ function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify }) {
       <button
         onClick={onRadio}
         title={tune.playing ? 'Pause' : 'Play'}
-        aria-label={tune.playing ? 'Pause Lofi Girl Radio' : 'Play Lofi Girl Radio'}
+        aria-label={`${tune.playing ? 'Pause' : 'Play'} ${station.name} radio`}
         className="w-9 h-9 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-colors shadow-[0_0_12px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
       >
         <i className={`fa-solid text-xs ${tune.loading ? 'fa-spinner fa-spin' : tune.playing ? 'fa-pause' : 'fa-play ml-0.5'}`} aria-hidden="true" />
       </button>
-      <span className={`${lock ? '' : 'max-sm:hidden'} font-sans text-xs text-lofi-text whitespace-nowrap`}>Lofi Girl Radio</span>
+      <span className={`${lock ? '' : 'max-sm:hidden'} font-sans text-xs text-lofi-text whitespace-nowrap`}>
+        <span aria-hidden="true">{station.emoji}</span> {station.name}
+      </span>
       {/* equalizer: dances while playing, rests low when paused (and stands still with reduced motion) */}
       {eq(tune.playing, 'bg-lofi-primary')}
     </div>
