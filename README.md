@@ -22,8 +22,8 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
   - **Radio**: Lofi Girl through the YouTube IFrame API. It only starts when you click, and has volume control.
-  - **Spotify**: what you're listening to (the cover spins like the record, track, artists, a live progress bar), or a
-    resting record when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
+  - **Spotify**: what you're listening to (a still cover tinting the card, track, artists, a live progress bar), or an
+    empty frame when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
   - **Player**: your own "play any song" player, coming soon.
   The picked tab is filled; a dot on a tab means that source is playing.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.

@@ -736,7 +736,7 @@ function Music({ ctl, onTune, spotify }) {
       )}
 
       {/* Radio | Spotify | Player: the picked tab is filled (Spotify in its green); a dot marks a source that's playing */}
-      <div role="tablist" aria-label="Audio" className="shrink-0 flex items-center gap-1.5 mb-3 z-10">
+      <div role="tablist" aria-label="Audio" className="shrink-0 flex items-center gap-1.5 mb-3 z-20">
         {AUDIO_TABS.map(([id, label, icon]) => {
           const on = tab === id
           const fill = id === 'spotify' ? 'bg-[#1db954] text-lofi-base font-bold' : 'bg-lofi-primary text-lofi-base font-bold'
@@ -2191,8 +2191,9 @@ function useSpotify() {
   return sp
 }
 
-// Spotify tab: what I'm listening to (public: track, artists, cover, link), the cover spinning like the radio's record.
-// Nothing playing, not connected yet or unreachable: the resting record instead. The progress runs locally between polls.
+// Spotify tab: what I'm listening to (public: track, artists, cover, link). A still cover over a blurred, faint copy of
+// it that tints the card (no spinning: calm to look at); paused dims it. Nothing playing, not connected yet or
+// unreachable: SpotifyResting instead. The progress runs locally between polls.
 const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`
 function SpotifyPanel({ sp }) {
   const [, tick] = useState(0) // every second while playing, for the progress (this panel only)
@@ -2207,16 +2208,28 @@ function SpotifyPanel({ sp }) {
   const pos = Math.min(sp.durationMs || 0, sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0))
   return (
     <>
-      <div className="grow flex items-center justify-center mb-3 animate-float">
+      {/* ambient: the cover, blurred and faint, behind the whole card (static) */}
+      {sp.art && <div className="absolute inset-0 -z-10 bg-cover bg-center scale-125 blur-2xl opacity-30" style={{ backgroundImage: `url(${sp.art})` }} aria-hidden="true" />}
+      <div className="grow flex items-center justify-center mb-3">
         <a
           href={sp.url}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`${sp.playing ? 'Now playing' : 'Paused'} on Spotify: ${sp.track} by ${artists}`}
-          className={`relative w-24 h-24 rounded-full overflow-hidden border-4 border-lofi-surface shadow-xl ${sp.playing ? 'animate-record' : 'opacity-70'}`}
+          className="relative w-28 h-28 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-300 hover:scale-105"
         >
-          {sp.art ? <img src={sp.art} alt="" width={96} height={96} className="w-full h-full object-cover" /> : <span className="block w-full h-full bg-lofi-surface" />}
-          <span className="absolute inset-0 m-auto w-5 h-5 rounded-full bg-lofi-base border border-white/10" aria-hidden="true" />
+          {sp.art ? (
+            <img src={sp.art} alt="" width={112} height={112} className={`w-full h-full object-cover transition-[filter,opacity] duration-500 ${sp.playing ? '' : 'grayscale-[50%] opacity-75'}`} />
+          ) : (
+            <span className="w-full h-full bg-lofi-surface flex items-center justify-center text-lofi-muted">
+              <i className="fa-solid fa-music text-2xl" aria-hidden="true" />
+            </span>
+          )}
+          {!sp.playing && (
+            <span className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-lofi-base/80 flex items-center justify-center text-white text-[10px]" aria-hidden="true">
+              <i className="fa-solid fa-pause" />
+            </span>
+          )}
         </a>
       </div>
       <p className="flex items-center justify-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">
@@ -2246,7 +2259,7 @@ function SpotifyPanel({ sp }) {
   )
 }
 
-// Spotify tab with nothing to show: a still, grey record and a line that changes now and then. No link, no controls.
+// Spotify tab with nothing to show: an empty cover frame and a line that changes now and then. No link, no controls.
 const IDLE_LINES = ['Silence, mostly', 'Taking a music break', 'Probably debugging', 'Headphones off', 'Waiting for the next song']
 function SpotifyResting() {
   const { reduced } = useContext(Prefs)
@@ -2259,19 +2272,15 @@ function SpotifyResting() {
   return (
     <>
       <div className="grow flex items-center justify-center mb-3" aria-hidden="true">
-        <div className="relative w-24 h-24 rounded-full bg-linear-to-br from-lofi-surface to-lofi-base border-4 border-lofi-surface shadow-xl flex items-center justify-center opacity-70">
-          <div className="absolute w-20 h-20 rounded-full border border-white/5" />
-          <div className="absolute w-14 h-14 rounded-full border border-white/5" />
-          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
-            <i className="fa-brands fa-spotify text-[#1db954]/70" />
-          </div>
+        <div className="w-28 h-28 rounded-2xl border-2 border-dashed border-white/10 bg-lofi-base/30 flex items-center justify-center">
+          <i className="fa-brands fa-spotify text-3xl text-[#1db954]/50" />
         </div>
       </div>
       <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted text-center mb-1">Spotify · not playing</p>
       <p key={k} className="text-sm font-medium text-white/80 text-center truncate motion-safe:animate-card-in" aria-hidden="true">
         {IDLE_LINES[k % IDLE_LINES.length]}
       </p>
-      <p className="text-xs text-lofi-muted text-center mb-2">the record is resting</p>
+      <p className="text-xs text-lofi-muted text-center mb-2">nothing on right now</p>
     </>
   )
 }
