@@ -312,7 +312,7 @@ export default function Home() {
       />
 
       <div
-        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
+        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -393,10 +393,11 @@ export default function Home() {
       </div>
 
       {!focus && !idle && !softLock && (
-        // 👁 Hide and 🔒 Lock float bottom right on the dashboard (Hide's bar has its own pair)
+        // 👁 Hide, 🔒 Lock and ⚙️ Settings float bottom right on the dashboard (Hide's bar has its own 👁 / 🔒)
         <div className="fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out]">
           <DockButton icon="fa-eye-slash" label="Hide panels (H)" onClick={() => setFocus(true)} />
           <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
+          <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
         </div>
       )}
       {softLock ? (
@@ -437,7 +438,7 @@ function Clock({ now, clock, tick }) {
   )
 }
 
-// the dashboard's floating 👁 / 🔒, bottom right
+// the dashboard's floating 👁 / 🔒 / ⚙️, bottom right
 function DockButton({ icon, label, title = label, onClick }) {
   return (
     <button
