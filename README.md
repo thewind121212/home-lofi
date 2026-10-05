@@ -9,6 +9,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 
 - **Scenes**: full-screen, seamlessly looping pixel-art cities, drawn onto a canvas with smoothing off, so the pixels stay sharp up to 4K.
   A full-screen gallery picks the scene (saved per browser), and a focus mode hides the panels.
+- **Soft lock**: the lock button (or **L**) switches to the scene + big clock and stays there: mouse and keys don't wake it,
+  only **holding** the unlock pill (or Space / Enter) for ~1 s does, then you're back where you were (dashboard or focus mode).
+  Not saved anywhere: a reload always opens unlocked. A screen-saver lock, not security.
 - **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
