@@ -215,12 +215,24 @@ export default function Home() {
     setSoftLock(false)
   }
   useEffect(() => {
-    // H toggles Hide, L locks (not while typing, not with a dialog open, not while locked)
+    // H toggles Hide, L locks, Space three times quickly locks too (not while typing, not with a dialog open, not while
+    // locked; Space also not on a focused button / link / tab / slider, where it presses that control)
+    let spaces = [] // times of the last Space presses
     const onKey = (e) => {
       const k = e.key.toLowerCase()
-      if (k !== 'h' && k !== 'l') return
+      const space = e.code === 'Space'
+      if (k !== 'h' && k !== 'l' && !space) return
       if (e.ctrlKey || e.metaKey || e.altKey || lockRef.current) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return
+      if (space) {
+        if (e.repeat || e.target.closest?.('button, a, [role=tab], [role=slider], summary')) return
+        const now = performance.now()
+        spaces = [...spaces.filter((t) => now - t < 1200), now]
+        if (spaces.length < 3) return
+        spaces = []
+        e.preventDefault()
+        return lock()
+      }
       e.preventDefault()
       k === 'l' ? lock() : setFocus((f) => !f)
     }
