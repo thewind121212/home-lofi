@@ -18,6 +18,8 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   | **Lock** (I'm away, hands off) | 🔒 button or **L** (the screensaver never locks) | scene + clock + weather + **swipe to unlock**, in its own look, + what's playing (Lock screen › Music) | **swiping** the knob across (keyboard: → five times) |
 
   The lock has its own look (Settings › Lock screen, or 🎨 on the lock screen); the screensaver keeps the plain one.
+  After 3 s without use the lock's controls fold into a small breathing *swipe to unlock*, so what's playing has the
+  stage; bringing the pointer to the bottom, a tap or a key brings them back.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):

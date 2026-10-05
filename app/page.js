@@ -471,30 +471,41 @@ function WakeHint() {
   )
 }
 
-// The lock screen's controls, bottom center: what's playing (Lock screen › Music: bright, or dim = fades with the rest
-// when idle), then 🎨 (the lock screen's look: the only settings that change while locked) and the swipe to unlock.
-// Moving the mouse brings everything back to full strength; it never unlocks.
+// The lock screen's controls, bottom center: what's playing (Lock screen › Music: bright, or dim = fades when the controls
+// rest), then 🎨 (the lock screen's look: the only settings that change while locked) and the swipe to unlock.
+// After 3 s without use they fold into a small breathing "swipe to unlock", so the music has the stage. The pointer
+// coming to this area, a tap anywhere (phones) or a key brings them back; moving the mouse elsewhere doesn't.
+const REST_MS = 3000
 function LockControls({ onUnlock, set, update, children }) {
-  const [awake, setAwake] = useState(true)
+  const [open, setOpen] = useState(true)
   const [look, setLook] = useState(false)
+  const inside = useRef(false) // the pointer is over this area
+  const timer = useRef(null)
+  const rest = () => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => !inside.current && setOpen(false), REST_MS)
+  }
+  const wake = () => (setOpen(true), rest())
   useEffect(() => {
-    let t
-    const wake = () => {
-      setAwake(true)
-      clearTimeout(t)
-      t = setTimeout(() => setAwake(false), 3000)
-    }
-    wake()
-    const events = ['pointermove', 'pointerdown', 'keydown']
-    events.forEach((n) => addEventListener(n, wake, { passive: true }))
+    rest()
+    const onKey = () => wake()
+    const onDown = () => wake() // a tap on a phone (no hover there)
+    addEventListener('keydown', onKey)
+    addEventListener('pointerdown', onDown)
     return () => {
-      clearTimeout(t)
-      events.forEach((n) => removeEventListener(n, wake))
+      clearTimeout(timer.current)
+      removeEventListener('keydown', onKey)
+      removeEventListener('pointerdown', onDown)
     }
   }, [])
+  useEffect(() => (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps them open
   const faint = (on) => `transition-opacity duration-700 ${on ? 'opacity-30' : 'opacity-100'}`
   return (
-    <div className="fixed z-30 inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3 px-4">
+    <div
+      onPointerEnter={() => ((inside.current = true), setOpen(true), clearTimeout(timer.current))}
+      onPointerLeave={() => ((inside.current = false), rest())}
+      className="fixed z-30 inset-x-0 bottom-0 pt-10 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3 px-4"
+    >
       {look && (
         <section
           aria-label="Lock screen look"
@@ -516,19 +527,31 @@ function LockControls({ onUnlock, set, update, children }) {
           <LockLook id="lock" set={set} update={update} />
         </section>
       )}
-      {!look && children && <div className={faint(set.lockMusic === 'dim' && !awake)}>{children}</div>}
-      <div className={`flex items-center gap-2 ${faint(!awake && !look)}`}>
+      {!look && children && <div className={faint(set.lockMusic === 'dim' && !open)}>{children}</div>}
+      {open || look ? (
+        <div className="flex items-center gap-2 motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]">
+          <button
+            onClick={() => setLook((v) => !v)}
+            aria-label="Lock screen look"
+            aria-expanded={look}
+            title="Lock screen look"
+            className={`glass-panel w-14 h-14 shrink-0 rounded-full flex items-center justify-center transition-colors ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'}`}
+          >
+            <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
+          </button>
+          <SwipeUnlock onUnlock={onUnlock} />
+        </div>
+      ) : (
+        // resting: just a breathing hint where the slider was (h-14 keeps the music card from jumping)
         <button
-          onClick={() => setLook((v) => !v)}
-          aria-label="Lock screen look"
-          aria-expanded={look}
-          title="Lock screen look"
-          className={`glass-panel w-14 h-14 shrink-0 rounded-full flex items-center justify-center transition-colors ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'}`}
+          onClick={wake}
+          aria-label="Show unlock"
+          className="h-14 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
         >
-          <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
+          <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
+          swipe to unlock
         </button>
-        <SwipeUnlock onUnlock={onUnlock} />
-      </div>
+      )}
     </div>
   )
 }
