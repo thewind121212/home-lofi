@@ -47,6 +47,10 @@ export default function Home() {
   const [focus, setFocus] = useState(false)
   const [idle, setIdle] = useState(false)
   const idleRef = useRef(false)
+  // Soft lock: the clock screen stays until the unlock pill is held. In memory only, so a reload always opens unlocked.
+  const [softLock, setSoftLock] = useState(false)
+  const lockRef = useRef(false)
+  lockRef.current = softLock
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
   const videoRef = useRef(null)
@@ -101,7 +105,7 @@ export default function Home() {
     document.documentElement.dataset.motion = st.motion === 'reduce' || mq.matches ? 'reduce' : ''
     setNow(new Date())
     const t = setInterval(() => setNow(new Date()), 1000)
-    const onKey = (e) => e.key === 'Escape' && setFocus(false)
+    const onKey = (e) => e.key === 'Escape' && !lockRef.current && setFocus(false)
     addEventListener('keydown', onKey)
     return () => {
       clearInterval(t)
@@ -146,6 +150,7 @@ export default function Home() {
     events.forEach((n) => addEventListener(n, wake, { capture: true, passive: n !== 'keydown' }))
     const t = setInterval(() => {
       if (idleRef.current) return
+      if (lockRef.current) return void (last = Date.now())
       if (busy()) last = Date.now()
       else if (Date.now() - last >= set.idle * 1000) setIdle((idleRef.current = true))
     }, 1000)
@@ -168,6 +173,33 @@ export default function Home() {
     const icon = document.querySelector('link[rel="icon"]')
     if (icon) icon.href = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#1a1a2e"/><circle cx="16" cy="16" r="10" fill="#2a2a4a"/><circle cx="16" cy="16" r="5" fill="${a}"/><circle cx="16" cy="16" r="1.5" fill="#1a1a2e"/></svg>`)}`
   }, [settings])
+
+  function lock() {
+    ;[setDlg.current, galDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
+    document.activeElement?.blur()
+    setSoftLock(true)
+  }
+  function unlock() {
+    // swallow the click that may follow the hold, so it doesn't land on a card that just reappeared
+    const eat = (ev) => (ev.preventDefault(), ev.stopPropagation())
+    addEventListener('click', eat, { capture: true, once: true })
+    setTimeout(() => removeEventListener('click', eat, true), 800)
+    idleRef.current = false
+    setIdle(false)
+    setSoftLock(false)
+  }
+  useEffect(() => {
+    // L locks (not while typing, not with a dialog open)
+    const onKey = (e) => {
+      if (e.key !== 'l' && e.key !== 'L') return
+      if (e.ctrlKey || e.metaKey || e.altKey || lockRef.current) return
+      if (e.target.closest?.('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return
+      e.preventDefault()
+      lock()
+    }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [])
 
   function update(patch) {
     const next = { ...set, ...patch }
@@ -228,12 +260,12 @@ export default function Home() {
         <SceneCanvas key={scene} base={base} mode={mode} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
       )}
       <div
-        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus || idle ? 'opacity-0' : ''}`}
+        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus || idle || softLock ? 'opacity-0' : ''}`}
         style={{ background: dimOverlay(set.dim) }}
       />
 
       <div
-        className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle ? 'opacity-0 invisible' : ''} ${idle ? 'blur-md' : ''}`}
+        className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -277,6 +309,14 @@ export default function Home() {
               <i className="fa-solid fa-eye-slash text-xs" aria-hidden="true" />
             </button>
             <button
+              onClick={lock}
+              aria-label="Lock screen (hold to unlock)"
+              title="Lock screen (L)"
+              className="order-3 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+            >
+              <i className="fa-solid fa-lock text-xs" aria-hidden="true" />
+            </button>
+            <button
               onClick={() => setDlg.current.open || setDlg.current.showModal()}
               aria-label="Settings"
               aria-haspopup="dialog"
@@ -308,9 +348,10 @@ export default function Home() {
         </main>
       </div>
 
-      {idle && set.idleShow === 'clock' && <IdleClock now={now} clock={set.clock} />}
+      {((idle && set.idleShow === 'clock') || softLock) && <IdleClock now={now} clock={set.clock} />}
+      {softLock && <LockPill onUnlock={unlock} />}
       {/* Header is hidden in focus mode, so the way back is the bar's eye button (or Esc) */}
-      {focus && !idle && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} />}
+      {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} />}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </Prefs>
@@ -342,6 +383,83 @@ function IdleClock({ now, clock }) {
       <div className="mt-4 sm:mt-6 font-mono font-bold text-xs sm:text-base uppercase tracking-[0.3em] text-white/90">
         {now?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
       </div>
+    </div>
+  )
+}
+
+// Soft lock's unlock control: hold ~0.8 s (pointer, or Space / Enter) so a bump, a cat or a stray key can't unlock.
+// Moving the mouse only brings the pill back to full strength; it never unlocks.
+const HOLD_MS = 800
+function LockPill({ onUnlock }) {
+  const [holding, setHolding] = useState(false)
+  const [awake, setAwake] = useState(true)
+  const timer = useRef(null)
+  const btn = useRef(null)
+  useEffect(() => {
+    btn.current?.focus({ preventScroll: true }) // keyboard users land on it
+    let t
+    const wake = () => {
+      setAwake(true)
+      clearTimeout(t)
+      t = setTimeout(() => setAwake(false), 3000)
+    }
+    wake()
+    const events = ['pointermove', 'pointerdown', 'keydown']
+    events.forEach((n) => addEventListener(n, wake, { passive: true }))
+    return () => {
+      clearTimeout(t)
+      clearTimeout(timer.current)
+      events.forEach((n) => removeEventListener(n, wake))
+    }
+  }, [])
+  const start = () => {
+    if (timer.current) return
+    setHolding(true)
+    timer.current = setTimeout(onUnlock, HOLD_MS)
+  }
+  const stop = () => {
+    clearTimeout(timer.current)
+    timer.current = null
+    setHolding(false)
+  }
+  const hold = (e) => e.key === ' ' || e.key === 'Enter'
+  return (
+    <div
+      className={`fixed z-30 inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex justify-center transition-opacity duration-700 ${awake || holding ? 'opacity-100' : 'opacity-25'}`}
+    >
+      <button
+        ref={btn}
+        onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), start())}
+        onPointerUp={stop}
+        onPointerCancel={stop}
+        onLostPointerCapture={stop}
+        onKeyDown={(e) => hold(e) && (e.preventDefault(), e.repeat || start())}
+        onKeyUp={(e) => hold(e) && stop()}
+        onBlur={stop}
+        onContextMenu={(e) => e.preventDefault()} // long-press on phones: no menu
+        aria-label="Hold to unlock"
+        className="glass-panel rounded-full pl-2 pr-5 py-2 flex items-center gap-3 font-mono text-xs text-lofi-text select-none touch-none [-webkit-touch-callout:none]"
+      >
+        <span className="relative w-9 h-9 flex items-center justify-center">
+          <svg viewBox="0 0 36 36" className="absolute inset-0 -rotate-90" aria-hidden="true">
+            <circle cx="18" cy="18" r="16" fill="none" strokeWidth="2.5" className="stroke-white/10" />
+            <circle
+              cx="18"
+              cy="18"
+              r="16"
+              fill="none"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              pathLength="100"
+              strokeDasharray="100"
+              className="stroke-lofi-primary"
+              style={{ strokeDashoffset: holding ? 0 : 100, transition: `stroke-dashoffset ${holding ? `${HOLD_MS}ms linear` : '200ms ease-out'}` }}
+            />
+          </svg>
+          <i className={`fa-solid ${holding ? 'fa-lock-open' : 'fa-lock'} text-lofi-primary`} aria-hidden="true" />
+        </span>
+        {holding ? 'Keep holding…' : 'Hold to unlock'}
+      </button>
     </div>
   )
 }
