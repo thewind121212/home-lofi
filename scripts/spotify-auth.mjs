@@ -2,12 +2,12 @@
 //   1. node scripts/spotify-auth.mjs               -> prints the consent link; open it, click Agree
 //   2. node scripts/spotify-auth.mjs '<address>'   -> the address the browser landed on (the page itself won't load)
 //      prints SPOTIFY_REFRESH_TOKEN=... for your .env / Coolify
-// Needs SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in the environment. Read-only scopes: what's playing, what played.
+// Needs SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in the environment. Read-only scope: what's playing.
 import { createHash } from 'node:crypto'
 
 const { SPOTIFY_CLIENT_ID: id, SPOTIFY_CLIENT_SECRET: secret } = process.env
 const REDIRECT = 'http://127.0.0.1:8888/callback' // must match the app's Redirect URI exactly
-const SCOPES = 'user-read-currently-playing user-read-recently-played'
+const SCOPES = 'user-read-currently-playing'
 if (!id || !secret) {
   console.error('Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET first.')
   process.exit(1)
