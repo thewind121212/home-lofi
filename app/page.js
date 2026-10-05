@@ -6,7 +6,7 @@ import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneName, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
-import { Gallery, Prefs, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
+import { Gallery, LockLook, Prefs, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -352,8 +352,8 @@ export default function Home() {
         </main>
       </div>
 
-      {((idle && set.idleShow === 'clock') || softLock) && <IdleClock now={now} clock={set.clock} />}
-      {softLock && <LockPill onUnlock={unlock} />}
+      {(idle || softLock) && <ClockScreen now={now} set={set} />}
+      {softLock && <LockPill onUnlock={unlock} set={set} update={update} />}
       {idle && !softLock && <WakeHint />}
       {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
       {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} onLock={lock} />}
@@ -375,19 +375,27 @@ function Clock({ now, clock }) {
   )
 }
 
-// Idle mode's big floating clock (decorative: the header clock is the accessible one)
-function IdleClock({ now, clock }) {
+// The clock screen behind Lock and Screensaver (Settings > Lock screen): blur, then overlay over the scene, then the
+// clock (big / small / off) and the date. Decorative: the header clock is the accessible one.
+const BLUR = { soft: 6, strong: 16 } // px. Re-blurs the moving scene every frame: GPU work, so Off by default
+function ClockScreen({ now, set }) {
+  const blur = BLUR[set.lockBlur]
   return (
-    <div
-      className="idle-clock fixed inset-0 z-20 flex flex-col items-center justify-center px-4 text-center pointer-events-none select-none motion-safe:animate-[fade-in_1.2s_ease-out]"
-      aria-hidden="true"
-    >
-      <div className="font-mono font-bold text-white text-7xl sm:text-9xl short:text-7xl leading-none whitespace-nowrap">
-        <Clock now={now} clock={clock} />
-      </div>
-      <div className="mt-4 sm:mt-6 font-mono font-bold text-xs sm:text-base uppercase tracking-[0.3em] text-white/90">
-        {now?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-      </div>
+    <div className="fixed inset-0 z-20 pointer-events-none select-none motion-safe:animate-[fade-in_1.2s_ease-out]" aria-hidden="true">
+      {blur && <div className="absolute inset-0" style={{ backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)` }} />}
+      {set.lockOverlay !== 'off' && <div className={`absolute inset-0 lock-overlay-${set.lockOverlay}`} />}
+      {set.idleShow !== 'scene' && (
+        <div className="idle-clock relative h-full flex flex-col items-center justify-center px-4 text-center">
+          <div className={`font-mono font-bold text-white leading-none whitespace-nowrap ${set.idleShow === 'small' ? 'text-5xl sm:text-6xl' : 'text-7xl sm:text-9xl short:text-7xl'}`}>
+            <Clock now={now} clock={set.clock} />
+          </div>
+          {set.lockDate && (
+            <div className="mt-4 sm:mt-6 font-mono font-bold text-xs sm:text-base uppercase tracking-[0.3em] text-white/90">
+              {now?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -406,10 +414,12 @@ function WakeHint() {
 
 // Soft lock's unlock control: hold ~0.8 s (pointer, or Space / Enter) so a bump, a cat or a stray key can't unlock.
 // Moving the mouse only brings the pill back to full strength; it never unlocks.
+// The 🎨 button next to it opens the clock screen's look (LockLook): the only settings that change while locked.
 const HOLD_MS = 800
-function LockPill({ onUnlock }) {
+function LockPill({ onUnlock, set, update }) {
   const [holding, setHolding] = useState(false)
   const [awake, setAwake] = useState(true)
+  const [look, setLook] = useState(false)
   const timer = useRef(null)
   const btn = useRef(null)
   useEffect(() => {
@@ -442,41 +452,73 @@ function LockPill({ onUnlock }) {
   const hold = (e) => e.key === ' ' || e.key === 'Enter'
   return (
     <div
-      className={`fixed z-30 inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex justify-center transition-opacity duration-700 ${awake || holding ? 'opacity-100' : 'opacity-25'}`}
+      className={`fixed z-30 inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3 px-4 transition-opacity duration-700 ${awake || holding || look ? 'opacity-100' : 'opacity-25'}`}
     >
-      <button
-        ref={btn}
-        onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), start())}
-        onPointerUp={stop}
-        onPointerCancel={stop}
-        onLostPointerCapture={stop}
-        onKeyDown={(e) => hold(e) && (e.preventDefault(), e.repeat || start())}
-        onKeyUp={(e) => hold(e) && stop()}
-        onBlur={stop}
-        onContextMenu={(e) => e.preventDefault()} // long-press on phones: no menu
-        aria-label="Hold to unlock"
-        className="glass-panel rounded-full pl-2 pr-5 py-2 flex items-center gap-3 font-mono text-xs text-lofi-text select-none touch-none [-webkit-touch-callout:none]"
-      >
-        <span className="relative w-9 h-9 flex items-center justify-center">
-          <svg viewBox="0 0 36 36" className="absolute inset-0 -rotate-90" aria-hidden="true">
-            <circle cx="18" cy="18" r="16" fill="none" strokeWidth="2.5" className="stroke-white/10" />
-            <circle
-              cx="18"
-              cy="18"
-              r="16"
-              fill="none"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              pathLength="100"
-              strokeDasharray="100"
-              className="stroke-lofi-primary"
-              style={{ strokeDashoffset: holding ? 0 : 100, transition: `stroke-dashoffset ${holding ? `${HOLD_MS}ms linear` : '200ms ease-out'}` }}
-            />
-          </svg>
-          <i className={`fa-solid ${holding ? 'fa-lock-open' : 'fa-lock'} text-lofi-primary`} aria-hidden="true" />
-        </span>
-        {holding ? 'Keep holding…' : 'Hold to unlock'}
-      </button>
+      {look && (
+        <section
+          aria-label="Lock screen look"
+          onKeyDown={(e) => e.key === 'Escape' && setLook(false)}
+          className="glass-panel rounded-3xl p-5 w-full max-w-md text-lofi-text motion-safe:animate-[panel-in_0.3s_cubic-bezier(0.2,0.8,0.2,1)]"
+        >
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-white flex items-center gap-2">
+              <i className="fa-solid fa-palette text-lofi-primary text-xs" aria-hidden="true" /> Lock screen
+            </h2>
+            <button
+              onClick={() => setLook(false)}
+              aria-label="Close"
+              className="w-7 h-7 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+            >
+              <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
+            </button>
+          </div>
+          <LockLook id="lock" set={set} update={update} />
+        </section>
+      )}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setLook((v) => !v)}
+          aria-label="Lock screen look"
+          aria-expanded={look}
+          title="Lock screen look"
+          className={`glass-panel w-[3.25rem] h-[3.25rem] rounded-full flex items-center justify-center transition-colors ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'}`}
+        >
+          <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
+        </button>
+        <button
+          ref={btn}
+          onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), start())}
+          onPointerUp={stop}
+          onPointerCancel={stop}
+          onLostPointerCapture={stop}
+          onKeyDown={(e) => hold(e) && (e.preventDefault(), e.repeat || start())}
+          onKeyUp={(e) => hold(e) && stop()}
+          onBlur={stop}
+          onContextMenu={(e) => e.preventDefault()} // long-press on phones: no menu
+          aria-label="Hold to unlock"
+          className="glass-panel rounded-full pl-2 pr-5 py-2 flex items-center gap-3 font-mono text-xs text-lofi-text select-none touch-none [-webkit-touch-callout:none]"
+        >
+          <span className="relative w-9 h-9 flex items-center justify-center">
+            <svg viewBox="0 0 36 36" className="absolute inset-0 -rotate-90" aria-hidden="true">
+              <circle cx="18" cy="18" r="16" fill="none" strokeWidth="2.5" className="stroke-white/10" />
+              <circle
+                cx="18"
+                cy="18"
+                r="16"
+                fill="none"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                pathLength="100"
+                strokeDasharray="100"
+                className="stroke-lofi-primary"
+                style={{ strokeDashoffset: holding ? 0 : 100, transition: `stroke-dashoffset ${holding ? `${HOLD_MS}ms linear` : '200ms ease-out'}` }}
+              />
+            </svg>
+            <i className={`fa-solid ${holding ? 'fa-lock-open' : 'fa-lock'} text-lofi-primary`} aria-hidden="true" />
+          </span>
+          {holding ? 'Keep holding…' : 'Hold to unlock'}
+        </button>
+      </div>
     </div>
   )
 }

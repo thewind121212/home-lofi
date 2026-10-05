@@ -84,6 +84,22 @@ function weatherHint(set, { want, mode, from }) {
   return t
 }
 
+// The clock screen's look (Lock + Screensaver share it). In the Settings dialog, and alone on the lock screen's
+// own panel: the only settings that can change while locked.
+export function LockLook({ set, update, id = 'look' }) {
+  const opt = (key, legend, options) => (
+    <Choice legend={legend} name={`${id}-${key}`} value={set[key]} options={options} onChange={(v) => update({ [key]: v })} />
+  )
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
+      {opt('idleShow', 'Clock', [['clock', 'Big'], ['small', 'Small'], ['scene', 'Off']])}
+      {opt('lockDate', 'Date', [[true, 'Show'], [false, 'Hide']])}
+      {opt('lockOverlay', 'Overlay', [['off', 'Off'], ['soft', 'Soft'], ['dark', 'Dark']])}
+      {opt('lockBlur', 'Blur', [['off', 'Off'], ['soft', 'Soft'], ['strong', 'Strong']])}
+    </div>
+  )
+}
+
 // Where the settings live (app/cloud.js status): icon, text, and for 'signin' a link to the login portal
 const SYNC = {
   off: ['fa-laptop', 'Saved in this browser'],
@@ -226,9 +242,16 @@ export function Settings({ dlg, set, update, reset, sync, scene }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
           {radio('idle', 'Screensaver after', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']])}
-          {radio('idleShow', 'Show', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
           {radio('idleWake', 'Wake with', [['move', 'Any move'], ['hold', 'Hold to unlock']])}
         </div>
+
+        <section className="flex flex-col gap-4 pt-4 border-t border-white/5" aria-labelledby="look-title">
+          <h3 id="look-title" className="text-sm font-medium text-white flex items-center gap-2">
+            <i className="fa-solid fa-lock text-lofi-primary text-xs" aria-hidden="true" /> Lock screen
+            <span className="text-[11px] font-mono font-normal text-lofi-muted">· also the screensaver</span>
+          </h3>
+          <LockLook set={set} update={update} />
+        </section>
 
         <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
           <SyncStatus status={sync} />
