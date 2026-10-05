@@ -1726,7 +1726,7 @@ function Services({ priv }) {
             {/* name + live status only; the card goes nowhere and every one wears the sealed vault */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
               {teaser?.map((s) => (
-                <ServiceCard key={s.name} s={{ ...s, href: '#', host: '█████.lan', deco: 'vault' }} accent={ACCENTS[n++ % ACCENTS.length]} live={s.live} />
+                <ServiceCard key={s.name} s={{ ...s, href: '#', host: '█████.wliafdew.dev', deco: 'vault' }} accent={ACCENTS[n++ % ACCENTS.length]} live={s.live} />
               ))}
             </div>
           </>
