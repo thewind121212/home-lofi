@@ -22,6 +22,7 @@
   --animate-eq: eq 0.9s ease-in-out infinite;
   --animate-blink: blink 1s steps(1) infinite;
   --animate-nudge: nudge 1s ease-in-out infinite;
+  --animate-colon: colon 2s ease-in-out infinite;
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
@@ -39,6 +40,11 @@
   @keyframes hint {
     0%, 100% { opacity: 0; }
     15%, 70% { opacity: 1; }
+  }
+  /* lock screen / screensaver clock: the colon breathes, one breath every 2 s */
+  @keyframes colon {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
   }
   /* lock screen: the swipe knob's arrow points the way */
   @keyframes nudge {

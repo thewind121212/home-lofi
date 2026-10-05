@@ -8,7 +8,8 @@ import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../l
 import { useCloudSync } from './cloud'
 import { Gallery, LockLook, Prefs, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
-const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
+// a browser with no saved location starts in Đà Lạt
+const DEFAULT_LOC = { id: 1584071, name: 'Da Lat', region: 'Lam Dong', country: 'Vietnam', lat: 11.94646, lon: 108.44193, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
 const ICON_COLOR = {
   'fa-sun': 'text-lofi-highlight',
@@ -384,13 +385,22 @@ export default function Home() {
   )
 }
 
-// '21:05', or '9:05' + a small 'PM'
-function Clock({ now, clock }) {
+// '21:05', or '9:05' + a small 'PM'. tick: the colon breathes (the big clock on the lock screen / screensaver)
+function Clock({ now, clock, tick }) {
   if (!now) return '--:--'
   const { time, ampm } = clockParts(now, clock)
+  const [h, m] = time.split(':')
   return (
     <>
-      {time}
+      {tick ? (
+        <>
+          {h}
+          <span className="motion-safe:animate-colon">:</span>
+          {m}
+        </>
+      ) : (
+        time
+      )}
       {ampm && <span className="text-[0.45em] ml-1 align-[0.15em]">{ampm}</span>}
     </>
   )
@@ -414,7 +424,7 @@ function ClockScreen({ now, clock, look, wx }) {
         <div className="idle-clock relative h-full flex flex-col items-center justify-center px-4 text-center">
           {look.clock !== 'off' && (
             <div className={`font-mono font-bold text-white leading-none whitespace-nowrap ${look.clock === 'small' ? 'text-5xl sm:text-6xl' : 'text-7xl sm:text-9xl short:text-7xl'}`}>
-              <Clock now={now} clock={clock} />
+              <Clock now={now} clock={clock} tick />
             </div>
           )}
           {look.clock !== 'off' && look.date && (
