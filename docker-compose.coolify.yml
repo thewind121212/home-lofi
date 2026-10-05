@@ -15,6 +15,10 @@ services:
       GATE_SECRET: ${GATE_SECRET:?} # openssl rand -hex 32; the proxy injects it as x-home-gate on /api/private
       WEATHER_API_URL: ${WEATHER_API_URL:-https://api.weather.wliafdew.dev}
       DISK_PATH: ${DISK_PATH:-/}
+      # owner-only settings sync, see README "Settings sync" (off unless all three are set)
+      DATABASE_URL: ${DATABASE_URL:-}
+      OWNER_USER: ${OWNER_USER:-}
+      SYNC_SECRET: ${SYNC_SECRET:-}
       # live widget stats (a widget is on when its *_URL is set), see README "Live widget stats"
       ADGUARD_URL: ${ADGUARD_URL:-}
       ADGUARD_USER: ${ADGUARD_USER:-}

@@ -23,7 +23,8 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 ## Settings
 
 The gear in the header opens Settings. Changes apply live and are stored **per browser** in one localStorage key
-(`home-lofi:settings`); **Reset all** goes back to the defaults. Nothing is sent to the server.
+(`home-lofi:settings`); **Reset all** goes back to the defaults. For visitors nothing is sent to the server.
+The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 
 | setting | options |
 | --- | --- |
@@ -55,7 +56,7 @@ Everything that is secret or specific to your network lives in two git-ignored f
 
 | file | what | template |
 | --- | --- | --- |
-| `.env` | `GATE_SECRET`, optional `WEATHER_API_URL`, widget URLs and credentials | `.env.example` |
+| `.env` | `GATE_SECRET`, optional `WEATHER_API_URL`, widget URLs and credentials, settings sync | `.env.example` |
 | `private-services.json` | internal service cards (`name`, `href`, `icon` or `fa`, optional `widget`) | `private-services.example.json` |
 
 Public content (scenes list, public service cards, status checks, sign-in URL) lives in `lib/data.js`.
@@ -129,6 +130,53 @@ Authelia `access_control` (rules are matched top-down):
 
 Make sure the proxy passes the real client IP to Authelia (`X-Forwarded-For $remote_addr`, not
 `$proxy_add_x_forwarded_for`). Otherwise anyone could fake a LAN address and get the bypass.
+
+### Settings sync (owner only)
+
+Optional. Signed in as `OWNER_USER`, your settings, saved scene and weather location follow you to every device
+(volume and the services tab stay per device). Everyone else keeps them in their own browser, as before.
+
+- **Local-first**: the page always renders from localStorage and never waits for the network. Changes go up ~1 s
+  later in the background; changes from your other devices come in on load and when you return to the tab
+  (colors cross-fade). While Settings is open, nothing incoming moves under the cursor.
+- **Per-setting merge**: every key carries the time it changed; the newer side wins per key, so edits on two
+  devices both survive. Offline edits stay in the browser and sync when it's back.
+- Settings › bottom line shows where they live: *Synced to your devices* / *Saving…* / *Offline* /
+  *Saved in this browser · sign in to sync*.
+- Storage: one row per owner in Postgres (`DATABASE_URL`; the table is created on first use).
+
+`/api/private/settings` needs its **own proxy location that always asks Authelia** (also on the LAN), passes the
+logged-in user on, and adds a second secret. The app trusts `Remote-User` only together with `x-home-sync`, because
+on a path without a login check a client could send its own `Remote-User`. Without this location the route
+answers 404 and sync stays off. On each Nginx Proxy Manager host for the page, **Advanced** tab:
+
+```nginx
+# home-lofi settings sync: always needs the Authelia login (LAN too), only for this path
+location = /internal/home-lofi/authz {
+    internal;
+    proxy_pass http://authelia_backend/api/authz/auth-request;   # your Authelia upstream
+    proxy_set_header X-Original-Method $request_method;
+    proxy_set_header X-Original-URL https://$http_host$request_uri;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Content-Length "";
+    proxy_set_header Connection "";
+    proxy_pass_request_body off;
+    proxy_http_version 1.1;
+}
+location /api/private/settings {
+    auth_request /internal/home-lofi/authz;
+    auth_request_set $home_lofi_user $upstream_http_remote_user;
+    proxy_set_header Remote-User $home_lofi_user;                 # from Authelia, never from the client
+    proxy_set_header x-home-gate "<GATE_SECRET>";
+    proxy_set_header x-home-sync "<SYNC_SECRET>";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_pass http://home-lofi:3000;                             # same upstream as your /api/private location
+}
+```
+
+A request without a session gets a plain **401** (the page shows *sign in to sync*); Authelia's "remember me" keeps
+the session for a month.
 
 ## Deploy (Docker)
 

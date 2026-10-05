@@ -1,11 +1,26 @@
 'use client'
 
 import { createContext, useRef, useState } from 'react'
-import { SCENES, SCENES_URL } from '../lib/data'
+import { AUTH_URL, SCENES, SCENES_URL } from '../lib/data'
 import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
 export const Prefs = createContext({ ...DEFAULTS, reduced: false })
+
+// localStorage can throw (private mode, blocked storage) -> fall back silently
+export function load(key, fallback) {
+  try {
+    const v = localStorage.getItem('home-lofi:' + key)
+    return v == null ? fallback : JSON.parse(v)
+  } catch {
+    return fallback
+  }
+}
+export function save(key, value) {
+  try {
+    localStorage.setItem('home-lofi:' + key, JSON.stringify(value))
+  } catch {}
+}
 
 // Imperative code (WAAPI timelines, dialog exits) reads the same `reduced`, mirrored onto <html data-motion> by Home
 export const motionOff = () => document.documentElement.dataset.motion === 'reduce'
@@ -69,7 +84,35 @@ function weatherHint(set, { want, mode, from }) {
   return t
 }
 
-export function Settings({ dlg, set, update, reset, scene }) {
+// Where the settings live (app/cloud.js status): icon, text, and for 'signin' a link to the login portal
+const SYNC = {
+  off: ['fa-laptop', 'Saved in this browser'],
+  signin: ['fa-laptop', 'Saved in this browser'],
+  syncing: ['fa-cloud-arrow-up motion-safe:animate-pulse text-lofi-primary', 'Saving to your devices…'],
+  synced: ['fa-cloud text-emerald-400', 'Synced to your devices'],
+  offline: ['fa-cloud text-lofi-highlight', 'Offline · saved here, syncs later'],
+}
+function SyncStatus({ status }) {
+  const [icon, text] = SYNC[status] ?? SYNC.off
+  return (
+    <p className="min-w-0 flex items-center gap-2 text-[11px] font-mono text-lofi-muted" aria-live="polite">
+      <i className={`fa-solid ${icon} w-4 text-center`} aria-hidden="true" />
+      <span>
+        {text}
+        {status === 'signin' && (
+          <>
+            {' · '}
+            <a href={`${AUTH_URL}/?rd=${encodeURIComponent(location.href)}`} className="text-lofi-primary hover:underline">
+              sign in to sync
+            </a>
+          </>
+        )}
+      </span>
+    </p>
+  )
+}
+
+export function Settings({ dlg, set, update, reset, sync, scene }) {
   const hint = weatherHint(set, scene)
   const radio = (key, legend, options, extra) => (
     <Choice legend={legend} name={key} value={set[key]} options={options} onChange={(v) => update({ [key]: v })}>
@@ -186,7 +229,8 @@ export function Settings({ dlg, set, update, reset, scene }) {
           {radio('idleShow', 'Show', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
         </div>
 
-        <div className="pt-2 border-t border-white/5 flex justify-end">
+        <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+          <SyncStatus status={sync} />
           <button
             onClick={reset}
             className="h-9 px-4 rounded-full border border-white/10 font-mono text-xs text-lofi-muted hover:text-white hover:border-lofi-secondary/60 transition-colors flex items-center gap-2"
