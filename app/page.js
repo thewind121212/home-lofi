@@ -176,6 +176,15 @@ export default function Home() {
     if (icon) icon.href = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#1a1a2e"/><circle cx="16" cy="16" r="10" fill="#2a2a4a"/><circle cx="16" cy="16" r="5" fill="${a}"/><circle cx="16" cy="16" r="1.5" fill="#1a1a2e"/></svg>`)}`
   }, [settings])
 
+  // owner = settings sync reached the server as OWNER_USER (the same check guards the Spotify controls).
+  // wasOwner: this browser has been signed in as the owner before, so a lapsed login gets a "sign in" hint
+  const owner = ['synced', 'syncing', 'offline'].includes(cloud.status)
+  const [wasOwner, setWasOwner] = useState(false)
+  useEffect(() => {
+    if (owner) save('owner', true)
+    setWasOwner(owner || load('owner', false) === true)
+  }, [owner])
+
   function lock() {
     ;[setDlg.current, galDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
     document.activeElement?.blur()
@@ -341,8 +350,7 @@ export default function Home() {
 
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
-            {/* owner = settings sync reached the server as OWNER_USER (the same check guards the Spotify controls) */}
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={['synced', 'syncing', 'offline'].includes(cloud.status)} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} />
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
@@ -631,7 +639,7 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-function Music({ ctl, onTune, spotify, onSpotify, owner }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hint, setHint] = useState(false)
@@ -764,7 +772,8 @@ function Music({ ctl, onTune, spotify, onSpotify, owner }) {
         })}
       </div>
 
-      <div role="tabpanel" id="audio-panel" aria-labelledby={`audio-tab-${tab}`} className="grow min-h-0 flex flex-col z-10">
+      {/* above the tabs (z-20) only while an Up next popup is open */}
+      <div role="tabpanel" id="audio-panel" aria-labelledby={`audio-tab-${tab}`} className="grow min-h-0 flex flex-col z-10 has-[[role=dialog]]:z-30">
         {tab === 'radio' && (
           <>
             <div className="grow flex items-center justify-center mb-2 animate-float">
@@ -805,7 +814,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner }) {
             </p>
           </>
         )}
-        {tab === 'spotify' && <SpotifyPanel sp={spotify} owner={owner} onState={onSpotify} />}
+        {tab === 'spotify' && <SpotifyPanel sp={spotify} owner={owner} wasOwner={wasOwner} onState={onSpotify} />}
         {tab === 'player' && <PlayerSoon />}
       </div>
 
@@ -2235,7 +2244,7 @@ function useSpotifyControl(onState) {
   return { act, busy, err }
 }
 
-function SpotifyPanel({ sp, owner, onState }) {
+function SpotifyPanel({ sp, owner, wasOwner, onState }) {
   const [, tick] = useState(0) // every second while playing, for the progress (this panel only)
   useEffect(() => {
     if (!sp?.playing) return
@@ -2243,6 +2252,7 @@ function SpotifyPanel({ sp, owner, onState }) {
     return () => clearInterval(t)
   }, [sp?.playing])
   const ctl = useSpotifyControl(onState)
+  const [peek, setPeek] = useState(null) // an Up next track shown in the popup
   if (sp === undefined) return null // first answer on its way
   if (!sp.enabled || !sp.track) return <SpotifyResting owner={owner} ctl={ctl} />
   const artists = sp.artists.join(', ')
@@ -2265,11 +2275,6 @@ function SpotifyPanel({ sp, owner, onState }) {
           ) : (
             <span className="w-full h-full bg-lofi-surface flex items-center justify-center text-lofi-muted">
               <i className="fa-solid fa-music text-xl" aria-hidden="true" />
-            </span>
-          )}
-          {!sp.playing && (
-            <span className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-lofi-base/80 flex items-center justify-center text-white text-[9px]" aria-hidden="true">
-              <i className="fa-solid fa-pause" />
             </span>
           )}
         </a>
@@ -2312,22 +2317,94 @@ function SpotifyPanel({ sp, owner, onState }) {
           <SpBtn label="Next" icon="fa-forward-step" onClick={() => ctl.act('next')} busy={ctl.busy === 'next'} />
         </div>
       )}
+      {!owner && wasOwner && <SignInToControl />}
       {ctl.err && <p className="mt-1 text-[10px] font-mono text-red-400 text-center" role="status">{ctl.err}</p>}
       {next.length > 0 && !ctl.err && (
         <div className="mt-auto pt-2 min-w-0">
           <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">Up next</p>
           <ul className="space-y-1">
             {next.map((t, i) => (
-              <li key={i} className="flex items-center gap-2 min-w-0 text-[11px]">
-                {t.art ? <img src={t.art} alt="" width={18} height={18} className="w-[18px] h-[18px] rounded shrink-0" /> : <i className="fa-solid fa-music text-lofi-muted w-[18px] text-center" aria-hidden="true" />}
-                <span className="text-white/80 truncate">{t.track}</span>
-                <span className="text-lofi-muted truncate shrink-[2]">· {t.artists.join(', ')}</span>
+              <li key={i}>
+                <button
+                  onClick={() => setPeek(t)}
+                  aria-haspopup="dialog"
+                  aria-label={`Up next: ${t.track} by ${t.artists.join(', ')}. Details`}
+                  className="w-full flex items-center gap-2 min-w-0 text-[11px] text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-white/5 transition-colors"
+                >
+                  {t.thumb ? <img src={t.thumb} alt="" width={18} height={18} className="w-[18px] h-[18px] rounded shrink-0" /> : <i className="fa-solid fa-music text-lofi-muted w-[18px] text-center" aria-hidden="true" />}
+                  <span className="text-white/80 truncate">{t.track}</span>
+                  <span className="text-lofi-muted truncate shrink-[2]">· {t.artists.join(', ')}</span>
+                </button>
               </li>
             ))}
           </ul>
         </div>
       )}
+      {peek && <TrackPeek t={peek} onClose={() => setPeek(null)} />}
     </>
+  )
+}
+
+// Up next details: a small popup over the card, big cover, title, artists, album and a link to Spotify.
+// Esc, the ✕ or a click outside it closes it.
+function TrackPeek({ t, onClose }) {
+  const close = useRef(null)
+  useEffect(() => {
+    close.current?.focus({ preventScroll: true })
+    const onKey = (e) => e.key === 'Escape' && (e.stopPropagation(), onClose())
+    addEventListener('keydown', onKey, true)
+    return () => removeEventListener('keydown', onKey, true)
+  }, [onClose])
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-lofi-base/60 motion-safe:animate-[fade-in_0.2s_ease-out]" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={`${t.track} by ${t.artists.join(', ')}`}
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-64 glass-panel rounded-2xl p-4 flex flex-col items-center text-center motion-safe:animate-[panel-in_0.25s_cubic-bezier(0.2,0.8,0.2,1)]"
+      >
+        <button
+          ref={close}
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-lofi-base/60 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+        >
+          <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
+        </button>
+        <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-2">Up next</p>
+        {t.art ? (
+          <img src={t.art} alt="" width={112} height={112} className="w-28 h-28 rounded-xl object-cover shadow-2xl ring-1 ring-white/10 mb-3" />
+        ) : (
+          <span className="w-28 h-28 rounded-xl bg-lofi-surface flex items-center justify-center text-lofi-muted mb-3">
+            <i className="fa-solid fa-music text-2xl" aria-hidden="true" />
+          </span>
+        )}
+        <p className="w-full text-sm font-medium text-white truncate">{t.track}</p>
+        <p className="w-full text-xs text-lofi-muted truncate">{t.artists.join(', ')}</p>
+        {t.album && <p className="w-full text-[10px] font-mono text-lofi-muted/80 truncate mt-0.5">{t.album}</p>}
+        {t.url && (
+          <a
+            href={t.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 h-8 px-4 rounded-full bg-[#1db954] text-lofi-base text-xs font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+          >
+            <i className="fa-brands fa-spotify" aria-hidden="true" /> Open in Spotify
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// the controls' place when this browser's owner login has lapsed (never for guests: they were never the owner here)
+function SignInToControl() {
+  return (
+    <p className="mt-2 text-center text-[11px] font-mono">
+      <a href={`${AUTH_URL}/?rd=${encodeURIComponent(location.href)}`} className="text-lofi-primary hover:underline inline-flex items-center gap-1.5">
+        <i className="fa-solid fa-lock text-[10px]" aria-hidden="true" /> Sign in to control
+      </a>
+    </p>
   )
 }
 
