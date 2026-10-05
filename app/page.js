@@ -361,13 +361,13 @@ export default function Home() {
         </header>
 
         {/* Three blocks, each mounted once (the radio never restarts), placed by the grid:
-            phones: one column, Music · Steam · Weather · Hub · Services
-            lg (laptops): two columns, Music + Steam + Weather on the left, Hub + Services on the right
-            2xl (≥1536 px, e.g. 1920×1080): three columns, Music + Steam | Hub + Services | Weather, so nothing scrolls */}
+            phones: one column, Steam · Music · Weather · Hub · Services
+            lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
+            2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Hub + Services | Weather, so nothing scrolls */}
         <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 2xl:col-span-3 flex flex-col gap-6">
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} />
             <SteamCard d={steam} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} />
           </div>
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-2 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 flex flex-col gap-6">
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
@@ -2250,14 +2250,17 @@ function Shell() {
 // by the Steam card under the music and the status line on the Entertainment tab's Steam link.
 const SteamData = createContext(null)
 function useSteam() {
-  const [d, setD] = useState(null)
+  const [d, setD] = useState() // undefined = loading (the card shows a skeleton), null = unreachable (no card)
   useEffect(() => {
     let alive = true
     const get = () =>
       document.visibilityState === 'visible' &&
       fetch('/api/steam')
         .then((r) => r.json())
-        .then((v) => alive && !v.error && setD(v), () => {})
+        .then(
+          (v) => alive && setD((prev) => (v.error ? (prev ?? null) : v)), // a hiccup keeps the last answer
+          () => alive && setD((prev) => prev ?? null),
+        )
     get()
     const t = setInterval(get, 60_000)
     document.addEventListener('visibilitychange', get)
@@ -2277,6 +2280,37 @@ function SteamDot({ d }) {
   return <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${steamState(d)[1]} ${d.state === 'offline' ? '' : 'shadow-[0_0_6px_currentColor] motion-safe:animate-pulse'}`} aria-hidden="true" />
 }
 
+// The Steam card while /api/steam is on its way: the same shape in pulsing blocks, so nothing jumps when it lands
+function SteamSkeleton() {
+  const bar = 'rounded-md bg-white/8 motion-safe:animate-pulse'
+  return (
+    <section aria-label="Steam" aria-busy="true" className="glass-panel rounded-3xl p-5 flex flex-col gap-4">
+      <span className="sr-only">Loading Steam…</span>
+      <div className="flex items-center gap-4" aria-hidden="true">
+        <span className={`w-14 h-14 rounded-2xl ${bar}`} />
+        <span className="flex-1 flex flex-col gap-2">
+          <span className={`h-4 w-28 ${bar}`} />
+          <span className={`h-3 w-20 ${bar}`} />
+          <span className={`h-2.5 w-32 ${bar}`} />
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2" aria-hidden="true">
+        {[0, 1, 2].map((i) => (
+          <span key={i} className={`h-[3.25rem] rounded-xl ${bar}`} />
+        ))}
+      </div>
+      <div aria-hidden="true">
+        <span className={`block mb-1.5 h-2.5 w-24 ${bar}`} />
+        <div className="grid grid-cols-3 gap-2">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className={`aspect-[460/215] rounded-lg ${bar}`} />
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 // The Entertainment tab's Steam link: just the live status (the numbers live on the Steam card)
 function SteamStatus() {
   const d = useContext(SteamData)
@@ -2290,10 +2324,11 @@ function SteamStatus() {
   )
 }
 
-// Under the music: the Steam profile. Avatar with a ring in the status color, name, level, status (or the game being
+// Above the music: the Steam profile. Avatar with a ring in the status color, name, level, status (or the game being
 // played), then Games / Hours / 2 weeks with icons, then the recently played games (icon + hours this fortnight).
 // Public: the same things the Steam profile shows. Nothing until /api/steam answers.
 function SteamCard({ d }) {
+  if (d === undefined) return <SteamSkeleton />
   if (!d) return null
   const [label, , text, ring] = steamState(d)
   const tiles = [
@@ -2344,9 +2379,9 @@ function SteamCard({ d }) {
         ))}
       </dl>
       {d.recent?.length > 0 && (
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="shrink-0 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">Recent</span>
-          <ul className="flex items-center gap-3 min-w-0">
+        <div className="min-w-0">
+          <p className="mb-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">Recently played</p>
+          <ul className="grid grid-cols-3 gap-2">
             {d.recent.map((g) => (
               <li key={g.name} className="min-w-0">
                 <a
@@ -2354,11 +2389,26 @@ function SteamCard({ d }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   title={`${g.name} · ${g.hours2w} h these 2 weeks · ${g.hours} h total`}
-                  className="flex items-center gap-1.5 text-[11px] font-mono text-lofi-text hover:text-white transition-colors"
+                  className="group relative block aspect-[460/215] rounded-lg overflow-hidden bg-lofi-surface ring-1 ring-white/10 hover:ring-[#57cbde]/60 transition"
                 >
-                  {g.icon ? <img src={g.icon} alt="" width={20} height={20} className="w-5 h-5 rounded shrink-0" /> : <i className="fa-solid fa-gamepad text-lofi-muted" aria-hidden="true" />}
-                  <span className="tabular-nums">{g.hours2w} h</span>
-                  <span className="sr-only"> of {g.name} these 2 weeks</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-lofi-muted" aria-hidden="true">
+                    <i className="fa-solid fa-gamepad" />
+                  </span>
+                  {g.art && (
+                    <img
+                      src={g.art}
+                      alt=""
+                      width={460}
+                      height={215}
+                      loading="lazy"
+                      onError={(e) => (e.currentTarget.style.display = 'none')} // the 🎮 behind it shows instead
+                      className="relative w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )}
+                  <span className="absolute bottom-0 inset-x-0 px-1.5 py-0.5 bg-linear-to-t from-black/80 to-transparent text-[10px] font-mono text-white tabular-nums">
+                    {g.hours2w} h
+                  </span>
+                  <span className="sr-only">{g.name}: {g.hours2w} hours these 2 weeks</span>
                 </a>
               </li>
             ))}
