@@ -1748,7 +1748,98 @@ function Secret() {
   )
 }
 
+// Grafana's card: a fake live panel. A random-walk area chart scrolls behind a metric that is totally real
+// and definitely not made up. Pure decoration.
+const METRICS = [
+  ['vibes', (v) => `${Math.round(70 + v * 30)}%`],
+  ['coffee', (v) => `${(1 + v * 4).toFixed(1)}/h`],
+  ['bugs', () => '0*'],
+  ['chill', (v) => `${(5 + v * 5).toFixed(1)}/10`],
+  ['panic', () => '0%'],
+]
+const POINTS = 24
+const walk = (v) => Math.min(0.9, Math.max(0.15, v + (Math.random() - 0.5) * 0.3))
+const seed = () => Array.from({ length: POINTS }).reduce((a) => [...a, walk(a.at(-1) ?? 0.5)], [])
+function Graph() {
+  const [pts, setPts] = useState(() => Array(POINTS).fill(0.5)) // flat on the server; random after mount (no hydration mismatch)
+  const [k, setK] = useState(0)
+  const { reduced } = useContext(Prefs)
+  useEffect(() => {
+    setPts(seed())
+    setK(0)
+    if (reduced) return
+    const tick = setInterval(() => setPts((p) => [...p.slice(1), walk(p.at(-1))]), 900)
+    const next = setInterval(() => setK((i) => i + 1), 4000)
+    return () => (clearInterval(tick), clearInterval(next))
+  }, [reduced])
+  const [label, fmt] = METRICS[k % METRICS.length]
+  const line = pts.map((v, i) => `${((i / (POINTS - 1)) * 100).toFixed(1)},${((1 - v) * 24).toFixed(1)}`).join(' ')
+  return (
+    <div className="z-10 w-full relative overflow-hidden bg-lofi-base/60 border border-white/5 rounded-lg px-2 py-1.5" aria-hidden="true">
+      <svg viewBox="0 0 100 24" preserveAspectRatio="none" className="absolute inset-0 w-full h-full">
+        <polygon points={`0,24 ${line} 100,24`} className="fill-lofi-primary/15" />
+        <polyline points={line} fill="none" strokeWidth="1.5" vectorEffect="non-scaling-stroke" className="stroke-lofi-primary/50" />
+      </svg>
+      {/* halo in the panel colour keeps the text readable where the line crosses it */}
+      <div className="relative flex items-center justify-center gap-1.5 font-mono text-[11px] whitespace-nowrap [text-shadow:0_0_3px_var(--color-lofi-base),0_0_6px_var(--color-lofi-base)]">
+        <span className="text-lofi-muted">{label}</span>
+        <span className="text-white tabular-nums">{fmt(pts.at(-1))}</span>
+      </div>
+    </div>
+  )
+}
+
+// Termix's card: a tiny shell types a command, gets a cheeky reply, clears and goes again. Pure decoration.
+// Keep both sides <= 12 chars so they fit a phone-width card untruncated.
+const SHELL = [
+  ['whoami', 'root (maybe)'],
+  ['sudo snack', 'okay.'],
+  ['rm -rf /', 'nice try'],
+  ['exit', 'no escape'],
+  ['ping mom', 'no reply'],
+  ['git push -f', 'bold move'],
+  ['vim', 'send help'],
+  ['uptime', 'more than u'],
+]
+function Shell() {
+  const [line, setLine] = useState({ text: '', reply: false })
+  const { reduced } = useContext(Prefs)
+  useEffect(() => {
+    if (reduced) return setLine({ text: 'ssh home', reply: false })
+    setLine({ text: '', reply: false })
+    let t // strictly one step at a time, so a single pending timeout
+    const later = (fn, ms) => (t = setTimeout(fn, ms))
+    let k = Math.floor(Math.random() * SHELL.length)
+    const run = () => {
+      const [cmd, reply] = SHELL[k++ % SHELL.length]
+      let i = 0
+      const type = () => {
+        setLine({ text: cmd.slice(0, ++i), reply: false })
+        if (i < cmd.length) return later(type, 60 + Math.random() * 90) // uneven, like a person typing
+        later(() => {
+          setLine({ text: reply, reply: true })
+          later(() => (setLine({ text: '', reply: false }), later(run, 700)), 1800)
+        }, 450)
+      }
+      type()
+    }
+    later(run, 800 + Math.random() * 1500)
+    return () => clearTimeout(t)
+  }, [reduced])
+  return (
+    <div className="z-10 w-full flex items-center bg-black/40 border border-white/5 rounded-lg px-2 py-1.5 font-mono text-[11px] text-left" aria-hidden="true">
+      <span className="text-lofi-primary mr-1.5">{line.reply ? '→' : '$'}</span>
+      <span className={`truncate whitespace-pre ${line.reply ? 'text-lofi-highlight' : 'text-white'}`}>{line.text}</span>
+      {!line.reply && <span className="w-[0.6em] h-[1.1em] ml-px shrink-0 bg-lofi-primary/80 motion-safe:animate-blink" />}
+    </div>
+  )
+}
+
+// card decorations by `deco` key (lib/data.js / private-services.json)
+const DECOR = { vault: Secret, graph: Graph, shell: Shell }
+
 function ServiceCard({ s, accent, live, stats }) {
+  const Deco = DECOR[s.deco]
   return (
     <a
       href={s.href}
@@ -1782,7 +1873,7 @@ function ServiceCard({ s, accent, live, stats }) {
           </div>
         )}
       </div>
-      {s.secret && <Secret />}
+      {Deco && <Deco />}
       {/* live widget numbers (internal services only, from /api/private) */}
       {Array.isArray(stats) && (
         <dl className="z-10 w-full grid grid-cols-1 @[9rem]:grid-cols-2 gap-1.5">

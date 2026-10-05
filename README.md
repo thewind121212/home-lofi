@@ -216,5 +216,6 @@ So variants can be uploaded one scene at a time. Pixel art looks best at an inte
 
 Add `{ name, href, icon }` (or `fa: 'fa-brands fa-...'`) to a section of `SERVICES` in `lib/data.js`.
 For a live **Online · ms** line, also add `status: '<id>'` and an entry in `STATUS_CHECKS`.
+For a bit of fun under the name, add `deco: 'vault'` (sealed password), `'graph'` (fake live chart) or `'shell'` (cheeky terminal).
 Only up/down and response time are shown publicly, never versions or internals.
 Everything in `lib/data.js` is public: put internal services in `private-services.json` instead.

@@ -20,6 +20,7 @@
   --animate-wiggle: wiggle 0.35s ease-in-out infinite;
   --animate-card-in: card-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   --animate-eq: eq 0.9s ease-in-out infinite;
+  --animate-blink: blink 1s steps(1) infinite;
 
   @keyframes float {
     0%, 100% { transform: translateY(0); }
@@ -32,6 +33,10 @@
   @keyframes eq {
     0%, 100% { transform: scaleY(0.3); }
     50% { transform: scaleY(1); }
+  }
+  /* Termix card: terminal block cursor */
+  @keyframes blink {
+    50% { opacity: 0; }
   }
   @keyframes wiggle {
     0%, 100% { rotate: -12deg; }
