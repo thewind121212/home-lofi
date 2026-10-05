@@ -8,7 +8,8 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 ## Features
 
 - **Scenes**: full-screen, seamlessly looping pixel-art cities, drawn onto a canvas with smoothing off, so the pixels stay sharp up to 4K.
-  A full-screen gallery picks the scene (saved per browser).
+  The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
+  the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
 - **Hide, Screensaver, Lock**: three ways to see just the scene, each with one job.
 
   | | when | shows | back with |
@@ -55,16 +56,16 @@ Sites (the Hub turns compact in the narrow column). A long group like All scroll
 
 ## Settings
 
-The gear in the header opens Settings. Changes apply live and are stored **per browser** in one localStorage key
+⚙️ (bottom right, under 👁 and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
 (`home-lofi:settings`); **Reset all** goes back to the defaults. For visitors nothing is sent to the server.
 The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 
 | setting | options |
 | --- | --- |
 | Color theme | Sunset (default), Sakura, Matcha, Ocean, Lavender, Lemon, or a custom accent (the other two colors are derived from it) |
-| Scene | opens the scene gallery: search, 🎲 Random, arrow keys + Enter |
+| Scene | moved to the header's scene button (scene picker): its big preview opens the scene gallery (search, 🎲 Random, arrow keys + Enter) |
 | On load | Keep the last scene, or a Random one each visit |
-| Scene weather | Signature (default), Live, Clear, Drizzle, Rain, Storm, Snow, Leaves (see [Scenes](#scenes)) |
+| Scene weather | moved to the scene picker: Signature (default), Live, Clear, Drizzle, Rain, Storm, Snow, Leaves (see [Scenes](#scenes)); a line under it says what Live follows, or when a variant isn't there yet |
 | Dim scene | 0–100: more scene ↔ more readable panels (50 = default) |
 | Clock | 24h / 12h (header and screensaver / lock clock) |
 | Temperature | °C / °F (converted in the browser) |
@@ -310,7 +311,7 @@ scenes/snow/<id>.{webm,mp4,webp}
 scenes/leaves/<id>.{webm,mp4,webp}
 ```
 
-Settings › Scene weather picks one; **Live** follows the current weather of the Weather card's location (clear sky / clouds
+The scene picker's Scene weather picks one; **Live** follows the current weather of the Weather card's location (clear sky / clouds
 → clear, fog / drizzle → drizzle, rain / showers → rain, snow → snow, thunderstorm → thunderstorm). If a variant is
 missing for a scene, that scene quietly falls back to its Signature files; only a missing Signature shows the night sky.
 So variants can be uploaded one scene at a time. Pixel art looks best at an integer upscale with nearest-neighbour scaling
