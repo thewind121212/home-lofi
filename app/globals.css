@@ -34,6 +34,11 @@
     0%, 100% { transform: scaleY(0.3); }
     50% { transform: scaleY(1); }
   }
+  /* screensaver: "move to wake" shows for a moment, then leaves only the scene */
+  @keyframes hint {
+    0%, 100% { opacity: 0; }
+    15%, 70% { opacity: 1; }
+  }
   /* Termix card: terminal block cursor */
   @keyframes blink {
     50% { opacity: 0; }

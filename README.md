@@ -8,10 +8,17 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 ## Features
 
 - **Scenes**: full-screen, seamlessly looping pixel-art cities, drawn onto a canvas with smoothing off, so the pixels stay sharp up to 4K.
-  A full-screen gallery picks the scene (saved per browser), and a focus mode hides the panels.
-- **Soft lock**: the lock button (or **L**) switches to the scene + big clock and stays there: mouse and keys don't wake it,
-  only **holding** the unlock pill (or Space / Enter) for ~1 s does, then you're back where you were (dashboard or focus mode).
-  Not saved anywhere: a reload always opens unlocked. A screen-saver lock, not security.
+  A full-screen gallery picks the scene (saved per browser).
+- **Hide, Screensaver, Lock**: three ways to see just the scene, each with one job.
+
+  | | when | shows | back with |
+  | --- | --- | --- | --- |
+  | **Hide** (I'm still here) | 👁 button or **H** | scene + a mini bar (music, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
+  | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
+  | **Lock** (I'm away, hands off) | 🔒 button, **L**, or the Screensaver with *Wake with: Hold to unlock* | scene + big clock + 🔒 pill | **holding** the pill (or Space / Enter) ~1 s |
+
+  You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
+  (a screen-saver lock, not security).
 - **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
@@ -36,10 +43,10 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | On load | Keep the last scene, or a Random one each visit |
 | Scene weather | Signature (default), Live, Clear, Drizzle, Rain, Storm, Snow, Leaves (see [Scenes](#scenes)) |
 | Dim scene | 0–100: more scene ↔ more readable panels (50 = default) |
-| Clock | 24h / 12h (header and idle clock) |
+| Clock | 24h / 12h (header and screensaver / lock clock) |
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
-| When idle / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back |
+| Screensaver after / Show / Wake with | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Wake with *Any move*, or *Hold to unlock* (the screensaver becomes the lock) |
 
 ## Quick start (dev)
 

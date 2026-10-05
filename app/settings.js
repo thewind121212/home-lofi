@@ -225,8 +225,9 @@ export function Settings({ dlg, set, update, reset, sync, scene }) {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
-          {radio('idle', 'When idle', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']])}
+          {radio('idle', 'Screensaver after', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']])}
           {radio('idleShow', 'Show', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
+          {radio('idleWake', 'Wake with', [['move', 'Any move'], ['hold', 'Hold to unlock']])}
         </div>
 
         <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">

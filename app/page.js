@@ -51,6 +51,8 @@ export default function Home() {
   const [softLock, setSoftLock] = useState(false)
   const lockRef = useRef(false)
   lockRef.current = softLock
+  const wakeRef = useRef(set.idleWake) // read by the idle timer without restarting it
+  wakeRef.current = set.idleWake
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
   const videoRef = useRef(null)
@@ -122,7 +124,8 @@ export default function Home() {
     if (v) reduced ? v.pause() : v.play().catch(() => {})
   }, [settings, reduced])
 
-  // Idle mode: after N s without input the dashboard fades + blurs away (like focus mode); any input brings it back.
+  // Screensaver (Settings > Screensaver after): after N s without input the dashboard fades + blurs away (like Hide);
+  // any input brings it back. With Wake with: Hold to unlock it locks instead (the soft lock below).
   // Never while a dialog or the location dropdown is open, or with text typed in a field.
   useEffect(() => {
     if (!set.idle) return
@@ -137,7 +140,7 @@ export default function Home() {
       if (!idleRef.current) return
       idleRef.current = false
       setIdle(false)
-      // the waking key doesn't also act: not on a focused card (Enter), not on our own listeners (Esc would leave focus mode)
+      // the waking key doesn't also act: not on a focused card (Enter), not on our own listeners (Esc would leave Hide)
       if (e.type === 'keydown') e.preventDefault(), e.stopPropagation()
       if (e.type === 'pointerdown') {
         // swallow the click that ends this tap/press, so it doesn't land on a card that just reappeared
@@ -152,7 +155,7 @@ export default function Home() {
       if (idleRef.current) return
       if (lockRef.current) return void (last = Date.now())
       if (busy()) last = Date.now()
-      else if (Date.now() - last >= set.idle * 1000) setIdle((idleRef.current = true))
+      else if (Date.now() - last >= set.idle * 1000) wakeRef.current === 'hold' ? lock() : setIdle((idleRef.current = true))
     }, 1000)
     return () => {
       clearInterval(t)
@@ -189,13 +192,14 @@ export default function Home() {
     setSoftLock(false)
   }
   useEffect(() => {
-    // L locks (not while typing, not with a dialog open)
+    // H toggles Hide, L locks (not while typing, not with a dialog open, not while locked)
     const onKey = (e) => {
-      if (e.key !== 'l' && e.key !== 'L') return
+      const k = e.key.toLowerCase()
+      if (k !== 'h' && k !== 'l') return
       if (e.ctrlKey || e.metaKey || e.altKey || lockRef.current) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return
       e.preventDefault()
-      lock()
+      k === 'l' ? lock() : setFocus((f) => !f)
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
@@ -302,8 +306,8 @@ export default function Home() {
             </button>
             <button
               onClick={() => setFocus(true)}
-              aria-label="Focus mode: hide panels"
-              title="Focus mode"
+              aria-label="Hide panels (H)"
+              title="Hide panels (H)"
               className="order-3 sm:order-none w-8 h-8 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
             >
               <i className="fa-solid fa-eye-slash text-xs" aria-hidden="true" />
@@ -350,8 +354,9 @@ export default function Home() {
 
       {((idle && set.idleShow === 'clock') || softLock) && <IdleClock now={now} clock={set.clock} />}
       {softLock && <LockPill onUnlock={unlock} />}
-      {/* Header is hidden in focus mode, so the way back is the bar's eye button (or Esc) */}
-      {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} />}
+      {idle && !softLock && <WakeHint />}
+      {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
+      {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} onLock={lock} />}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </Prefs>
@@ -384,6 +389,18 @@ function IdleClock({ now, clock }) {
         {now?.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
       </div>
     </div>
+  )
+}
+
+// Screensaver: a faint hint in the lock pill's spot, gone after a few seconds (so the two are easy to tell apart)
+function WakeHint() {
+  return (
+    <p
+      className="fixed z-30 inset-x-0 bottom-[max(2.75rem,env(safe-area-inset-bottom))] text-center font-mono text-xs text-white/70 pointer-events-none select-none opacity-0 motion-safe:animate-[hint_4s_ease-in-out]"
+      aria-hidden="true"
+    >
+      move to wake
+    </p>
   )
 }
 
@@ -464,10 +481,10 @@ function LockPill({ onUnlock }) {
   )
 }
 
-// Focus mode's mini bar: show panels | music | weather | time | server. Segments without data are left out.
+// Hide's mini bar: show panels + lock | music | weather | time | server. Segments without data are left out.
 // Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
-function FocusBar({ now, wx, priv, tune, onToggle, onShow }) {
+function FocusBar({ now, wx, priv, tune, onToggle, onShow, onLock }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -480,9 +497,17 @@ function FocusBar({ now, wx, priv, tune, onToggle, onShow }) {
         onClick={onShow}
         aria-label="Show panels"
         title="Show panels (Esc)"
-        className="w-9 h-9 mr-1 sm:mr-2 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-colors"
+        className="w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-colors"
       >
         <i className="fa-solid fa-eye text-sm" aria-hidden="true" />
+      </button>
+      <button
+        onClick={onLock}
+        aria-label="Lock screen (hold to unlock)"
+        title="Lock (L)"
+        className="w-9 h-9 ml-1 mr-1 sm:mr-2 shrink-0 rounded-full bg-lofi-base/50 border border-white/5 flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-colors"
+      >
+        <i className="fa-solid fa-lock text-xs" aria-hidden="true" />
       </button>
 
       <div className={SEG}>
