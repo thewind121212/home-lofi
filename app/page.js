@@ -38,6 +38,9 @@ function dimOverlay(dim) {
 }
 
 
+// keys that only switch windows or modify others: they never wake the screensaver
+const QUIET_KEYS = new Set(['Alt', 'AltGraph', 'Control', 'Meta', 'OS', 'Shift', 'Tab', 'CapsLock'])
+
 export default function Home() {
   const [now, setNow] = useState(null)
   const [scene, setScene] = useState(null)
@@ -136,6 +139,7 @@ export default function Home() {
     }
     const wake = (e) => {
       if (e.type === 'pointermove' && !e.movementX && !e.movementY) return // synthetic moves from layout changes
+      if (e.type === 'keydown' && QUIET_KEYS.has(e.key)) return // Alt+Tab & co. to another window don't wake it
       last = Date.now()
       if (!idleRef.current) return
       idleRef.current = false
@@ -473,8 +477,9 @@ function WakeHint() {
 
 // The lock screen's controls, bottom center: what's playing (Lock screen › Music: bright, or dim = fades when the controls
 // rest), then 🎨 (the lock screen's look: the only settings that change while locked) and the swipe to unlock.
-// After 3 s without use they fold into a small breathing "swipe to unlock", so the music has the stage. The pointer
-// coming to this area, a tap anywhere (phones) or a key brings them back; moving the mouse elsewhere doesn't.
+// After 3 s without use they fold, smoothly, into a small breathing "swipe to unlock" and the music glides down into
+// their place. Only the pointer coming to this area or a click / tap on the hint opens them again: keys (Alt+Tab to
+// another window) and moving the mouse elsewhere don't.
 const REST_MS = 3000
 function LockControls({ onUnlock, set, update, children }) {
   const [open, setOpen] = useState(true)
@@ -485,32 +490,25 @@ function LockControls({ onUnlock, set, update, children }) {
     clearTimeout(timer.current)
     timer.current = setTimeout(() => !inside.current && setOpen(false), REST_MS)
   }
-  const wake = () => (setOpen(true), rest())
   useEffect(() => {
     rest()
-    const onKey = () => wake()
-    const onDown = () => wake() // a tap on a phone (no hover there)
-    addEventListener('keydown', onKey)
-    addEventListener('pointerdown', onDown)
-    return () => {
-      clearTimeout(timer.current)
-      removeEventListener('keydown', onKey)
-      removeEventListener('pointerdown', onDown)
-    }
+    return () => clearTimeout(timer.current)
   }, [])
   useEffect(() => (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps them open
-  const faint = (on) => `transition-opacity duration-700 ${on ? 'opacity-30' : 'opacity-100'}`
+  const shown = open || look
+  // a row that folds to nothing by animating its height (grid rows 1fr <-> 0fr), so what's above glides
+  const fold = (on) => `grid transition-[grid-template-rows,opacity] duration-500 ease-out ${on ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
   return (
     <div
       onPointerEnter={() => ((inside.current = true), setOpen(true), clearTimeout(timer.current))}
       onPointerLeave={() => ((inside.current = false), rest())}
-      className="fixed z-30 inset-x-0 bottom-0 pt-10 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-3 px-4"
+      className="fixed z-30 inset-x-0 bottom-0 pt-10 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4"
     >
       {look && (
         <section
           aria-label="Lock screen look"
           onKeyDown={(e) => e.key === 'Escape' && setLook(false)}
-          className="glass-panel rounded-3xl p-5 w-full max-w-md text-lofi-text motion-safe:animate-[panel-in_0.3s_cubic-bezier(0.2,0.8,0.2,1)]"
+          className="glass-panel rounded-3xl p-5 mb-3 w-full max-w-md text-lofi-text motion-safe:animate-[panel-in_0.3s_cubic-bezier(0.2,0.8,0.2,1)]"
         >
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-medium text-white flex items-center gap-2">
@@ -527,31 +525,38 @@ function LockControls({ onUnlock, set, update, children }) {
           <LockLook id="lock" set={set} update={update} />
         </section>
       )}
-      {!look && children && <div className={faint(set.lockMusic === 'dim' && !open)}>{children}</div>}
-      {open || look ? (
-        <div className="flex items-center gap-2 motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]">
-          <button
-            onClick={() => setLook((v) => !v)}
-            aria-label="Lock screen look"
-            aria-expanded={look}
-            title="Lock screen look"
-            className={`glass-panel w-14 h-14 shrink-0 rounded-full flex items-center justify-center transition-colors ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'}`}
-          >
-            <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
-          </button>
-          <SwipeUnlock onUnlock={onUnlock} />
-        </div>
-      ) : (
-        // resting: just a breathing hint where the slider was (h-14 keeps the music card from jumping)
-        <button
-          onClick={wake}
-          aria-label="Show unlock"
-          className="h-14 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
-        >
-          <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
-          swipe to unlock
-        </button>
+      {!look && children && (
+        <div className={`mb-3 transition-opacity duration-700 ${set.lockMusic === 'dim' && !shown ? 'opacity-30' : 'opacity-100'}`}>{children}</div>
       )}
+      <div className={fold(shown)} inert={!shown}>
+        <div className="overflow-hidden">
+          <div className="flex items-center gap-2 p-1">
+            <button
+              onClick={() => setLook((v) => !v)}
+              aria-label="Lock screen look"
+              aria-expanded={look}
+              title="Lock screen look"
+              className={`glass-panel w-14 h-14 shrink-0 rounded-full flex items-center justify-center transition-colors ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'}`}
+            >
+              <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
+            </button>
+            <SwipeUnlock onUnlock={onUnlock} />
+          </div>
+        </div>
+      </div>
+      {/* resting: just a breathing hint; clicking / tapping it (or Enter on it) opens the controls */}
+      <div className={fold(!shown)} inert={shown}>
+        <div className="overflow-hidden">
+          <button
+            onClick={() => setOpen(true)}
+            aria-label="Show unlock"
+            className="h-8 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
+          >
+            <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
+            swipe to unlock
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -566,7 +571,6 @@ function SwipeUnlock({ onUnlock }) {
   const [x, setX] = useState(0) // the knob's offset, px
   const [drag, setDrag] = useState(false)
   const [hover, setHover] = useState(false)
-  useEffect(() => knob.current?.focus({ preventScroll: true }), []) // keyboard users land on it
   const max = () => (track.current ? track.current.clientWidth - KNOB - 8 : 200)
   const settle = (v) => (v >= max() * 0.9 ? (setX(max()), onUnlock()) : setX(0)) // far enough unlocks, else springs back
   const move = (e) => drag && setX(Math.min(max(), Math.max(0, e.clientX - from.current)))
