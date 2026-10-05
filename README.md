@@ -15,7 +15,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
-  - Internal cards add live stats (AdGuard, Nginx Proxy Manager, Portainer, Nextcloud, What's Up Docker, n8n, MySpeed).
+  - Internal cards add live stats (AdGuard, Nginx Proxy Manager, Portainer, Nextcloud, What's Up Docker, n8n, Coolify, MySpeed).
 - **Private section**: server CPU / RAM / temp / disk / uptime and the internal services.
   - The reverse proxy (e.g. Authelia) decides who sees it.
   - The app fails closed: without the proxy's secret header it answers 404.
@@ -84,6 +84,7 @@ Add `"widget": "<id>"` to a service in `private-services.json`, then set that wi
 | `nextcloud` | `NEXTCLOUD_URL` `NEXTCLOUD_TOKEN` | CPU load, memory, free space, active users 24 h |
 | `whatsupdocker` | `WUD_URL` `WUD_USER` `WUD_PASS` | monitored containers, updates available |
 | `n8n` | `N8N_URL` `N8N_API_KEY` | active / total workflows, runs and failed runs in 24 h |
+| `coolify` | `COOLIFY_URL` `COOLIFY_TOKEN` | running / total applications, services, databases |
 | `myspeed` | `MYSPEED_URL` `MYSPEED_PASS` | ping, download, upload of the last test |
 
 Give each widget the least privileged account or token you can, e.g. a read-only user where the service supports it.
