@@ -24,7 +24,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
-- **Spotify now playing**: a header pill with what you're listening to (cover, track, artists, a live progress bar),
+- **Spotify now playing**: a row at the bottom of the Chill Vibes card with what you're listening to (cover, track, artists, a live progress bar),
   or a resting placeholder when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
@@ -197,7 +197,7 @@ the session for a month.
 
 ### Spotify now playing
 
-Optional. The header shows what you're playing on Spotify to every visitor (a resting placeholder when nothing plays or
+Optional. The Chill Vibes card shows what you're playing on Spotify to every visitor (a resting placeholder when nothing plays or
 Spotify isn't connected yet): track,
 artists, album cover and a link to the song, nothing about the account. Off until the three `SPOTIFY_*` vars are set.
 
