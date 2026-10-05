@@ -624,6 +624,12 @@ function FocusBar({ now, wx, priv, tune, onToggle, onShow, onLock }) {
   )
 }
 
+// the audio card's tabs: [id, label, icon]
+const AUDIO_TABS = [
+  ['radio', 'Radio', 'fa-solid fa-radio'],
+  ['spotify', 'Spotify', 'fa-brands fa-spotify'],
+  ['player', 'Player', 'fa-solid fa-music'],
+]
 function Music({ ctl, onTune, spotify }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -635,6 +641,14 @@ function Music({ ctl, onTune, spotify }) {
   const want = useRef(false) // user asked to play before the player was ready
   const isPlaying = useRef(false)
   const timer = useRef(null)
+  // which tab the card shows: the last one picked in this browser (switching never stops the radio)
+  const [tab, setTab] = useState('radio')
+  useEffect(() => {
+    const t = load('audioTab', 'radio')
+    if (AUDIO_TABS.some(([id]) => id === t)) setTab(t)
+  }, [])
+  const pick = (t) => (setTab(t), save('audioTab', t))
+  const live = { radio: playing, spotify: Boolean(spotify?.enabled && spotify.track && spotify.playing) }
 
   useEffect(() => {
     const v = Number(load('volume', 50))
@@ -712,58 +726,87 @@ function Music({ ctl, onTune, spotify }) {
   }
 
   return (
-    <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col min-h-[320px]">
-      <div className="absolute bottom-0 left-0 w-full h-1/2 opacity-20 pointer-events-none flex items-end justify-between px-4 pb-4">
-        {[8, 16, 12, 24, 10, 20, 14, 6].map((h, i) => (
-          <div key={i} className="w-2 bg-lofi-primary rounded-t animate-pulse" style={{ height: h * 4, animationDelay: `${i / 10}s` }} />
-        ))}
-      </div>
-
-      <div className="flex justify-between items-center mb-4 z-10">
-        <h2 className="text-lg font-medium text-white flex items-center gap-2">
-          <i className="fa-solid fa-headphones-simple text-lofi-primary" aria-hidden="true" /> Chill Vibes
-        </h2>
-        <span className="text-xs font-mono text-lofi-primary bg-lofi-primary/10 px-2 py-1 rounded-full border border-lofi-primary/20">LIVE</span>
-      </div>
-
-      <div className="grow flex items-center justify-center mb-3 z-10 animate-float">
-        <div
-          className={`w-24 h-24 rounded-full bg-linear-to-br from-lofi-surface to-lofi-base border-4 border-lofi-surface shadow-xl flex items-center justify-center overflow-hidden relative ${playing ? 'animate-record' : ''}`}
-        >
-          <div className="absolute w-20 h-20 rounded-full border border-white/5" />
-          <div className="absolute w-16 h-16 rounded-full border border-white/5" />
-          <div className="absolute w-12 h-12 rounded-full border border-white/5" />
-          <div className="w-8 h-8 rounded-full bg-lofi-primary flex items-center justify-center z-10">
-            <div className="w-2 h-2 rounded-full bg-lofi-base" />
-          </div>
+    <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col h-[320px]">
+      {tab === 'radio' && (
+        <div className="absolute bottom-0 left-0 w-full h-1/2 opacity-20 pointer-events-none flex items-end justify-between px-4 pb-4">
+          {[8, 16, 12, 24, 10, 20, 14, 6].map((h, i) => (
+            <div key={i} className="w-2 bg-lofi-primary rounded-t animate-pulse" style={{ height: h * 4, animationDelay: `${i / 10}s` }} />
+          ))}
         </div>
+      )}
+
+      {/* Radio | Spotify | Player: the picked tab is filled (Spotify in its green); a dot marks a source that's playing */}
+      <div role="tablist" aria-label="Audio" className="shrink-0 flex items-center gap-1.5 mb-3 z-10">
+        {AUDIO_TABS.map(([id, label, icon]) => {
+          const on = tab === id
+          const fill = id === 'spotify' ? 'bg-[#1db954] text-lofi-base font-bold' : 'bg-lofi-primary text-lofi-base font-bold'
+          return (
+            <button
+              key={id}
+              role="tab"
+              id={`audio-tab-${id}`}
+              aria-selected={on}
+              aria-controls="audio-panel"
+              onClick={() => pick(id)}
+              className={`relative h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-mono transition-colors ${on ? fill : 'bg-white/5 border border-white/10 text-lofi-muted hover:text-white'}`}
+            >
+              <i className={`${icon} text-xs`} aria-hidden="true" />
+              {label}
+              {live[id] && (
+                <>
+                  <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-lofi-base ${id === 'spotify' ? 'bg-[#1db954]' : 'bg-lofi-primary'} motion-safe:animate-pulse`} aria-hidden="true" />
+                  <span className="sr-only"> (playing)</span>
+                </>
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      <div className="z-10 mt-auto">
-        <p className="text-sm font-medium text-white text-center mb-1">Lofi Girl Radio</p>
-        <p className="text-xs text-lofi-muted text-center mb-4 truncate">beats to relax/study to</p>
-        <div className="flex justify-center items-center gap-6">
-          <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Down" aria-label="Volume down" onClick={() => changeVolume(-10)}>
-            <i className="fa-solid fa-volume-low" aria-hidden="true" />
-          </button>
-          <button
-            className="w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-all hover:scale-105 shadow-[0_0_15px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
-            title={playing ? 'Pause' : 'Play'}
-            aria-label={playing ? 'Pause' : 'Play'}
-            onClick={toggle}
-          >
-            <i className={`fa-solid ${loading ? 'fa-spinner fa-spin' : playing ? 'fa-pause' : 'fa-play ml-1'}`} aria-hidden="true" />
-          </button>
-          <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Up" aria-label="Volume up" onClick={() => changeVolume(10)}>
-            <i className="fa-solid fa-volume-high" aria-hidden="true" />
-          </button>
-        </div>
-        <p className="text-[10px] font-mono text-lofi-muted text-center mt-2" aria-live="polite">
-          VOL {volume}%{hint && <span className="text-red-400"> · audio unavailable</span>}
-        </p>
+      <div role="tabpanel" id="audio-panel" aria-labelledby={`audio-tab-${tab}`} className="grow min-h-0 flex flex-col z-10">
+        {tab === 'radio' && (
+          <>
+            <div className="grow flex items-center justify-center mb-2 animate-float">
+              <div
+                className={`w-24 h-24 rounded-full bg-linear-to-br from-lofi-surface to-lofi-base border-4 border-lofi-surface shadow-xl flex items-center justify-center overflow-hidden relative ${playing ? 'animate-record' : ''}`}
+              >
+                <div className="absolute w-20 h-20 rounded-full border border-white/5" />
+                <div className="absolute w-16 h-16 rounded-full border border-white/5" />
+                <div className="absolute w-12 h-12 rounded-full border border-white/5" />
+                <div className="w-8 h-8 rounded-full bg-lofi-primary flex items-center justify-center z-10">
+                  <div className="w-2 h-2 rounded-full bg-lofi-base" />
+                </div>
+              </div>
+            </div>
+            <p className="shrink-0 text-sm font-medium text-white text-center mb-1 flex items-center justify-center gap-2">
+              <span className="text-[9px] font-mono text-lofi-primary bg-lofi-primary/10 px-1.5 py-0.5 rounded-full border border-lofi-primary/20">LIVE</span>
+              Lofi Girl Radio
+            </p>
+            <p className="shrink-0 text-xs text-lofi-muted text-center mb-3 truncate">beats to relax/study to</p>
+            <div className="shrink-0 flex justify-center items-center gap-6">
+              <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Down" aria-label="Volume down" onClick={() => changeVolume(-10)}>
+                <i className="fa-solid fa-volume-low" aria-hidden="true" />
+              </button>
+              <button
+                className="w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-all hover:scale-105 shadow-[0_0_15px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
+                title={playing ? 'Pause' : 'Play'}
+                aria-label={playing ? 'Pause' : 'Play'}
+                onClick={toggle}
+              >
+                <i className={`fa-solid ${loading ? 'fa-spinner fa-spin' : playing ? 'fa-pause' : 'fa-play ml-1'}`} aria-hidden="true" />
+              </button>
+              <button className="w-11 h-11 -m-2.5 flex items-center justify-center text-lofi-muted hover:text-white transition-colors" title="Volume Up" aria-label="Volume up" onClick={() => changeVolume(10)}>
+                <i className="fa-solid fa-volume-high" aria-hidden="true" />
+              </button>
+            </div>
+            <p className="shrink-0 text-[10px] font-mono text-lofi-muted text-center mt-1.5" aria-live="polite">
+              VOL {volume}%{hint && <span className="text-red-400"> · audio unavailable</span>}
+            </p>
+          </>
+        )}
+        {tab === 'spotify' && <SpotifyPanel sp={spotify} />}
+        {tab === 'player' && <PlayerSoon />}
       </div>
-
-      <NowPlaying sp={spotify} />
 
       <div ref={host} className="youtube-hidden" />
     </div>
@@ -2148,71 +2191,64 @@ function useSpotify() {
   return sp
 }
 
-// Chill Vibes' Spotify row: what I'm listening to on Spotify (public: track, artists, cover, link), playing or paused.
-// Nothing playing, Spotify not connected yet or unreachable: IdlePill instead. The progress bar runs locally between polls.
-const SLOT = 'z-10 mt-4 pt-3 border-t border-white/5'
-const PILL = 'w-full min-w-0 flex items-center gap-3 rounded-2xl bg-lofi-base/80 border border-white/5 p-1.5 pr-3'
-function NowPlaying({ sp }) {
-  const [, tick] = useState(0) // re-render every second while playing, for the progress bar (only this row)
+// Spotify tab: what I'm listening to (public: track, artists, cover, link), the cover spinning like the radio's record.
+// Nothing playing, not connected yet or unreachable: the resting record instead. The progress runs locally between polls.
+const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`
+function SpotifyPanel({ sp }) {
+  const [, tick] = useState(0) // every second while playing, for the progress (this panel only)
   useEffect(() => {
     if (!sp?.playing) return
     const t = setInterval(() => tick((x) => x + 1), 1000)
     return () => clearInterval(t)
   }, [sp?.playing])
-  // first answer pending: an empty slot of the same size, so the header doesn't jump when it arrives
-  if (sp === undefined) return <div className={SLOT} aria-hidden="true"><div className={`${PILL} h-[3.75rem] opacity-40`} /></div>
-  if (!sp.enabled || !sp.track) return <IdlePill />
+  if (sp === undefined) return null // first answer on its way
+  if (!sp.enabled || !sp.track) return <SpotifyResting />
   const artists = sp.artists.join(', ')
-  const label = sp.playing ? 'Now playing' : 'Paused'
-  const pos = sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0)
+  const pos = Math.min(sp.durationMs || 0, sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0))
   return (
-    <div className={SLOT}>
-      <a
-        href={sp.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`${sp.track} · ${artists}${sp.album ? ` · ${sp.album}` : ''}`}
-        aria-label={`${label} on Spotify: ${sp.track} by ${artists}`}
-        className={`group ${PILL} hover:border-[#1db954]/40 transition-colors`}
-      >
-        <span className="relative shrink-0">
-          {sp.art ? (
-            <img src={sp.art} alt="" width={44} height={44} className={`w-11 h-11 rounded-xl object-cover ${sp.playing ? '' : 'opacity-70'}`} />
-          ) : (
-            <span className="w-11 h-11 rounded-xl bg-lofi-surface flex items-center justify-center text-lofi-muted">
-              <i className="fa-solid fa-music" aria-hidden="true" />
-            </span>
-          )}
-          <i className="fa-brands fa-spotify absolute -bottom-1 -right-1 text-sm text-[#1db954] bg-lofi-base rounded-full" aria-hidden="true" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">
-            {sp.playing && (
-              <span className="flex items-end gap-px h-2.5" aria-hidden="true">
-                {['60%', '100%', '45%'].map((h, i) => (
-                  <span key={i} className="w-[2px] rounded-full bg-[#1db954] origin-bottom animate-eq" style={{ height: h, animationDelay: `${i * -0.23}s` }} />
-                ))}
-              </span>
-            )}
-            {label}
+    <>
+      <div className="grow flex items-center justify-center mb-3 animate-float">
+        <a
+          href={sp.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${sp.playing ? 'Now playing' : 'Paused'} on Spotify: ${sp.track} by ${artists}`}
+          className={`relative w-24 h-24 rounded-full overflow-hidden border-4 border-lofi-surface shadow-xl ${sp.playing ? 'animate-record' : 'opacity-70'}`}
+        >
+          {sp.art ? <img src={sp.art} alt="" width={96} height={96} className="w-full h-full object-cover" /> : <span className="block w-full h-full bg-lofi-surface" />}
+          <span className="absolute inset-0 m-auto w-5 h-5 rounded-full bg-lofi-base border border-white/10" aria-hidden="true" />
+        </a>
+      </div>
+      <p className="flex items-center justify-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">
+        {sp.playing && (
+          <span className="flex items-end gap-px h-2.5" aria-hidden="true">
+            {['60%', '100%', '45%'].map((h, i) => (
+              <span key={i} className="w-[2px] rounded-full bg-[#1db954] origin-bottom animate-eq" style={{ height: h, animationDelay: `${i * -0.23}s` }} />
+            ))}
           </span>
-          <span className="block text-sm text-white truncate group-hover:text-[#1db954] transition-colors">{sp.track}</span>
-          <span className="block text-[11px] text-lofi-muted truncate">{artists}</span>
-          {sp.durationMs > 0 && (
-            <span className="mt-1 block h-0.5 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
-              <span className="block h-full bg-[#1db954] transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (pos / sp.durationMs) * 100)}%` }} />
-            </span>
-          )}
-        </span>
+        )}
+        {sp.playing ? 'Now playing' : 'Paused'}
+      </p>
+      <a href={sp.url} target="_blank" rel="noopener noreferrer" title={sp.album ?? undefined} className="block text-sm font-medium text-white text-center truncate hover:text-[#1db954] transition-colors">
+        {sp.track}
       </a>
-    </div>
+      <p className="text-xs text-lofi-muted text-center truncate mb-3">{artists}</p>
+      {sp.durationMs > 0 && (
+        <div className="flex items-center gap-2 text-[10px] font-mono text-lofi-muted tabular-nums" aria-hidden="true">
+          <span>{mmss(pos)}</span>
+          <span className="grow h-1 rounded-full bg-white/10 overflow-hidden">
+            <span className="block h-full bg-[#1db954] transition-[width] duration-1000 ease-linear" style={{ width: `${(pos / sp.durationMs) * 100}%` }} />
+          </span>
+          <span>{mmss(sp.durationMs)}</span>
+        </div>
+      )}
+    </>
   )
 }
 
-// Nothing from Spotify right now (not connected yet, nothing playing, a podcast, or Spotify unreachable): a resting
-// record and a line that changes now and then. Same size as the real pill. Not a link, no controls.
+// Spotify tab with nothing to show: a still, grey record and a line that changes now and then. No link, no controls.
 const IDLE_LINES = ['Silence, mostly', 'Taking a music break', 'Probably debugging', 'Headphones off', 'Waiting for the next song']
-function IdlePill() {
+function SpotifyResting() {
   const { reduced } = useContext(Prefs)
   const [k, setK] = useState(0)
   useEffect(() => {
@@ -2221,19 +2257,34 @@ function IdlePill() {
     return () => clearInterval(t)
   }, [reduced])
   return (
-    <div className={SLOT}>
-      <div className={PILL}>
-        <span className="sr-only">Spotify: not playing right now</span>
-        <span className="relative shrink-0 w-11 h-11 rounded-xl bg-lofi-surface flex items-center justify-center" aria-hidden="true">
-          <i className="fa-solid fa-compact-disc text-2xl text-lofi-muted/70" />
-          <i className="fa-brands fa-spotify absolute -bottom-1 -right-1 text-sm text-[#1db954]/60 bg-lofi-base rounded-full" />
-        </span>
-        <span className="min-w-0 flex-1" aria-hidden="true">
-          <span className="block text-[9px] font-mono uppercase tracking-widest text-lofi-muted">Spotify · not playing</span>
-          <span key={k} className="block text-sm text-white/80 truncate motion-safe:animate-card-in">{IDLE_LINES[k % IDLE_LINES.length]}</span>
-          <span className="block text-[11px] text-lofi-muted truncate">the record is resting</span>
-        </span>
+    <>
+      <div className="grow flex items-center justify-center mb-3" aria-hidden="true">
+        <div className="relative w-24 h-24 rounded-full bg-linear-to-br from-lofi-surface to-lofi-base border-4 border-lofi-surface shadow-xl flex items-center justify-center opacity-70">
+          <div className="absolute w-20 h-20 rounded-full border border-white/5" />
+          <div className="absolute w-14 h-14 rounded-full border border-white/5" />
+          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+            <i className="fa-brands fa-spotify text-[#1db954]/70" />
+          </div>
+        </div>
       </div>
+      <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted text-center mb-1">Spotify · not playing</p>
+      <p key={k} className="text-sm font-medium text-white/80 text-center truncate motion-safe:animate-card-in" aria-hidden="true">
+        {IDLE_LINES[k % IDLE_LINES.length]}
+      </p>
+      <p className="text-xs text-lofi-muted text-center mb-2">the record is resting</p>
+    </>
+  )
+}
+
+// Player tab: the owner's own "play any song" player (streamed through the server) is next; for now a promise.
+function PlayerSoon() {
+  return (
+    <div className="grow flex flex-col items-center justify-center text-center gap-2">
+      <div className="w-16 h-16 rounded-2xl bg-lofi-surface border border-white/5 flex items-center justify-center mb-2" aria-hidden="true">
+        <i className="fa-solid fa-magnifying-glass text-xl text-lofi-primary" />
+      </div>
+      <p className="text-sm font-medium text-white">Play any song</p>
+      <p className="text-xs text-lofi-muted text-balance max-w-56">Search and play anything, streamed through home. Coming soon.</p>
     </div>
   )
 }

@@ -20,12 +20,15 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   The lock has its own look (Settings › Lock screen, or 🎨 on the lock screen); the screensaver keeps the plain one.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
-- **Music**: Lofi Girl radio through the YouTube IFrame API. It only starts when you click, and has volume control.
+- **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
+  - **Radio**: Lofi Girl through the YouTube IFrame API. It only starts when you click, and has volume control.
+  - **Spotify**: what you're listening to (the cover spins like the record, track, artists, a live progress bar), or a
+    resting record when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
+  - **Player**: your own "play any song" player, coming soon.
+  The picked tab is filled; a dot on a tab means that source is playing.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
-- **Spotify now playing**: a row at the bottom of the Chill Vibes card with what you're listening to (cover, track, artists, a live progress bar),
-  or a resting placeholder when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
 - **Services hub**: groups you switch between with animated tabs.
   - Public cards show a live **Online · ms** status.
   - Internal cards add live stats (AdGuard, Nginx Proxy Manager, Portainer, Nextcloud, What's Up Docker, n8n, Coolify, MySpeed).
@@ -197,7 +200,7 @@ the session for a month.
 
 ### Spotify now playing
 
-Optional. The Chill Vibes card shows what you're playing on Spotify to every visitor (a resting placeholder when nothing plays or
+Optional. The music card's Spotify tab shows what you're playing on Spotify to every visitor (a resting placeholder when nothing plays or
 Spotify isn't connected yet): track,
 artists, album cover and a link to the song, nothing about the account. Off until the three `SPOTIFY_*` vars are set.
 
