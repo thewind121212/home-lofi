@@ -55,6 +55,7 @@ export default function Home() {
   wakeRef.current = set.idleWake
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
+  const spotify = useSpotify()
   const videoRef = useRef(null)
   const setDlg = useRef(null)
   const galDlg = useRef(null)
@@ -272,7 +273,7 @@ export default function Home() {
         className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
-        <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
+        <header className="flex flex-col sm:flex-row sm:flex-wrap lg:flex-nowrap justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-4 min-w-0">
             <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
               {icon && <i className={`fa-solid ${icon} text-white`} aria-hidden="true" />}
@@ -282,7 +283,8 @@ export default function Home() {
               <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 min-[375px]:gap-3 sm:gap-4 shrink-0">
+          <NowPlaying sp={spotify} now={now} />
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             <button
               onClick={openGallery}
               aria-haspopup="dialog"
@@ -300,7 +302,7 @@ export default function Home() {
               {/* phones: the moon (+ the title) says it */}
               {sceneDown && <span className="hidden sm:inline text-[10px] text-red-400">offline</span>}
               <span className="min-w-0 sm:max-w-28 truncate text-white">{sceneName(scene ?? 'london')}</span>
-              <span className="max-[374px]:hidden text-[9px]" aria-hidden="true">
+              <span className="max-sm:hidden text-[9px]" aria-hidden="true">
                 <i className="fa-solid fa-chevron-down" />
               </span>
             </button>
@@ -2118,6 +2120,86 @@ const gbUsed = (x) => (x ? `${(x.used / GB).toFixed(1)} GB` : '--') // fits the 
 function dur(sec) {
   const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60)
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`
+}
+
+// /api/spotify, polled every 15 s while the tab is visible (the server asks Spotify at most every 10 s).
+// undefined = loading; { enabled: false } = not set up, and polling stops.
+function useSpotify() {
+  const [sp, setSp] = useState()
+  useEffect(() => {
+    let alive = true
+    const get = () =>
+      document.visibilityState === 'visible' &&
+      fetch('/api/spotify', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((d) => {
+          if (!alive) return
+          setSp({ ...d, seen: Date.now() })
+          if (d.enabled === false) stop()
+        }, () => {})
+    const t = setInterval(get, 15_000)
+    const stop = () => (clearInterval(t), document.removeEventListener('visibilitychange', get))
+    document.addEventListener('visibilitychange', get)
+    get()
+    return () => ((alive = false), stop())
+  }, [])
+  return sp
+}
+
+const ago = (iso, now) => {
+  const m = Math.round(((now?.getTime() ?? Date.now()) - Date.parse(iso)) / 60_000)
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 24 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
+}
+// Header pill: what I'm listening to on Spotify (public: track, artists, cover, link). Playing, paused, or the last
+// played track; nothing at all until Spotify is set up. The progress bar runs locally between polls.
+function NowPlaying({ sp, now }) {
+  if (!sp?.enabled || !sp.track) return null
+  const artists = sp.artists.join(', ')
+  const paused = !sp.playing && sp.progressMs != null
+  const label = sp.playing ? 'Now playing' : paused ? 'Paused' : `Last played${sp.playedAt ? ` · ${ago(sp.playedAt, now)}` : ''}`
+  const pos = sp.progressMs == null ? null : sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, (now?.getTime() ?? sp.seen) - sp.seen) : 0)
+  return (
+    <div className="order-last basis-full lg:order-none lg:basis-auto lg:flex-1 min-w-0 flex lg:justify-center">
+      <a
+        href={sp.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`${sp.track} · ${artists}${sp.album ? ` · ${sp.album}` : ''}`}
+        aria-label={`${label} on Spotify: ${sp.track} by ${artists}`}
+        className="group w-full lg:max-w-sm min-w-0 flex items-center gap-3 rounded-2xl bg-lofi-base/50 border border-white/5 hover:border-[#1db954]/40 p-1.5 pr-3 transition-colors"
+      >
+        <span className="relative shrink-0">
+          {sp.art ? (
+            <img src={sp.art} alt="" width={44} height={44} className={`w-11 h-11 rounded-xl object-cover ${sp.playing ? '' : 'opacity-70'}`} />
+          ) : (
+            <span className="w-11 h-11 rounded-xl bg-lofi-surface flex items-center justify-center text-lofi-muted">
+              <i className="fa-solid fa-music" aria-hidden="true" />
+            </span>
+          )}
+          <i className="fa-brands fa-spotify absolute -bottom-1 -right-1 text-sm text-[#1db954] bg-lofi-base rounded-full" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">
+            {sp.playing && (
+              <span className="flex items-end gap-px h-2.5" aria-hidden="true">
+                {['60%', '100%', '45%'].map((h, i) => (
+                  <span key={i} className="w-[2px] rounded-full bg-[#1db954] origin-bottom animate-eq" style={{ height: h, animationDelay: `${i * -0.23}s` }} />
+                ))}
+              </span>
+            )}
+            {label}
+          </span>
+          <span className="block text-sm text-white truncate group-hover:text-[#1db954] transition-colors">{sp.track}</span>
+          <span className="block text-[11px] text-lofi-muted truncate">{artists}</span>
+          {pos != null && sp.durationMs > 0 && (
+            <span className="mt-1 block h-0.5 rounded-full bg-white/10 overflow-hidden" aria-hidden="true">
+              <span className="block h-full bg-[#1db954] transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (pos / sp.durationMs) * 100)}%` }} />
+            </span>
+          )}
+        </span>
+      </a>
+    </div>
+  )
 }
 
 // /api/private data, or null when locked. The proxy + Authelia decide who gets a 200.
