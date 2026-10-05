@@ -271,7 +271,7 @@ export default function Home() {
         className={`relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-24 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
       >
         {/* phones: greeting, then clock | scene + focus + settings on one row. sm+: one row (also landscape phones) */}
-        <header className="flex flex-col sm:flex-row sm:flex-wrap lg:flex-nowrap justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
+        <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-4 min-w-0">
             <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
               {icon && <i className={`fa-solid ${icon} text-white`} aria-hidden="true" />}
@@ -281,7 +281,6 @@ export default function Home() {
               <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
             </div>
           </div>
-          <NowPlaying sp={spotify} now={now} />
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             <button
               onClick={openGallery}
@@ -342,7 +341,7 @@ export default function Home() {
 
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <Music ctl={music} onTune={setTune} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} />
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
@@ -625,7 +624,7 @@ function FocusBar({ now, wx, priv, tune, onToggle, onShow, onLock }) {
   )
 }
 
-function Music({ ctl, onTune }) {
+function Music({ ctl, onTune, spotify }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hint, setHint] = useState(false)
@@ -713,21 +712,21 @@ function Music({ ctl, onTune }) {
   }
 
   return (
-    <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col h-[320px]">
+    <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col min-h-[320px]">
       <div className="absolute bottom-0 left-0 w-full h-1/2 opacity-20 pointer-events-none flex items-end justify-between px-4 pb-4">
         {[8, 16, 12, 24, 10, 20, 14, 6].map((h, i) => (
           <div key={i} className="w-2 bg-lofi-primary rounded-t animate-pulse" style={{ height: h * 4, animationDelay: `${i / 10}s` }} />
         ))}
       </div>
 
-      <div className="flex justify-between items-center mb-6 z-10">
+      <div className="flex justify-between items-center mb-4 z-10">
         <h2 className="text-lg font-medium text-white flex items-center gap-2">
           <i className="fa-solid fa-headphones-simple text-lofi-primary" aria-hidden="true" /> Chill Vibes
         </h2>
         <span className="text-xs font-mono text-lofi-primary bg-lofi-primary/10 px-2 py-1 rounded-full border border-lofi-primary/20">LIVE</span>
       </div>
 
-      <div className="grow flex items-center justify-center mb-4 z-10 animate-float">
+      <div className="grow flex items-center justify-center mb-3 z-10 animate-float">
         <div
           className={`w-24 h-24 rounded-full bg-linear-to-br from-lofi-surface to-lofi-base border-4 border-lofi-surface shadow-xl flex items-center justify-center overflow-hidden relative ${playing ? 'animate-record' : ''}`}
         >
@@ -763,6 +762,8 @@ function Music({ ctl, onTune }) {
           VOL {volume}%{hint && <span className="text-red-400"> · audio unavailable</span>}
         </p>
       </div>
+
+      <NowPlaying sp={spotify} />
 
       <div ref={host} className="youtube-hidden" />
     </div>
@@ -2147,17 +2148,23 @@ function useSpotify() {
   return sp
 }
 
-// Header pill: what I'm listening to on Spotify (public: track, artists, cover, link), playing or paused.
+// Chill Vibes' Spotify row: what I'm listening to on Spotify (public: track, artists, cover, link), playing or paused.
 // Nothing playing, Spotify not connected yet or unreachable: IdlePill instead. The progress bar runs locally between polls.
-const SLOT = 'order-last basis-full lg:order-none lg:basis-auto lg:flex-1 min-w-0 flex lg:justify-center'
-const PILL = 'w-full lg:max-w-sm min-w-0 flex items-center gap-3 rounded-2xl bg-lofi-base/50 border border-white/5 p-1.5 pr-3'
-function NowPlaying({ sp, now }) {
+const SLOT = 'z-10 mt-4 pt-3 border-t border-white/5'
+const PILL = 'w-full min-w-0 flex items-center gap-3 rounded-2xl bg-lofi-base/80 border border-white/5 p-1.5 pr-3'
+function NowPlaying({ sp }) {
+  const [, tick] = useState(0) // re-render every second while playing, for the progress bar (only this row)
+  useEffect(() => {
+    if (!sp?.playing) return
+    const t = setInterval(() => tick((x) => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [sp?.playing])
   // first answer pending: an empty slot of the same size, so the header doesn't jump when it arrives
   if (sp === undefined) return <div className={SLOT} aria-hidden="true"><div className={`${PILL} h-[3.75rem] opacity-40`} /></div>
   if (!sp.enabled || !sp.track) return <IdlePill />
   const artists = sp.artists.join(', ')
   const label = sp.playing ? 'Now playing' : 'Paused'
-  const pos = sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, (now?.getTime() ?? sp.seen) - sp.seen) : 0)
+  const pos = sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0)
   return (
     <div className={SLOT}>
       <a

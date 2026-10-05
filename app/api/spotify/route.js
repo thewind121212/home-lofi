@@ -1,6 +1,6 @@
 import { nowPlaying, spotifyOn } from '../../../lib/spotify'
 
-// Public "now playing" for the header pill: { enabled: false } until the three SPOTIFY_* env vars are set.
+// Public "now playing" for the Spotify row in Chill Vibes: { enabled: false } until the three SPOTIFY_* env vars are set.
 export async function GET() {
   if (!spotifyOn()) return Response.json({ enabled: false }, { headers: { 'cache-control': 'public, max-age=300' } })
   try {
