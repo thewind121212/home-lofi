@@ -96,6 +96,7 @@ export function LockLook({ set, update, id = 'look' }) {
       {opt('lockDate', 'Date', [[true, 'Show'], [false, 'Hide']])}
       {opt('lockOverlay', 'Overlay', [['off', 'Off'], ['soft', 'Soft'], ['dark', 'Dark']])}
       {opt('lockBlur', 'Blur', [['off', 'Off'], ['soft', 'Soft'], ['strong', 'Strong']])}
+      {opt('lockMusic', 'Music', [[true, 'Show'], [false, 'Hide']])}
     </div>
   )
 }
