@@ -179,6 +179,15 @@ export default function Home() {
   // owner = settings sync reached the server as OWNER_USER (the same check guards the Spotify controls).
   // wasOwner: this browser has been signed in as the owner before, so a lapsed login gets a "sign in" hint
   const owner = ['synced', 'syncing', 'offline'].includes(cloud.status)
+  // the music card's tab: the last one picked in this browser (switching never stops the radio)
+  const [audioTab, setAudioTab] = useState('radio')
+  useEffect(() => {
+    const t = load('audioTab', 'radio')
+    if (AUDIO_TABS.some(([id]) => id === t)) setAudioTab(t)
+  }, [])
+  const pickAudio = (t) => (setAudioTab(t), save('audioTab', t))
+  const source = musicSource(audioTab, tune, spotify)
+  const mini = { source, tune, onRadio: () => music.current?.(), sp: spotify, owner, onSpotify: applySpotify }
   const [wasOwner, setWasOwner] = useState(false)
   useEffect(() => {
     if (owner) save('owner', true)
@@ -350,7 +359,7 @@ export default function Home() {
 
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} />
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
@@ -361,10 +370,14 @@ export default function Home() {
       </div>
 
       {softLock ? <ClockScreen now={now} clock={set.clock} look={lockLook(set)} /> : idle && <ClockScreen now={now} clock={set.clock} look={saverLook(set)} />}
-      {softLock && <LockPill onUnlock={unlock} set={set} update={update} />}
+      {softLock && (
+        <LockPill onUnlock={unlock} set={set} update={update}>
+          {set.lockMusic && <MiniPlayer {...mini} variant="lock" />}
+        </LockPill>
+      )}
       {idle && !softLock && <WakeHint />}
       {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
-      {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} onLock={lock} />}
+      {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} mini={mini} onShow={() => setFocus(false)} onLock={lock} />}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </Prefs>
@@ -427,7 +440,7 @@ function WakeHint() {
 // Moving the mouse only brings the pill back to full strength; it never unlocks.
 // The 🎨 button next to it opens the clock screen's look (LockLook): the only settings that change while locked.
 const HOLD_MS = 800
-function LockPill({ onUnlock, set, update }) {
+function LockPill({ onUnlock, set, update, children }) {
   const [holding, setHolding] = useState(false)
   const [awake, setAwake] = useState(true)
   const [look, setLook] = useState(false)
@@ -486,6 +499,7 @@ function LockPill({ onUnlock, set, update }) {
           <LockLook id="lock" set={set} update={update} />
         </section>
       )}
+      {!look && children}
       <div className="flex items-center gap-2">
         <button
           onClick={() => setLook((v) => !v)}
@@ -534,10 +548,10 @@ function LockPill({ onUnlock, set, update }) {
   )
 }
 
-// Hide's mini bar: show panels + lock | music | weather | time | server. Segments without data are left out.
+// Hide's mini bar: show panels + lock | music (MiniPlayer) | weather | time | server. Segments without data are left out.
 // Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
-function FocusBar({ now, wx, priv, tune, onToggle, onShow, onLock }) {
+function FocusBar({ now, wx, priv, mini, onShow, onLock }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -564,25 +578,7 @@ function FocusBar({ now, wx, priv, tune, onToggle, onShow, onLock }) {
       </button>
 
       <div className={SEG}>
-        <button
-          onClick={onToggle}
-          title={tune.playing ? 'Pause' : 'Play'}
-          aria-label={tune.playing ? 'Pause Lofi Girl Radio' : 'Play Lofi Girl Radio'}
-          className="w-9 h-9 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-colors shadow-[0_0_12px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
-        >
-          <i className={`fa-solid text-xs ${tune.loading ? 'fa-spinner fa-spin' : tune.playing ? 'fa-pause' : 'fa-play ml-0.5'}`} aria-hidden="true" />
-        </button>
-        <span className="max-sm:hidden font-sans text-xs text-lofi-text whitespace-nowrap">Lofi Girl Radio</span>
-        {/* equalizer: dances while playing, rests low when paused (and stands still with reduced motion) */}
-        <span className="max-[374px]:hidden flex items-end gap-0.5 h-4" aria-hidden="true">
-          {[10, 16, 7, 13].map((h, i) => (
-            <span
-              key={i}
-              className={`w-[3px] rounded-full bg-lofi-primary origin-bottom ${tune.playing ? 'animate-eq' : 'scale-y-30 opacity-60'}`}
-              style={{ height: h, animationDelay: `${i * -0.23}s` }}
-            />
-          ))}
-        </span>
+        <MiniPlayer {...mini} variant="bar" />
       </div>
 
       {wx && (
@@ -639,7 +635,7 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hint, setHint] = useState(false)
@@ -650,13 +646,6 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner }) {
   const want = useRef(false) // user asked to play before the player was ready
   const isPlaying = useRef(false)
   const timer = useRef(null)
-  // which tab the card shows: the last one picked in this browser (switching never stops the radio)
-  const [tab, setTab] = useState('radio')
-  useEffect(() => {
-    const t = load('audioTab', 'radio')
-    if (AUDIO_TABS.some(([id]) => id === t)) setTab(t)
-  }, [])
-  const pick = (t) => (setTab(t), save('audioTab', t))
   const live = { radio: playing, spotify: Boolean(spotify?.enabled && spotify.track && spotify.playing) }
 
   useEffect(() => {
@@ -2408,20 +2397,92 @@ function SignInToControl() {
   )
 }
 
+// Which music the Hide bar and the lock screen show: whatever is playing, else the picked tab (Spotify only when it
+// has a track; the Player tab joins once it exists), else the radio.
+const spOn = (sp) => Boolean(sp?.enabled && sp.track)
+function musicSource(tab, tune, sp) {
+  if (tune.playing || tune.loading) return 'radio'
+  if (spOn(sp) && sp.playing) return 'spotify'
+  return tab === 'spotify' && spOn(sp) ? 'spotify' : 'radio'
+}
+
+// What's playing, small: in the Hide bar (variant "bar") and on the lock screen ("lock"). Radio: play / pause for
+// everyone. Spotify: cover, track, artists; the owner also gets play / pause and next. The lock shows nothing when
+// nothing plays.
+function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify }) {
+  const ctl = useSpotifyControl(onSpotify)
+  const lock = variant === 'lock'
+  const eq = (on, color) => (
+    <span className="max-[374px]:hidden flex items-end gap-0.5 h-4 shrink-0" aria-hidden="true">
+      {[10, 16, 7, 13].map((h, i) => (
+        <span key={i} className={`w-[3px] rounded-full ${color} origin-bottom ${on ? 'animate-eq' : 'scale-y-30 opacity-60'}`} style={{ height: h, animationDelay: `${i * -0.23}s` }} />
+      ))}
+    </span>
+  )
+  const box = lock ? 'glass-panel rounded-2xl p-2 pr-3 flex items-center gap-3 max-w-[calc(100vw-2rem)] font-mono text-sm text-white' : 'contents'
+
+  if (source === 'spotify' && spOn(sp)) {
+    const artists = sp.artists.join(', ')
+    return (
+      <div className={box} role={lock ? 'group' : undefined} aria-label={lock ? 'Now playing' : undefined}>
+        <a href={sp.url} target="_blank" rel="noopener noreferrer" className="relative shrink-0" aria-label={`${sp.playing ? 'Now playing' : 'Paused'} on Spotify: ${sp.track} by ${artists}`}>
+          {sp.art ? (
+            <img src={sp.art} alt="" width={36} height={36} className={`${lock ? 'w-11 h-11 rounded-xl' : 'w-8 h-8 rounded-lg'} object-cover ${sp.playing ? '' : 'opacity-70'}`} />
+          ) : (
+            <span className={`${lock ? 'w-11 h-11' : 'w-8 h-8'} rounded-lg bg-lofi-surface flex items-center justify-center`}>
+              <i className="fa-solid fa-music text-lofi-muted" />
+            </span>
+          )}
+          <i className="fa-brands fa-spotify absolute -bottom-1 -right-1 text-xs text-[#1db954] bg-lofi-base rounded-full" aria-hidden="true" />
+        </a>
+        <span className={`min-w-0 font-sans ${lock ? 'max-w-52' : 'max-sm:hidden max-w-40'}`}>
+          <span className="block text-xs text-white truncate">{sp.track}</span>
+          <span className="block text-[11px] text-lofi-muted truncate">{artists}</span>
+        </span>
+        {eq(sp.playing, 'bg-[#1db954]')}
+        {owner && (
+          <span className="flex items-center gap-1 shrink-0">
+            <SpBtn small big label={sp.playing ? 'Pause' : 'Play'} icon={sp.playing ? 'fa-pause' : 'fa-play ml-0.5'} onClick={() => ctl.act(sp.playing ? 'pause' : 'play')} busy={ctl.busy === 'play' || ctl.busy === 'pause'} />
+            <SpBtn small label="Next" icon="fa-forward-step" onClick={() => ctl.act('next')} busy={ctl.busy === 'next'} />
+          </span>
+        )}
+        {ctl.err && <span className="text-[10px] text-red-400 whitespace-nowrap" role="status">{ctl.err}</span>}
+      </div>
+    )
+  }
+
+  if (lock && !tune.playing && !tune.loading) return null // the lock shows only music that plays
+  return (
+    <div className={box} role={lock ? 'group' : undefined} aria-label={lock ? 'Now playing' : undefined}>
+      <button
+        onClick={onRadio}
+        title={tune.playing ? 'Pause' : 'Play'}
+        aria-label={tune.playing ? 'Pause Lofi Girl Radio' : 'Play Lofi Girl Radio'}
+        className="w-9 h-9 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-colors shadow-[0_0_12px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
+      >
+        <i className={`fa-solid text-xs ${tune.loading ? 'fa-spinner fa-spin' : tune.playing ? 'fa-pause' : 'fa-play ml-0.5'}`} aria-hidden="true" />
+      </button>
+      <span className={`${lock ? '' : 'max-sm:hidden'} font-sans text-xs text-lofi-text whitespace-nowrap`}>Lofi Girl Radio</span>
+      {/* equalizer: dances while playing, rests low when paused (and stands still with reduced motion) */}
+      {eq(tune.playing, 'bg-lofi-primary')}
+    </div>
+  )
+}
+
 // a Spotify control button; the big one is the green play / pause
-function SpBtn({ label, icon, onClick, busy, big }) {
+function SpBtn({ label, icon, onClick, busy, big, small }) {
   return (
     <button
       onClick={onClick}
       aria-label={label}
       title={label}
       className={
-        big
-          ? 'w-10 h-10 rounded-full bg-[#1db954] text-lofi-base flex items-center justify-center hover:scale-105 transition-transform'
-          : 'w-9 h-9 rounded-full flex items-center justify-center text-lofi-muted hover:text-white transition-colors'
+        `${small ? 'w-8 h-8' : big ? 'w-10 h-10' : 'w-9 h-9'} rounded-full flex items-center justify-center transition ${
+          big ? 'bg-[#1db954] text-lofi-base hover:scale-105' : 'text-lofi-muted hover:text-white'
+        }`
       }
     >
-      <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : icon} ${big ? 'text-sm' : ''}`} aria-hidden="true" />
+      <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : icon} ${small ? 'text-xs' : big ? 'text-sm' : ''}`} aria-hidden="true" />
     </button>
   )
 }
