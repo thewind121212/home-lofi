@@ -255,6 +255,22 @@ body {
     .wx-sticky { padding-top: 1rem; }
   }
 
+  /* header scene picker <dialog>: the .wx-sheet bottom sheet on phones; from sm a popover hanging under its button
+     (--pop-top / --pop-right set on open by ScenePicker in app/settings.js), over a lighter backdrop */
+  @media (min-width: 640px) {
+    .scene-pop {
+      position: absolute;
+      inset: var(--pop-top, 6rem) var(--pop-right, 1rem) auto auto;
+      margin: 0;
+      width: 24rem;
+      max-width: calc(100% - 2rem);
+      transform-origin: top right;
+    }
+    .scene-pop::backdrop { background: rgba(10, 10, 22, 0.3); backdrop-filter: none; }
+    .scene-pop[open] { animation-name: pop-in; animation-duration: 0.2s; }
+    .scene-pop[data-closing] { animation-name: pop-out; animation-duration: 0.15s; }
+  }
+
   /* full-screen scene gallery <dialog>: opaque, fades + scales in, same data-closing exit as .wx-sheet */
   .gallery {
     width: 100%;
@@ -274,6 +290,12 @@ body {
   }
   @keyframes panel-in {
     from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  }
+  @keyframes pop-out {
+    to { opacity: 0; transform: translateY(-6px) scale(0.97); }
   }
   @keyframes fade-in {
     from { opacity: 0; }
