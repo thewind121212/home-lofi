@@ -154,6 +154,7 @@ answers 404 and sync stays off. On each Nginx Proxy Manager host for the page, *
 # home-lofi settings sync: always needs the Authelia login (LAN too), only for this path
 location = /internal/home-lofi/authz {
     internal;
+    auth_request off;   # needed where the host already has a server-level auth_request (external NPM)
     proxy_pass http://authelia_backend/api/authz/auth-request;   # your Authelia upstream
     proxy_set_header X-Original-Method $request_method;
     proxy_set_header X-Original-URL https://$http_host$request_uri;
