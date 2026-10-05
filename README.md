@@ -24,7 +24,12 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
-  - **Radio**: Lofi Girl through the YouTube IFrame API. It only starts when you click, and has volume control.
+  - **Radio**: 10 chill live stations (lofi, café jazz, piano, classical, strings, Japanese city pop, Ghibli piano, bossa
+    nova, synthwave, deep sleep), audio only through a hidden YouTube IFrame player. ◀ ▶ switch stations without
+    stopping, the name opens the full list, and the last pick is remembered. It only starts when you click, and has volume control.
+    No video IDs in the code: `lib/stations.js` names each station's channel and a title word, and `/api/stations`
+    finds the current live stream with [youtubei.js](https://github.com/LuanRT/YouTube.js) (no API key), cached for 1 hour.
+    So a stream that ends and restarts under a new ID is picked up by itself.
   - **Spotify**: what you're listening to (a still cover tinting the card, track, artists, a live progress bar) and a
     small **Up next** (click a song: a popup with its cover and *Open in Spotify*), or an empty frame when nothing plays.
     Public; signed in as the owner you also get ⏮ ⏯ ⏭ (Spotify Premium), or *Sign in to control* in a browser where you
