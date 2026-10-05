@@ -51,7 +51,8 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   - The app fails closed: without the proxy's secret header it answers 404.
 
 **Layout**: phones get one column (Steam · Music · Weather · Hub · Services); laptops two (Steam, Music and Weather on the
-left); wide screens (≥ 1536 px, e.g. 1920×1080) three, Steam + Music | Hub + Services | Weather, so nothing scrolls.
+left); wide screens (≥ 1536 px, e.g. 1920×1080) three, Steam + Music | Services | Hub + Weather, so nothing scrolls on
+Sites (the Hub turns compact in the narrow column). A long group like All scrolls the page while both side columns stay put.
 
 ## Settings
 
