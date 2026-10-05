@@ -15,6 +15,10 @@ services:
       GATE_SECRET: ${GATE_SECRET:?} # openssl rand -hex 32; the proxy injects it as x-home-gate on /api/private
       WEATHER_API_URL: ${WEATHER_API_URL:-https://api.weather.wliafdew.dev}
       DISK_PATH: ${DISK_PATH:-/}
+      # Spotify now-playing pill, see README "Spotify now playing" (off unless all three are set)
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN:-}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)
       DATABASE_URL: ${DATABASE_URL:-}
       OWNER_USER: ${OWNER_USER:-}
