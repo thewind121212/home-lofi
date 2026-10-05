@@ -53,7 +53,7 @@ export default function Home() {
   lockRef.current = softLock
   const [status, setStatus] = useState('loading')
   const priv = usePrivate()
-  const spotify = useSpotify()
+  const [spotify, applySpotify] = useSpotify()
   const videoRef = useRef(null)
   const setDlg = useRef(null)
   const galDlg = useRef(null)
@@ -341,7 +341,8 @@ export default function Home() {
 
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
-            <Music ctl={music} onTune={setTune} spotify={spotify} />
+            {/* owner = settings sync reached the server as OWNER_USER (the same check guards the Spotify controls) */}
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={['synced', 'syncing', 'offline'].includes(cloud.status)} />
             <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
@@ -630,7 +631,7 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-function Music({ ctl, onTune, spotify }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner }) {
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(false)
   const [hint, setHint] = useState(false)
@@ -804,7 +805,7 @@ function Music({ ctl, onTune, spotify }) {
             </p>
           </>
         )}
-        {tab === 'spotify' && <SpotifyPanel sp={spotify} />}
+        {tab === 'spotify' && <SpotifyPanel sp={spotify} owner={owner} onState={onSpotify} />}
         {tab === 'player' && <PlayerSoon />}
       </div>
 
@@ -2168,7 +2169,7 @@ function dur(sec) {
 }
 
 // /api/spotify, polled every 15 s while the tab is visible (the server asks Spotify at most every 10 s).
-// undefined = loading; { enabled: false } = not set up, and polling stops.
+// undefined = loading; { enabled: false } = not set up, and polling stops. Returns [state, apply(fresh state)].
 function useSpotify() {
   const [sp, setSp] = useState()
   useEffect(() => {
@@ -2188,64 +2189,107 @@ function useSpotify() {
     get()
     return () => ((alive = false), stop())
   }, [])
-  return sp
+  return [sp, (d) => setSp({ ...d, seen: Date.now() })]
 }
 
 // Spotify tab: what I'm listening to (public: track, artists, cover, link). A still cover over a blurred, faint copy of
 // it that tints the card (no spinning: calm to look at); paused dims it. Nothing playing, not connected yet or
 // unreachable: SpotifyResting instead. The progress runs locally between polls.
 const mmss = (ms) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`
-function SpotifyPanel({ sp }) {
+const SP_ERR = {
+  premium: 'Controls need Spotify Premium',
+  device: 'Open Spotify on a device first',
+  scope: 'Reconnect Spotify to allow controls',
+  spotify: "Spotify didn't answer",
+}
+// The owner's controls (signed in, Premium): POST /api/private/settings/spotify -> the fresh state, shown at once.
+function useSpotifyControl(onState) {
+  const [busy, setBusy] = useState(null) // the action in flight
+  const [err, setErr] = useState(null)
+  useEffect(() => {
+    if (!err) return
+    const t = setTimeout(() => setErr(null), 4000)
+    return () => clearTimeout(t)
+  }, [err])
+  async function act(action) {
+    if (busy) return
+    setBusy(action)
+    setErr(null)
+    try {
+      const r = await fetch('/api/private/settings/spotify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+        redirect: 'manual',
+        cache: 'no-store',
+      })
+      const d = await r.json().catch(() => ({}))
+      if (r.ok) onState(d)
+      else setErr(SP_ERR[d.error] ?? SP_ERR.spotify)
+    } catch {
+      setErr(SP_ERR.spotify)
+    } finally {
+      setBusy(null)
+    }
+  }
+  return { act, busy, err }
+}
+
+function SpotifyPanel({ sp, owner, onState }) {
   const [, tick] = useState(0) // every second while playing, for the progress (this panel only)
   useEffect(() => {
     if (!sp?.playing) return
     const t = setInterval(() => tick((x) => x + 1), 1000)
     return () => clearInterval(t)
   }, [sp?.playing])
+  const ctl = useSpotifyControl(onState)
   if (sp === undefined) return null // first answer on its way
-  if (!sp.enabled || !sp.track) return <SpotifyResting />
+  if (!sp.enabled || !sp.track) return <SpotifyResting owner={owner} ctl={ctl} />
   const artists = sp.artists.join(', ')
   const pos = Math.min(sp.durationMs || 0, sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0))
+  const next = (sp.upNext ?? []).slice(0, owner ? 2 : 3)
   return (
     <>
       {/* ambient: the cover, blurred and faint, behind the whole card (static) */}
       {sp.art && <div className="absolute inset-0 -z-10 bg-cover bg-center scale-125 blur-2xl opacity-30" style={{ backgroundImage: `url(${sp.art})` }} aria-hidden="true" />}
-      <div className="grow flex items-center justify-center mb-3">
+      <div className="flex items-center gap-4 mb-3">
         <a
           href={sp.url}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`${sp.playing ? 'Now playing' : 'Paused'} on Spotify: ${sp.track} by ${artists}`}
-          className="relative w-28 h-28 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-300 hover:scale-105"
+          className="relative shrink-0 w-20 h-20 rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-300 hover:scale-105"
         >
           {sp.art ? (
-            <img src={sp.art} alt="" width={112} height={112} className={`w-full h-full object-cover transition-[filter,opacity] duration-500 ${sp.playing ? '' : 'grayscale-[50%] opacity-75'}`} />
+            <img src={sp.art} alt="" width={80} height={80} className={`w-full h-full object-cover transition-[filter,opacity] duration-500 ${sp.playing ? '' : 'grayscale-[50%] opacity-75'}`} />
           ) : (
             <span className="w-full h-full bg-lofi-surface flex items-center justify-center text-lofi-muted">
-              <i className="fa-solid fa-music text-2xl" aria-hidden="true" />
+              <i className="fa-solid fa-music text-xl" aria-hidden="true" />
             </span>
           )}
           {!sp.playing && (
-            <span className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-lofi-base/80 flex items-center justify-center text-white text-[10px]" aria-hidden="true">
+            <span className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-lofi-base/80 flex items-center justify-center text-white text-[9px]" aria-hidden="true">
               <i className="fa-solid fa-pause" />
             </span>
           )}
         </a>
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">
+            {sp.playing && (
+              <span className="flex items-end gap-px h-2.5" aria-hidden="true">
+                {['60%', '100%', '45%'].map((h, i) => (
+                  <span key={i} className="w-[2px] rounded-full bg-[#1db954] origin-bottom animate-eq" style={{ height: h, animationDelay: `${i * -0.23}s` }} />
+                ))}
+              </span>
+            )}
+            {sp.playing ? 'Now playing' : 'Paused'}
+          </p>
+          <a href={sp.url} target="_blank" rel="noopener noreferrer" title={sp.album ?? undefined} className="block text-base font-medium text-white truncate hover:text-[#1db954] transition-colors">
+            {sp.track}
+          </a>
+          <p className="text-xs text-lofi-muted truncate">{artists}</p>
+        </div>
       </div>
-      <p className="flex items-center justify-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">
-        {sp.playing && (
-          <span className="flex items-end gap-px h-2.5" aria-hidden="true">
-            {['60%', '100%', '45%'].map((h, i) => (
-              <span key={i} className="w-[2px] rounded-full bg-[#1db954] origin-bottom animate-eq" style={{ height: h, animationDelay: `${i * -0.23}s` }} />
-            ))}
-          </span>
-        )}
-        {sp.playing ? 'Now playing' : 'Paused'}
-      </p>
-      <a href={sp.url} target="_blank" rel="noopener noreferrer" title={sp.album ?? undefined} className="block text-sm font-medium text-white text-center truncate hover:text-[#1db954] transition-colors">
-        {sp.track}
-      </a>
-      <p className="text-xs text-lofi-muted text-center truncate mb-3">{artists}</p>
       {sp.durationMs > 0 && (
         <div className="flex items-center gap-2 text-[10px] font-mono text-lofi-muted tabular-nums" aria-hidden="true">
           <span>{mmss(pos)}</span>
@@ -2255,13 +2299,59 @@ function SpotifyPanel({ sp }) {
           <span>{mmss(sp.durationMs)}</span>
         </div>
       )}
+      {owner && (
+        <div className="mt-2 flex items-center justify-center gap-5">
+          <SpBtn label="Previous" icon="fa-backward-step" onClick={() => ctl.act('previous')} busy={ctl.busy === 'previous'} />
+          <SpBtn
+            big
+            label={sp.playing ? 'Pause' : 'Play'}
+            icon={sp.playing ? 'fa-pause' : 'fa-play ml-0.5'}
+            onClick={() => ctl.act(sp.playing ? 'pause' : 'play')}
+            busy={ctl.busy === 'play' || ctl.busy === 'pause'}
+          />
+          <SpBtn label="Next" icon="fa-forward-step" onClick={() => ctl.act('next')} busy={ctl.busy === 'next'} />
+        </div>
+      )}
+      {ctl.err && <p className="mt-1 text-[10px] font-mono text-red-400 text-center" role="status">{ctl.err}</p>}
+      {next.length > 0 && !ctl.err && (
+        <div className="mt-auto pt-2 min-w-0">
+          <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">Up next</p>
+          <ul className="space-y-1">
+            {next.map((t, i) => (
+              <li key={i} className="flex items-center gap-2 min-w-0 text-[11px]">
+                {t.art ? <img src={t.art} alt="" width={18} height={18} className="w-[18px] h-[18px] rounded shrink-0" /> : <i className="fa-solid fa-music text-lofi-muted w-[18px] text-center" aria-hidden="true" />}
+                <span className="text-white/80 truncate">{t.track}</span>
+                <span className="text-lofi-muted truncate shrink-[2]">· {t.artists.join(', ')}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </>
+  )
+}
+
+// a Spotify control button; the big one is the green play / pause
+function SpBtn({ label, icon, onClick, busy, big }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className={
+        big
+          ? 'w-10 h-10 rounded-full bg-[#1db954] text-lofi-base flex items-center justify-center hover:scale-105 transition-transform'
+          : 'w-9 h-9 rounded-full flex items-center justify-center text-lofi-muted hover:text-white transition-colors'
+      }
+    >
+      <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : icon} ${big ? 'text-sm' : ''}`} aria-hidden="true" />
+    </button>
   )
 }
 
 // Spotify tab with nothing to show: an empty cover frame and a line that changes now and then. No link, no controls.
 const IDLE_LINES = ['Silence, mostly', 'Taking a music break', 'Probably debugging', 'Headphones off', 'Waiting for the next song']
-function SpotifyResting() {
+function SpotifyResting({ owner, ctl }) {
   const { reduced } = useContext(Prefs)
   const [k, setK] = useState(0)
   useEffect(() => {
@@ -2281,6 +2371,12 @@ function SpotifyResting() {
         {IDLE_LINES[k % IDLE_LINES.length]}
       </p>
       <p className="text-xs text-lofi-muted text-center mb-2">nothing on right now</p>
+      {owner && (
+        <div className="flex flex-col items-center gap-1">
+          <SpBtn big label="Resume on Spotify" icon="fa-play ml-0.5" onClick={() => ctl.act('play')} busy={ctl.busy === 'play'} />
+          {ctl.err && <p className="text-[10px] font-mono text-red-400" role="status">{ctl.err}</p>}
+        </div>
+      )}
     </>
   )
 }

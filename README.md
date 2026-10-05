@@ -22,8 +22,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
   - **Radio**: Lofi Girl through the YouTube IFrame API. It only starts when you click, and has volume control.
-  - **Spotify**: what you're listening to (a still cover tinting the card, track, artists, a live progress bar), or an
-    empty frame when nothing plays. Public, see [Spotify now playing](#spotify-now-playing).
+  - **Spotify**: what you're listening to (a still cover tinting the card, track, artists, a live progress bar) and a
+    small **Up next**, or an empty frame when nothing plays. Public; signed in as the owner you also get ⏮ ⏯ ⏭
+    (Spotify Premium). See [Spotify now playing](#spotify-now-playing).
   - **Player**: your own "play any song" player, coming soon.
   The picked tab is filled; a dot on a tab means that source is playing.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
@@ -206,11 +207,16 @@ artists, album cover and a link to the song, nothing about the account. Off unti
 
 1. https://developer.spotify.com/dashboard → **Create app**: Redirect URI `http://127.0.0.1:8888/callback`, API **Web API**.
 2. Put its **Client ID** and **Client secret** in `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`.
-3. `node scripts/spotify-auth.mjs` prints a consent link (read-only scope: what's playing). Open it,
+3. `node scripts/spotify-auth.mjs` prints a consent link (scopes: what's playing, the queue, and playback control for the owner's buttons). Open it,
    agree; the browser lands on a page that doesn't load. Run `node scripts/spotify-auth.mjs '<that address>'`
    and put the printed `SPOTIFY_REFRESH_TOKEN` in your env.
 
 The server asks Spotify at most every 10 s, whatever the number of visitors.
+
+The owner's controls (⏮ ⏯ ⏭, and ▶ when nothing plays) post to `/api/private/settings/spotify`, inside the owner-only
+proxy location of [Settings sync](#settings-sync-owner-only), so they show only when settings sync works for you. They need
+Spotify Premium and a device where Spotify is open; otherwise a short message says so. A token from before the controls
+still shows now playing; run the consent again to allow the queue and the buttons.
 
 ## Deploy (Docker)
 
