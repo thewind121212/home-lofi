@@ -129,7 +129,8 @@ export default function Home() {
       if (!idleRef.current) return
       idleRef.current = false
       setIdle(false)
-      if (e.type === 'keydown') e.preventDefault() // the waking key doesn't also act (e.g. Enter on a focused card)
+      // the waking key doesn't also act: not on a focused card (Enter), not on our own listeners (Esc would leave focus mode)
+      if (e.type === 'keydown') e.preventDefault(), e.stopPropagation()
       if (e.type === 'pointerdown') {
         // swallow the click that ends this tap/press, so it doesn't land on a card that just reappeared
         const eat = (ev) => (ev.preventDefault(), ev.stopPropagation())
@@ -292,10 +293,9 @@ export default function Home() {
           <div className="lg:col-span-4 flex flex-col gap-6">
             <Music ctl={music} onTune={setTune} />
             <Weather status={status} setStatus={setStatus} setWx={setWx} />
-            <Server d={priv} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
-            <Hub status={status} />
+            <Hub status={status} priv={priv} />
             <Services priv={priv} />
           </div>
         </main>
@@ -1466,7 +1466,8 @@ function Stat({ icon, label, value, pct, title }) {
   )
 }
 
-function Hub({ status }) {
+// Top of the right column, so the server stats stay above the fold (1080p): status row, then Server below it.
+function Hub({ status, priv }) {
   const [latency, setLatency] = useState(null)
 
   useEffect(() => {
@@ -1487,26 +1488,29 @@ function Hub({ status }) {
   const [label, color] = { loading: ['Checking', 'text-gray-400'], ok: ['Online', 'text-green-400'], error: ['Offline', 'text-red-400'] }[status]
 
   return (
-    <div className="glass-panel rounded-3xl p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
+    <div className="glass-panel rounded-3xl p-6 flex flex-col gap-5 relative overflow-hidden">
       <div className="absolute inset-0 bg-linear-to-r from-lofi-surface/0 via-lofi-surface/20 to-lofi-surface/0 animate-shimmer pointer-events-none" />
-      <div className="z-10">
-        <h2 className="text-xl font-medium text-white flex items-center gap-3">
-          <i className="fa-solid fa-network-wired text-lofi-primary" aria-hidden="true" /> Home Services Hub
-        </h2>
-        <p className="text-sm text-lofi-muted mt-1 font-mono">Gateway: home.wliafdew.dev</p>
-      </div>
-      <div className="flex gap-4 z-10">
-        <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner" title="Weather API proxy status">
-          <div className="text-[10px] text-lofi-muted font-mono uppercase">System Status</div>
-          <div className={`text-sm ${color} font-medium flex items-center gap-1.5 justify-center mt-0.5`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} /> {label}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="z-10">
+          <h2 className="text-xl font-medium text-white flex items-center gap-3">
+            <i className="fa-solid fa-network-wired text-lofi-primary" aria-hidden="true" /> Home Services Hub
+          </h2>
+          <p className="text-sm text-lofi-muted mt-1 font-mono">Gateway: home.wliafdew.dev</p>
+        </div>
+        <div className="flex gap-4 z-10">
+          <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner" title="Weather API proxy status">
+            <div className="text-[10px] text-lofi-muted font-mono uppercase">System Status</div>
+            <div className={`text-sm ${color} font-medium flex items-center gap-1.5 justify-center mt-0.5`}>
+              <div className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} /> {label}
+            </div>
+          </div>
+          <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner hidden sm:block" title="Round-trip to /api/health">
+            <div className="text-[10px] text-lofi-muted font-mono uppercase">Latency</div>
+            <div className="text-sm text-white font-medium mt-0.5">{latency == null ? '--' : `${latency}ms`}</div>
           </div>
         </div>
-        <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner hidden sm:block" title="Round-trip to /api/health">
-          <div className="text-[10px] text-lofi-muted font-mono uppercase">Latency</div>
-          <div className="text-sm text-white font-medium mt-0.5">{latency == null ? '--' : `${latency}ms`}</div>
-        </div>
       </div>
+      <Server d={priv} />
     </div>
   )
 }
@@ -1933,7 +1937,7 @@ function usePrivate() {
   return d
 }
 
-// Left column: host stats when unlocked, otherwise a small sign-in card. Internal services render inside Services.
+// The Hub's second row: host stats when unlocked, otherwise a sign-in line. Internal services render inside Services.
 function Server({ d }) {
   const { unit } = useContext(Prefs)
   if (d === undefined) return null
@@ -1941,7 +1945,7 @@ function Server({ d }) {
 
   if (!d) {
     return (
-      <div className="glass-panel rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
+      <div className="z-10 border-t border-white/5 pt-4 flex items-center justify-between gap-4">
         <p className="text-xs font-mono text-lofi-muted flex items-center gap-3 min-w-0">
           <i className="fa-solid fa-lock text-lofi-primary" aria-hidden="true" />
           <span className="truncate">Server &amp; internal apps</span>
@@ -1959,29 +1963,30 @@ function Server({ d }) {
 
   const { stats: st = {}, user } = d
   return (
-    <div className="glass-panel rounded-3xl p-6 flex flex-col gap-5">
-      <div className="flex flex-wrap justify-between items-center gap-2">
-        <h3 className="text-sm font-mono text-lofi-text/80 uppercase tracking-widest flex items-center gap-2">
-          <i className="fa-solid fa-microchip text-xs" aria-hidden="true" /> Server
-        </h3>
-        <p className="text-[10px] font-mono text-lofi-muted">
-          up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
+    <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">
+      <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-[10px] font-mono text-lofi-muted">
+        <p className="flex items-center gap-2">
+          <i className="fa-solid fa-microchip text-lofi-text/80" aria-hidden="true" />
+          <span className="text-lofi-text/80 uppercase tracking-widest">Server</span>
+          <span>
+            up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
+          </span>
         </p>
+        {user && (
+          <p>
+            signed in as <span className="text-white">{user}</span> ·{' '}
+            <a href={`${AUTH_URL}/logout?rd=${here}`} className="text-lofi-primary hover:underline">
+              sign out
+            </a>
+          </p>
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
         <Stat icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
         <Stat icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`} pct={st.temp} />
         <Stat icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
       </div>
-      {user && (
-        <p className="text-[10px] font-mono text-lofi-muted">
-          signed in as <span className="text-white">{user}</span> ·{' '}
-          <a href={`${AUTH_URL}/logout?rd=${here}`} className="text-lofi-primary hover:underline">
-            sign out
-          </a>
-        </p>
-      )}
-    </div>
+    </section>
   )
 }
