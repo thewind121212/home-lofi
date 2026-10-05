@@ -1,19 +1,10 @@
-import { timingSafeEqual } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
+import { gateOk } from '../../../lib/gate'
 import { hostStats } from '../../../lib/host'
 import { widgetStats } from '../../../lib/widgets'
 import { check } from '../../../lib/status'
 
-// Auth (LAN bypass / Authelia login) is enforced by the reverse proxy, not here.
-// Seatbelt: the proxy's /api/private location injects x-home-gate = GATE_SECRET; anything else is a 404. Fail closed.
 const HEADERS = { 'cache-control': 'no-store, private' }
-
-function gateOk(got) {
-  const secret = process.env.GATE_SECRET
-  if (!secret || secret.length < 16 || !got) return false
-  const a = Buffer.from(got), b = Buffer.from(secret)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
 
 // Same item shape as SERVICES[].items in lib/data.js. Missing/invalid file -> [].
 async function services() {

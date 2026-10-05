@@ -5,7 +5,8 @@ import { flushSync } from 'react-dom'
 import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneName, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
-import { Gallery, Prefs, Settings, closeDialog, motionOff, randomScene } from './settings'
+import { useCloudSync } from './cloud'
+import { Gallery, Prefs, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
 const DEFAULT_LOC = { id: 1566083, name: 'Ho Chi Minh City', lat: 10.8231, lon: 106.6297, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
@@ -35,20 +36,6 @@ function dimOverlay(dim) {
   return `linear-gradient(to bottom, ${stop(75)}, ${stop(45)}, ${stop(85)})`
 }
 
-// localStorage can throw (private mode, blocked storage) -> fall back silently
-function load(key, fallback) {
-  try {
-    const v = localStorage.getItem('home-lofi:' + key)
-    return v == null ? fallback : JSON.parse(v)
-  } catch {
-    return fallback
-  }
-}
-function save(key, value) {
-  try {
-    localStorage.setItem('home-lofi:' + key, JSON.stringify(value))
-  } catch {}
-}
 
 export default function Home() {
   const [now, setNow] = useState(null)
@@ -66,6 +53,23 @@ export default function Home() {
   const setDlg = useRef(null)
   const galDlg = useRef(null)
   const [wx, setWx] = useState() // the Weather card's /api/weather data: undefined = loading, null = failed
+  const [cloudLoc, setCloudLoc] = useState(null) // a weather location picked on another device (cloud sync)
+  // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
+  const cloud = useCloudSync((keys) => {
+    if (keys.some((k) => k.startsWith('settings.'))) {
+      // colors cross-fade instead of jumping (html[data-fade] in globals.css)
+      const html = document.documentElement
+      html.dataset.fade = ''
+      setTimeout(() => delete html.dataset.fade, 800)
+      let raw
+      try {
+        raw = localStorage.getItem(SETTINGS_KEY)
+      } catch {}
+      setSettings(parseSettings(raw))
+    }
+    if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
+    if (keys.includes('location')) setCloudLoc(load('location', null))
+  }, setDlg)
   const music = useRef(null) // Music's toggle(), so the focus bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the focus bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -169,6 +173,7 @@ export default function Home() {
     const next = { ...set, ...patch }
     setSettings(next)
     save('settings', next)
+    cloud.touch(Object.keys(patch).map((k) => `settings.${k}`))
   }
   function openGallery() {
     const d = galDlg.current
@@ -181,6 +186,7 @@ export default function Home() {
   function pickScene(id) {
     setScene(id)
     save('scene', id)
+    cloud.touch(['scene'])
     closeDialog(galDlg.current)
   }
   function reset() {
@@ -188,6 +194,7 @@ export default function Home() {
     try {
       localStorage.removeItem(SETTINGS_KEY)
     } catch {}
+    cloud.touch(Object.keys(DEFAULTS).map((k) => `settings.${k}`))
   }
 
   useEffect(() => {
@@ -292,7 +299,7 @@ export default function Home() {
         <main className="grow grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-start">
           <div className="lg:col-span-4 flex flex-col gap-6">
             <Music ctl={music} onTune={setTune} />
-            <Weather status={status} setStatus={setStatus} setWx={setWx} />
+            <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
           </div>
           <div className="lg:col-span-8 flex flex-col gap-6">
             <Hub status={status} priv={priv} />
@@ -304,7 +311,7 @@ export default function Home() {
       {idle && set.idleShow === 'clock' && <IdleClock now={now} clock={set.clock} />}
       {/* Header is hidden in focus mode, so the way back is the bar's eye button (or Esc) */}
       {focus && !idle && <FocusBar now={now} wx={wx} priv={priv} tune={tune} onToggle={() => music.current?.()} onShow={() => setFocus(false)} />}
-      <Settings dlg={setDlg} set={set} update={update} reset={reset} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
+      <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} scene={{ id: scene, want: wantMode, mode, from: wx?.name, open: openGallery }} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </Prefs>
   )
@@ -574,7 +581,7 @@ function Music({ ctl, onTune }) {
   )
 }
 
-function Weather({ status, setStatus, setWx }) {
+function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
   const [loc, setLoc] = useState(null)
   const [w, setW] = useState(null)
   const [q, setQ] = useState('')
@@ -594,6 +601,9 @@ function Weather({ status, setStatus, setWx }) {
     const ok = l && Number.isFinite(l.lat) && Number.isFinite(l.lon) && typeof l.tz === 'string' && /^\d+$/.test(String(l.id))
     setLoc(ok ? l : DEFAULT_LOC)
   }, [])
+  useEffect(() => {
+    if (cloudLoc) setLoc(cloudLoc) // picked on another device; already validated and saved by the sync
+  }, [cloudLoc])
 
   useEffect(() => {
     if (!loc) return
@@ -661,6 +671,7 @@ function Weather({ status, setStatus, setWx }) {
     setQ('')
     setLoc(place)
     save('location', place)
+    onPick()
   }
 
   // lazy: fetched only when the panel opens, then served from detailCache

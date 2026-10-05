@@ -275,6 +275,15 @@ body {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 /* Settings > Motion: Reduced (or the OS setting), set by Home; also neutralizes motion-safe: utilities */
+/* cloud sync: theme colors from another device cross-fade instead of jumping (app/page.js sets data-fade).
+   Registered so the browser can interpolate them; same initial values as @theme. */
+@property --color-lofi-primary { syntax: '<color>'; inherits: true; initial-value: #ff8a5c; }
+@property --color-lofi-secondary { syntax: '<color>'; inherits: true; initial-value: #e56b6f; }
+@property --color-lofi-highlight { syntax: '<color>'; inherits: true; initial-value: #fce38a; }
+html[data-fade]:not([data-motion='reduce']) {
+  transition: --color-lofi-primary 0.6s ease, --color-lofi-secondary 0.6s ease, --color-lofi-highlight 0.6s ease;
+}
+
 [data-motion='reduce'] *, [data-motion='reduce'] *::before, [data-motion='reduce'] *::after,
 [data-motion='reduce'] ::backdrop {
   animation: none !important;
