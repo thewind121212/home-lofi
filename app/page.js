@@ -367,21 +367,26 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Three blocks, each mounted once (the radio never restarts), placed by the grid:
+        {/* Each block is mounted once (the radio never restarts) and placed by the grid:
             phones: one column, Steam · Music · Weather · Hub · Services
             lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
-            2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Hub + Services | Weather, so nothing scrolls */}
-        <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
-          {/* 2xl: the side columns stay put (sticky) while a long app group scrolls the middle */}
-          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 2xl:col-span-3 2xl:sticky 2xl:top-8 flex flex-col gap-6">
+              (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
+            2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
+              the side columns stay put (sticky) while a long app group scrolls the middle */}
+        <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
+          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} station={station} streams={streams} onStation={pickStation} />
           </div>
-          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-2 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
-            <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
+          <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
+            <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
+              <Hub status={status} priv={priv} />
+            </div>
+            <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">
+              <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
+            </div>
           </div>
-          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-1 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-span-1 flex flex-col gap-6">
-            <Hub status={status} priv={priv} />
+          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1">
             <Services priv={priv} />
           </div>
         </main>
@@ -1882,10 +1887,14 @@ function SceneCanvas({ base, mode, videoRef, reduced, onFail }) {
   )
 }
 
-function Stat({ icon, label, value, pct, title }) {
+// fit: inside an @container (the Hub's server stats), compact with no icon until the container is wide
+function Stat({ icon, label, value, pct, title, fit }) {
   return (
-    <div className="bg-lofi-surface/50 p-3 rounded-xl border border-white/5 flex items-center gap-3 hover:bg-lofi-surface transition-colors">
-      <i className={`fa-solid ${icon} text-lg`} aria-hidden="true" />
+    <div className={`bg-lofi-surface/50 rounded-xl border border-white/5 flex items-center gap-3 hover:bg-lofi-surface transition-colors ${fit ? 'p-2 @lg:p-3' : 'p-3'}`}>
+      {/* the wrapper hides it: Font Awesome's own display would beat a hidden on the <i> */}
+      <span className={fit ? 'hidden @lg:block' : 'contents'} aria-hidden="true">
+        <i className={`fa-solid ${icon} text-lg`} />
+      </span>
       <div className="min-w-0 grow">
         <div className="text-[10px] text-lofi-muted font-mono uppercase tracking-wider">{label}</div>
         <div className="text-sm text-white font-medium truncate" title={title}>{value}</div>
@@ -1921,23 +1930,31 @@ function Hub({ status, priv }) {
   const [label, color] = { loading: ['Checking', 'text-gray-400'], ok: ['Online', 'text-green-400'], error: ['Offline', 'text-red-400'] }[status]
 
   return (
-    <div className="glass-panel rounded-3xl p-6 flex flex-col gap-5 relative overflow-hidden">
+    <div className="@container glass-panel rounded-3xl p-6 flex flex-col gap-5 relative overflow-hidden">
       <div className="absolute inset-0 bg-linear-to-r from-lofi-surface/0 via-lofi-surface/20 to-lofi-surface/0 animate-shimmer pointer-events-none" />
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div className="z-10">
+      {/* wide: status + latency boxes on the right; narrow (the 2xl side column, phones): one small chip by the gateway */}
+      <div className="flex justify-between items-center gap-4">
+        <div className="z-10 grow min-w-0">
           <h2 className="text-xl font-medium text-white flex items-center gap-3">
             <i className="fa-solid fa-network-wired text-lofi-primary" aria-hidden="true" /> Home Services Hub
           </h2>
-          <p className="text-sm text-lofi-muted mt-1 font-mono">Gateway: home.wliafdew.dev</p>
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="text-xs @lg:text-sm text-lofi-muted font-mono truncate">Gateway: home.wliafdew.dev</p>
+            <p className="@lg:hidden shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-1 bg-lofi-base/50 border border-white/5 font-mono text-[11px]" title="System status · round-trip to /api/health">
+              <span className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} aria-hidden="true" />
+              <span className={color}>{label}</span>
+              <span className="text-lofi-muted">· {latency == null ? '--' : `${latency}ms`}</span>
+            </p>
+          </div>
         </div>
-        <div className="flex gap-4 z-10">
+        <div className="hidden @lg:flex gap-4 z-10">
           <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner" title="Weather API proxy status">
             <div className="text-[10px] text-lofi-muted font-mono uppercase">System Status</div>
             <div className={`text-sm ${color} font-medium flex items-center gap-1.5 justify-center mt-0.5`}>
               <div className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} /> {label}
             </div>
           </div>
-          <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner hidden sm:block" title="Round-trip to /api/health">
+          <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner" title="Round-trip to /api/health">
             <div className="text-[10px] text-lofi-muted font-mono uppercase">Latency</div>
             <div className="text-sm text-white font-medium mt-0.5">{latency == null ? '--' : `${latency}ms`}</div>
           </div>
@@ -2078,41 +2095,44 @@ function Services({ priv }) {
           )
         })}
       </div>
-      {/* lg+: brush-stroke bookmark tabs */}
-      <div
-        role="group"
-        aria-label="Choose a group"
-        className="hidden lg:flex lg:flex-wrap lg:absolute lg:top-24 lg:right-0 lg:w-40 lg:flex-col lg:gap-1.5 z-20"
-      >
-        {TABS.map((t) => {
-          const { on, icon, n } = meta(t)
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => pick(t)}
-              aria-pressed={on}
-              className={`group/tab relative isolate -rotate-3 h-8 lg:h-9 pl-2.5 pr-4 lg:pl-3 lg:pr-5 flex items-center gap-2 font-mono font-bold uppercase text-[10px] tracking-[0.08em] transition-all duration-200 ease-out ${
-                on ? 'text-lofi-base lg:translate-x-4 motion-safe:animate-tilt drop-shadow-[0_4px_10px_color-mix(in_oklab,var(--color-lofi-primary)_35%,transparent)]' : 'text-lofi-muted hover:text-white lg:hover:translate-x-1'
-              }`}
-            >
-              {on ? (
-                <>
-                  {/* back stroke: offset, highlight-tinted; front stroke: primary -> secondary */}
-                  <span aria-hidden="true" className="absolute inset-0 -z-10 translate-x-1 translate-y-1 bg-lofi-highlight/70 origin-left motion-safe:animate-brush" style={{ clipPath: BRUSH_2 }} />
-                  <span aria-hidden="true" className="absolute inset-0 -z-10 bg-linear-to-r from-lofi-primary to-lofi-secondary origin-left motion-safe:animate-brush" style={{ clipPath: BRUSH }} />
-                </>
-              ) : (
-                <span aria-hidden="true" className="absolute inset-0 -z-10 bg-white/5 opacity-0 group-hover/tab:opacity-100 transition-opacity" style={{ clipPath: BRUSH }} />
-              )}
-              <i className={`fa-solid ${icon} w-3.5 text-center ${on ? '' : 'text-lofi-primary/70 group-hover/tab:text-lofi-primary'}`} aria-hidden="true" />
-              <span className="truncate">{t}</span>
-              <span className={`ml-auto pl-1.5 text-[9px] tabular-nums ${on ? 'opacity-70' : 'opacity-50'} hidden lg:inline`}>
-                {n == null ? '--' : String(n).padStart(2, '0')}
-              </span>
-            </button>
-          )
-        })}
+      {/* lg+: brush-stroke bookmark tabs. The rail runs down the card's right edge and the tabs stick to the top of the
+          screen inside it, so they stay in reach while a long group (All) scrolls the page */}
+      <div className="hidden lg:block absolute top-24 bottom-6 right-0 w-40 z-20 pointer-events-none">
+        <div
+          role="group"
+          aria-label="Choose a group"
+          className="sticky top-8 flex flex-col flex-wrap gap-1.5 pointer-events-auto"
+        >
+          {TABS.map((t) => {
+            const { on, icon, n } = meta(t)
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => pick(t)}
+                aria-pressed={on}
+                className={`group/tab relative isolate -rotate-3 h-8 lg:h-9 pl-2.5 pr-4 lg:pl-3 lg:pr-5 flex items-center gap-2 font-mono font-bold uppercase text-[10px] tracking-[0.08em] transition-all duration-200 ease-out ${
+                  on ? 'text-lofi-base lg:translate-x-4 motion-safe:animate-tilt drop-shadow-[0_4px_10px_color-mix(in_oklab,var(--color-lofi-primary)_35%,transparent)]' : 'text-lofi-muted hover:text-white lg:hover:translate-x-1'
+                }`}
+              >
+                {on ? (
+                  <>
+                    {/* back stroke: offset, highlight-tinted; front stroke: primary -> secondary */}
+                    <span aria-hidden="true" className="absolute inset-0 -z-10 translate-x-1 translate-y-1 bg-lofi-highlight/70 origin-left motion-safe:animate-brush" style={{ clipPath: BRUSH_2 }} />
+                    <span aria-hidden="true" className="absolute inset-0 -z-10 bg-linear-to-r from-lofi-primary to-lofi-secondary origin-left motion-safe:animate-brush" style={{ clipPath: BRUSH }} />
+                  </>
+                ) : (
+                  <span aria-hidden="true" className="absolute inset-0 -z-10 bg-white/5 opacity-0 group-hover/tab:opacity-100 transition-opacity" style={{ clipPath: BRUSH }} />
+                )}
+                <i className={`fa-solid ${icon} w-3.5 text-center ${on ? '' : 'text-lofi-primary/70 group-hover/tab:text-lofi-primary'}`} aria-hidden="true" />
+                <span className="truncate">{t}</span>
+                <span className={`ml-auto pl-1.5 text-[9px] tabular-nums ${on ? 'opacity-70' : 'opacity-50'} hidden lg:inline`}>
+                  {n == null ? '--' : String(n).padStart(2, '0')}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
       <div ref={box} className="space-y-6">
         {shown.map(({ section, items }) => (
@@ -3014,7 +3034,7 @@ function Server({ d }) {
     )
   }
 
-  const { stats: st = {}, user } = d
+  const { stats: st = {} } = d
   return (
     <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">
       <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-[10px] font-mono text-lofi-muted">
@@ -3025,20 +3045,13 @@ function Server({ d }) {
             up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
           </span>
         </p>
-        {user && (
-          <p>
-            signed in as <span className="text-white">{user}</span> ·{' '}
-            <a href={`${AUTH_URL}/logout?rd=${here}`} className="text-lofi-primary hover:underline">
-              sign out
-            </a>
-          </p>
-        )}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
-        <Stat icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
-        <Stat icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`} pct={st.temp} />
-        <Stat icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
+      {/* narrow: four across, no icons */}
+      <div className="grid grid-cols-4 gap-2 @lg:gap-3">
+        <Stat fit icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
+        <Stat fit icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
+        <Stat fit icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`} pct={st.temp} />
+        <Stat fit icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
       </div>
     </section>
   )
