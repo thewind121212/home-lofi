@@ -32,8 +32,8 @@ services:
       WUD_PASS: ${WUD_PASS:-}
       N8N_URL: ${N8N_URL:-}
       N8N_API_KEY: ${N8N_API_KEY:-}
-      COOLIFY_URL: ${COOLIFY_URL:-}
-      COOLIFY_TOKEN: ${COOLIFY_TOKEN:-}
+      COOLIFY_API_URL: ${COOLIFY_API_URL:-}
+      COOLIFY_API_TOKEN: ${COOLIFY_API_TOKEN:-}
       MYSPEED_URL: ${MYSPEED_URL:-}
       MYSPEED_PASS: ${MYSPEED_PASS:-}
     volumes:

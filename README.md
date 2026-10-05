@@ -84,7 +84,7 @@ Add `"widget": "<id>"` to a service in `private-services.json`, then set that wi
 | `nextcloud` | `NEXTCLOUD_URL` `NEXTCLOUD_TOKEN` | CPU load, memory, free space, active users 24 h |
 | `whatsupdocker` | `WUD_URL` `WUD_USER` `WUD_PASS` | monitored containers, updates available |
 | `n8n` | `N8N_URL` `N8N_API_KEY` | active / total workflows, runs and failed runs in 24 h |
-| `coolify` | `COOLIFY_URL` `COOLIFY_TOKEN` | running / total applications, services, databases |
+| `coolify` | `COOLIFY_API_URL` `COOLIFY_API_TOKEN` | running / total applications, services, databases |
 | `myspeed` | `MYSPEED_URL` `MYSPEED_PASS` | ping, download, upload of the last test |
 
 Give each widget the least privileged account or token you can, e.g. a read-only user where the service supports it.
