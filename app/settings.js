@@ -279,7 +279,7 @@ export function ScenePoster({ base, down, className = '', imgClass = '' }) {
                 alt=""
                 decoding="async"
                 onLoad={(e) => (e.currentTarget.style.opacity = 1)}
-                className={`absolute inset-0 w-full h-full object-cover opacity-0 transition duration-500 ${imgClass}`}
+                className={`absolute inset-0 w-full h-full object-cover opacity-0 transition duration-500 [image-rendering:pixelated] ${imgClass}`}
               />
             ),
         )
