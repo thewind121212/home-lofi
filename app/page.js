@@ -510,8 +510,9 @@ function WakeHint() {
 // The lock screen: the clock layer, what's playing (Lock screen › Music: bright, or dim = fades when nobody's there) and a
 // breathing "swipe to unlock" at the bottom, 🎨 (its look: the only settings that change while locked) top right.
 // Unlock: swipe up anywhere (mouse or finger): the screen follows, and far enough (or a quick flick) it slides away;
-// a short swipe springs back, so a bump, a cat or a stray key can't unlock. Or hold Space ~1 s (letting go springs back),
-// or ↑ five times. 🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere; other
+// a short swipe springs back, so a bump, a cat or a stray key can't unlock. Or hold Space ~1 s, or press ↑ five times: a
+// small bar fills in place of the hint (letting go of Space, or 2 s without another ↑, empties it), and full, the
+// screen slides away like a swipe. 🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere; other
 // keys (Alt+Tab to another window) and moving the mouse elsewhere don't wake anything.
 const REST_MS = 3000
 const SPACE_MS = 1000
@@ -527,6 +528,15 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
   const raf = useRef(0)
   const dyRef = useRef(0)
   dyRef.current = dy
+  const [hold, setHold] = useState(0) // Space / ↑ progress to unlocking, 0..1
+  const holdRef = useRef(0)
+  const holdTimer = useRef(null)
+  const gone = useRef(false) // unlock fired: once
+  const fill = (v) => {
+    holdRef.current = Math.max(0, Math.min(1, v))
+    setHold(holdRef.current)
+    if (holdRef.current >= 1 && !gone.current) (gone.current = true), leave()
+  }
   const goal = () => Math.min(260, innerHeight * 0.3) // pushed this far, it unlocks
   const rest = () => {
     clearTimeout(timer.current)
@@ -542,32 +552,32 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
   useEffect(() => {
     rest()
     const onDown = () => (setAwake(true), rest()) // a click / tap anywhere wakes it (keys don't: Alt+Tab)
-    const stop = () => (cancelAnimationFrame(raf.current), (raf.current = 0), setHeld(false))
+    const stop = () => (cancelAnimationFrame(raf.current), (raf.current = 0))
     const keyDown = (e) => {
       if (e.code === 'Space') {
         e.preventDefault() // no page scroll, no press on a focused button
         if (e.repeat || raf.current) return
         setAwake(true)
-        setHeld(true)
-        const t0 = performance.now()
+        clearTimeout(holdTimer.current)
+        const t0 = performance.now() - holdRef.current * SPACE_MS // carries on from ↑ presses, if any
         const step = (t) => {
-          const v = Math.min(1, (t - t0) / SPACE_MS) * goal()
-          setDy(v)
-          if (v >= goal()) return stop(), leave()
-          raf.current = requestAnimationFrame(step)
+          fill((t - t0) / SPACE_MS)
+          raf.current = holdRef.current < 1 ? requestAnimationFrame(step) : 0
         }
         raf.current = requestAnimationFrame(step)
       } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.target.closest?.('[data-noswipe]')) {
         e.preventDefault()
-        const v = Math.max(0, dyRef.current + (e.key === 'ArrowUp' ? 1 : -1) * (goal() / 5))
-        v >= goal() - 1 ? leave() : setDy(v)
+        if (raf.current) return
+        fill(holdRef.current + (e.key === 'ArrowUp' ? 0.2 : -0.2))
+        clearTimeout(holdTimer.current)
+        holdTimer.current = setTimeout(() => fill(0), 2000)
       }
     }
     const keyUp = (e) => {
       if (e.code !== 'Space' || !raf.current) return
       e.preventDefault()
       stop()
-      setDy(0) // let go early: springs back
+      fill(0) // let go early: the bar empties
       rest()
     }
     addEventListener('pointerdown', onDown, true)
@@ -575,6 +585,7 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
     addEventListener('keyup', keyUp, true)
     return () => {
       clearTimeout(timer.current)
+      clearTimeout(holdTimer.current)
       cancelAnimationFrame(raf.current)
       removeEventListener('pointerdown', onDown, true)
       removeEventListener('keydown', keyDown, true)
@@ -687,15 +698,25 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
             {children}
           </div>
         )}
-        <button
-          onClick={nudge}
-          aria-label="Swipe up to unlock (or hold Space, or press the up arrow five times)"
-          className="h-8 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
-          style={{ opacity: 1 - p }}
-        >
-          <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
-          swipe to unlock
-        </button>
+        {hold > 0 && !leaving ? (
+          // Space / ↑: the bar in the hint's place
+          <div role="progressbar" aria-label="Unlocking" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(hold * 100)} className="h-8 px-4 flex items-center gap-3 font-mono text-xs tracking-[0.2em] text-white/90">
+            <i className="fa-solid fa-lock-open text-[10px] text-lofi-primary" aria-hidden="true" />
+            <span className="relative w-40 h-1.5 rounded-full bg-white/15 overflow-hidden">
+              <span className="absolute inset-y-0 left-0 rounded-full bg-lofi-primary shadow-[0_0_10px_var(--color-lofi-primary)] transition-[width] duration-75 ease-linear" style={{ width: `${hold * 100}%` }} />
+            </span>
+          </div>
+        ) : (
+          <button
+            onClick={nudge}
+            aria-label="Swipe up to unlock (or hold Space, or press the up arrow five times)"
+            className="h-8 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
+            style={{ opacity: 1 - p }}
+          >
+            <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
+            swipe to unlock
+          </button>
+        )}
       </div>
     </div>
   )

@@ -16,7 +16,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   | --- | --- | --- | --- |
   | **Hide** (I'm still here) | 👁 (bottom right) or **H** | scene + a mini bar (the music that plays: radio or Spotify, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
   | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
-  | **Lock** (I'm away, hands off) | 🔒 (bottom right), **L** or **Space ×3** quickly (the screensaver never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s (let go to stop); ↑ five times |
+  | **Lock** (I'm away, hands off) | 🔒 (bottom right), **L** or **Space ×3** quickly (the screensaver never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
 
   The lock has its own look (Settings › Lock screen, or 🎨 top right on the lock screen); the screensaver keeps the plain one.
   🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere (other keys, like
