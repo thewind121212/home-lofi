@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL, SERVICES } from '../lib/data'
+import { AUTH_URL, DAY_SCENES, SCENES, SCENES_CORS, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
-import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
+import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
@@ -117,6 +117,9 @@ export default function Home() {
   const [sceneDown, setSceneDown] = useState(false) // signature files missing / host down -> night sky fallback
   useEffect(() => setSceneDown(false), [base])
   const onSceneFail = (m) => (m === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${m}/${scene}`)))
+  const pipLive = useRef(null) // what the mini window draws, read on every frame
+  pipLive.current = { set, wx, videoRef }
+  const [pip, togglePip, pipOk] = useMiniWindow(pipLive)
 
   useEffect(() => {
     let raw
@@ -293,17 +296,19 @@ export default function Home() {
     cloud.touch(Object.keys(DEFAULTS).map((k) => `settings.${k}`))
   }
 
+  // a hidden tab pauses the scene, unless the mini window shows it (closing that while hidden pauses it then)
   useEffect(() => {
     if (reduced) return
     const onVis = () => {
       const v = videoRef.current
       if (!v) return
-      if (document.hidden) v.pause()
+      if (document.hidden && !pip) v.pause()
       else v.play().catch(() => {})
     }
+    if (document.hidden) onVis()
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
-  }, [reduced])
+  }, [reduced, pip])
 
   const hour = now?.getHours()
   const [greeting, icon, iconBg] =
@@ -388,11 +393,12 @@ export default function Home() {
       </div>
 
       {!focus && !idle && !softLock && (
-        // 👁 Hide, 🔒 Lock and ⚙️ Settings float bottom right on the dashboard (Hide's bar has its own 👁 / 🔒)
+        // 👁 Hide, 🔒 Lock, ⚙️ Settings and ⧉ Mini window float bottom right on the dashboard (Hide's bar has its own 👁 / 🔒)
         <div className="fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out]">
           <DockButton icon="fa-eye-slash" label="Hide panels (H)" onClick={() => setFocus(true)} />
           <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
           <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
+          {pipOk && <DockButton icon="fa-clone" label="Mini window (picture-in-picture)" title={pip ? 'Close the mini window' : 'Mini window'} on={pip} onClick={togglePip} />}
         </div>
       )}
       {softLock ? (
@@ -433,14 +439,15 @@ function Clock({ now, clock, tick }) {
   )
 }
 
-// the dashboard's floating 👁 / 🔒 / ⚙️, bottom right
-function DockButton({ icon, label, title = label, onClick }) {
+// the dashboard's floating 👁 / 🔒 / ⚙️ / ⧉, bottom right. on: a toggle that's on (⧉ while the mini window is open)
+function DockButton({ icon, label, title = label, on, onClick }) {
   return (
     <button
       onClick={onClick}
       aria-label={label}
+      aria-pressed={on}
       title={title}
-      className="glass-panel w-11 h-11 rounded-full flex items-center justify-center text-lofi-text hover:text-lofi-primary hover:scale-105 transition"
+      className={`glass-panel w-11 h-11 rounded-full flex items-center justify-center hover:text-lofi-primary hover:scale-105 transition ${on ? 'text-lofi-primary' : 'text-lofi-text'}`}
     >
       <i className={`fa-solid ${icon} text-sm`} aria-hidden="true" />
     </button>
@@ -1552,6 +1559,7 @@ function sceneVideo(base, holder, preload) {
   v.muted = v.loop = v.playsInline = true
   v.setAttribute('aria-hidden', 'true')
   v.preload = preload ? 'auto' : 'none'
+  if (SCENES_CORS) v.crossOrigin = 'anonymous' // readable by the mini window (lib/data.js)
   v.poster = `${base}.webp`
   for (const ext of ['webm', 'mp4']) {
     const s = document.createElement('source')
@@ -1744,6 +1752,151 @@ function SceneCanvas({ base, mode, videoRef, reduced, onFail }) {
       <canvas ref={ref} className="fixed top-0 left-0 w-full h-lvh" aria-hidden="true" />
     </div>
   )
+}
+
+// ⧉ Mini window: a Picture-in-Picture window with the scene as it plays, the clock and (Settings › Mini window) the
+// date and the weather, drawn onto a 960×540 canvas (2× the 480×270 art, smoothing off: sharp pixels) that streams into
+// a hidden <video>, which goes PiP. Each frame reads `live` (Home refreshes it on every render), so settings, the
+// weather and scene / variant switches show while it's open. No button without the APIs (Firefox: no video PiP).
+// ponytail: draws videoRef's video only, so a variant switch cuts over when the page's cross-fade ends instead of fading
+function useMiniWindow(live) {
+  const ok = useMounted() && 'requestPictureInPicture' in HTMLVideoElement.prototype && 'captureStream' in HTMLCanvasElement.prototype && document.pictureInPictureEnabled !== false
+  const [on, setOn] = useState(false)
+  const stop = useRef(null)
+  async function toggle() {
+    if (stop.current) return document.exitPictureInPicture().catch(() => stop.current?.()) // leaving PiP stops it
+    const c = document.createElement('canvas')
+    c.width = 960
+    c.height = 540
+    const g = c.getContext('2d')
+    const font = getComputedStyle(document.documentElement).getPropertyValue('--font-space-mono') || 'monospace'
+    let poster = null, last = 0
+    const frame = () => {
+      const v = live.current.videoRef.current
+      // a paused scene (reduced motion) only needs the clock: 4 draws a second
+      if (v?.paused && performance.now() - last < 250) return
+      last = performance.now()
+      // the playing frame, else the poster (reduced motion loads no video); none from a host that isn't CORS-readable
+      let src = null
+      if (v && SCENES_CORS) {
+        if (v.readyState >= 2) src = v
+        else if (v.poster) {
+          if (poster?.src !== v.poster) (poster = new Image()), (poster.crossOrigin = 'anonymous'), (poster.src = v.poster)
+          src = poster
+        }
+      }
+      drawMini(g, src, live.current, font)
+    }
+    // ticks from a worker: a hidden tab's own timers run at most once a second, and the mini window is for other tabs
+    const url = URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 1000 / 24)']))
+    const tick = new Worker(url)
+    tick.onmessage = frame
+    const v = document.createElement('video')
+    v.muted = true
+    v.srcObject = c.captureStream(24)
+    v.className = 'fixed w-px h-px opacity-0 pointer-events-none'
+    v.setAttribute('aria-hidden', 'true')
+    document.body.append(v)
+    stop.current = () => {
+      stop.current = null
+      tick.terminate()
+      URL.revokeObjectURL(url)
+      v.srcObject.getTracks().forEach((t) => t.stop())
+      v.remove()
+      setOn(false)
+    }
+    v.addEventListener('leavepictureinpicture', () => stop.current?.())
+    frame()
+    try {
+      await v.play()
+      await v.requestPictureInPicture()
+      setOn(true)
+    } catch {
+      stop.current?.()
+    }
+  }
+  return [on, toggle, ok]
+}
+
+// One mini window frame: the scene (object-fit: cover) or the night sky, Settings › Dim scene, then the text in the
+// middle: the clock with the theme's glow, the date, the weather (emoji, temperature, place)
+function drawMini(g, src, { set, wx }, font) {
+  const W = g.canvas.width, H = g.canvas.height, t = miniText(new Date(), set, wx)
+  const [accent, accent2] = themeColors(set)
+  g.imageSmoothingEnabled = false
+  g.shadowColor = 'transparent'
+  g.fillStyle = '#1a1a2e'
+  g.fillRect(0, 0, W, H)
+  const w = src?.videoWidth || src?.naturalWidth, h = src?.videoHeight || src?.naturalHeight
+  if (w) {
+    const k = Math.max(W / w, H / h)
+    g.drawImage(src, (W - w * k) / 2, (H - h * k) / 2, w * k, h * k)
+  } else {
+    // the night sky's glow from below (.night-sky)
+    const glow = g.createRadialGradient(W / 2, H * 1.15, 0, W / 2, H * 1.15, H)
+    glow.addColorStop(0, accent2 + '59')
+    glow.addColorStop(1, accent2 + '00')
+    g.fillStyle = glow
+    g.fillRect(0, 0, W, H)
+  }
+  // Dim scene, as dimOverlay(): the base color at 75 / 45 / 85 % (at 50), top to bottom
+  const dim = g.createLinearGradient(0, 0, 0, H)
+  ;[75, 45, 85].forEach((p, i) => dim.addColorStop(i / 2, `rgb(26 26 46 / ${Math.min(100, (p * set.dim) / 50)}%)`))
+  g.fillStyle = dim
+  g.fillRect(0, 0, W, H)
+
+  const CLOCK = 168, LINE = 34, GAP = 24
+  const lines = [t.date, t.weather].filter(Boolean)
+  const blockH = CLOCK * 0.7 + lines.length * (GAP + LINE)
+  let y = (H - blockH) / 2 + CLOCK * 0.7 // the clock's baseline (Space Mono digits are ~0.7 em tall)
+  // a soft shade behind the text (the lock screen's soft overlay)
+  const cy = (H - blockH) / 2 + blockH / 2
+  g.setTransform(1, 0, 0, 0.5, 0, cy / 2)
+  const shade = g.createRadialGradient(W / 2, cy, 0, W / 2, cy, W * 0.5)
+  shade.addColorStop(0, 'rgb(26 26 46 / 0.65)')
+  shade.addColorStop(1, 'rgb(26 26 46 / 0)')
+  g.fillStyle = shade
+  g.fillRect(0, -H, W, H * 3)
+  g.setTransform(1, 0, 0, 1, 0, 0)
+
+  // one centered line of [text, font, color] runs
+  const row = (runs) => {
+    const ws = runs.map(([s, f]) => ((g.font = f), g.measureText(s).width))
+    let x = (W - ws.reduce((a, b) => a + b, 0)) / 2
+    runs.forEach(([s, f, c], i) => {
+      g.font = f
+      g.fillStyle = c
+      g.fillText(s, x, y)
+      x += ws[i]
+    })
+  }
+  const big = `bold ${CLOCK}px ${font}`, small = `bold ${LINE}px ${font}`
+  const clock = [[t.time, big, '#fff'], ...(t.ampm ? [[' ' + t.ampm, `bold ${CLOCK * 0.3}px ${font}`, '#fff']] : [])]
+  // the theme glow like .idle-clock (24 px at 65 %, 72 px at 40 %), then the crisp text on top
+  for (const [blur, a] of [[72, '66'], [24, 'a6'], [0, '']]) {
+    g.shadowBlur = blur
+    g.shadowColor = blur ? accent + a : 'transparent'
+    row(clock)
+  }
+  g.shadowColor = 'rgb(0 0 0 / 0.85)'
+  g.shadowBlur = 12
+  if (t.date) {
+    y += GAP + LINE
+    g.letterSpacing = '6px'
+    row([[t.date, small, 'rgb(255 255 255 / 0.9)']])
+    g.letterSpacing = '0px'
+  }
+  if (t.weather) {
+    y += GAP + LINE
+    const { icon, temp, place } = t.weather
+    const thin = `${LINE}px ${font}`
+    let p = place
+    g.font = thin
+    // a long place name is cut to fit
+    while (p.length > 1 && g.measureText(p).width > W * 0.5) p = p.slice(0, -2) + '…'
+    row([[icon + ' ', thin, '#fff'], [temp, small, '#fff'], ...(p ? [[' · ', thin, 'rgb(255 255 255 / 0.6)'], [p, thin, 'rgb(255 255 255 / 0.8)']] : [])])
+  }
+  g.shadowColor = 'transparent'
 }
 
 // fit: inside an @container (the Hub's server stats), compact with no icon until the container is wide
