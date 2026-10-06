@@ -69,9 +69,25 @@ export function useRadioInfo() {
   return m
 }
 
+// The Media Session (media keys, headphones, the phone's lock screen) has one set of handlers for the page: the source
+// that last started (the radio, or the Player tab listening) claims it with its own; the other leaves it alone
+const MEDIA_ACTIONS = ['play', 'pause', 'stop', 'nexttrack', 'previoustrack']
+let mediaOwner = 'radio'
+export const mediaSessionOwner = () => mediaOwner
+export function claimMediaSession(owner, handlers) {
+  mediaOwner = owner
+  const ms = typeof navigator !== 'undefined' && navigator.mediaSession
+  if (!ms) return
+  for (const k of MEDIA_ACTIONS) {
+    try {
+      ms.setActionHandler(k, handlers?.[k] ?? null)
+    } catch {}
+  }
+}
+
 // a tiny silent WAV: played once inside the first tap that starts a YouTube station, so the <audio> element is
 // "unlocked" on iOS for a later switch to a stream station that doesn't come from a tap (lock screen ⏭, a skip)
-function silentWav() {
+export function silentWav() {
   const n = 800
   const b = new Uint8Array(44 + n)
   const v = new DataView(b.buffer)
@@ -192,6 +208,7 @@ export function useRadio({ station, info, onStation, onTune, host }) {
   }
 
   function play() {
+    if (mediaOwner !== 'radio') claimMediaSession('radio', media) // the Player tab had the media keys
     m.want = true
     m.skips = 0
     setNote(null)
@@ -231,6 +248,13 @@ export function useRadio({ station, info, onStation, onTune, host }) {
   }
   const fn = useRef({})
   fn.current = { start, fail, pause, play, step }
+  const media = useRef({
+    play: () => fn.current.play(),
+    pause: () => fn.current.pause(),
+    stop: () => fn.current.pause(),
+    nexttrack: () => fn.current.step(1, document.hidden),
+    previoustrack: () => fn.current.step(-1, document.hidden),
+  }).current
 
   function setLevel(v) {
     const x = Math.max(0, Math.min(100, Math.round(v)))
@@ -361,23 +385,12 @@ export function useRadio({ station, info, onStation, onTune, host }) {
 
   // the phone's lock screen / notification, media keys, headphone buttons
   useEffect(() => {
-    const ms = navigator.mediaSession
-    if (!ms) return
-    const set = (k, f) => {
-      try {
-        ms.setActionHandler(k, f)
-      } catch {}
-    }
-    set('play', () => fn.current.play())
-    set('pause', () => fn.current.pause())
-    set('stop', () => fn.current.pause())
-    set('nexttrack', () => fn.current.step(1, document.hidden))
-    set('previoustrack', () => fn.current.step(-1, document.hidden))
-    return () => ['play', 'pause', 'stop', 'nexttrack', 'previoustrack'].forEach((k) => set(k, null))
+    if (mediaOwner === 'radio') claimMediaSession('radio', media)
+    return () => mediaOwner === 'radio' && claimMediaSession('radio', null)
   }, [])
   useEffect(() => {
     const ms = navigator.mediaSession
-    if (!ms || typeof MediaMetadata === 'undefined') return
+    if (!ms || typeof MediaMetadata === 'undefined' || mediaOwner !== 'radio') return
     const art = coverOf(station, info)
     ms.metadata = new MediaMetadata({
       title: now?.title ?? station.name,
@@ -395,7 +408,7 @@ export function useRadio({ station, info, onStation, onTune, host }) {
     return () => clearTimeout(t)
   }, [note])
 
-  return { status, note, setNote, volume, muted, fixedVolume, yt, now, sleepLeft, sleepAt, setSleepAt, toggle, select, step, setLevel, toggleMute }
+  return { status, note, setNote, volume, muted, fixedVolume, yt, now, sleepLeft, sleepAt, setSleepAt, toggle, pause, select, step, setLevel, toggleMute }
 }
 
 // the little dancing bars (rest low when paused, still with reduced motion)
