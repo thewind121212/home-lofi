@@ -5,6 +5,8 @@ import { flushSync } from 'react-dom'
 import { AUTH_URL, DAY_SCENES, SCENES, SCENES_CORS, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
+import { PlayerMini, PlayerPanel, usePlayer } from './player'
+import { SP_LOCK_REST, musicSource, spOn } from '../lib/player'
 import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
@@ -100,7 +102,7 @@ export default function Home() {
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
   }, setDlg)
-  const music = useRef(null) // Music's toggle(), so the focus bar can drive the same player
+  const music = useRef(null) // Music's { toggle, pause }, so the focus bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the focus bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
   // A variant that failed to load falls back to the signature files for that scene.
@@ -220,8 +222,15 @@ export default function Home() {
     if (AUDIO_TABS.some(([id]) => id === t)) setAudioTab(t)
   }, [])
   const pickAudio = (t) => (setAudioTab(t), save('audioTab', t))
-  const source = musicSource(audioTab, tune, spotify)
-  const mini = { source, tune, onRadio: () => music.current?.(), sp: spotify, owner, onSpotify: applySpotify, station, info }
+  // the Player tab's station (app/player.js); only one source makes sound: Listen pauses the radio (inside the tap),
+  // and the radio starting stops listening (Spotify plays elsewhere, so neither touches it)
+  const player = usePlayer({ owner, onListen: () => music.current?.pause() })
+  useEffect(() => {
+    if (tune.playing || tune.loading) player.stop()
+  }, [tune.playing, tune.loading])
+  const tvOn = !player.off && !player.revoked
+  const source = musicSource(audioTab, tune, spotify, { listening: player.listening, song: tvOn ? player.state?.song : null, playing: tvOn && player.state?.status === 'playing' })
+  const mini = { source, tune, onRadio: () => music.current?.toggle(), sp: spotify, owner, onSpotify: applySpotify, station, info, player }
   const [wasOwner, setWasOwner] = useState(false)
   useEffect(() => {
     if (owner) save('owner', true)
@@ -376,7 +385,7 @@ export default function Home() {
         <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
@@ -821,15 +830,18 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, info, onStation, invite }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, info, onStation, invite, player }) {
   const host = useRef(null)
   const [list, setList] = useState(false) // the station list popup
   const r = useRadio({ station, info, onStation, onTune, host })
-  const live = { radio: r.status === 'playing', spotify: Boolean(spotify?.enabled && spotify.track && spotify.playing) }
-  // the Hide bar's / lock screen's play button calls this same toggle() straight from its click (iOS gesture rule)
+  const live = { radio: r.status === 'playing', spotify: Boolean(spotify?.enabled && spotify.track && spotify.playing), player: !player.off && !player.revoked && player.state?.status === 'playing' }
+  // the Hide bar's / lock screen's play button calls this same toggle() straight from its click (iOS gesture rule);
+  // pause(): Listen on the Player tab stops the radio
   useEffect(() => {
-    ctl.current = r.toggle
+    ctl.current = { toggle: r.toggle, pause: r.pause }
   })
+  // the Player plays at the radio's volume (one slider, one mute for both)
+  useEffect(() => player.setVolume(r.muted ? 0 : r.volume), [r.muted, r.volume])
 
   return (
     <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col h-[320px]">
@@ -866,7 +878,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
         {tab === 'radio' && <RadioPanel r={r} station={station} info={info} invite={invite} onList={() => setList(true)} />}
         {tab === 'radio' && list && <StationList r={r} current={station.id} info={info} playing={r.status === 'playing'} onClose={() => setList(false)} />}
         {tab === 'spotify' && <SpotifyPanel sp={spotify} owner={owner} wasOwner={wasOwner} onState={onSpotify} />}
-        {tab === 'player' && <PlayerSoon />}
+        {tab === 'player' && <PlayerPanel p={player} owner={owner} vol={r} />}
       </div>
 
       <div ref={host} className="youtube-hidden" />
@@ -2800,22 +2812,14 @@ function SignInToControl() {
   )
 }
 
-// Which music the Hide bar and the lock screen show: whatever is playing (Spotify for a minute after it's paused),
-// else the picked tab (Spotify only when it has a track; the Player tab joins once it exists), else the radio.
-const spOn = (sp) => Boolean(sp?.enabled && sp.track)
-function musicSource(tab, tune, sp) {
-  if (tune.playing || tune.loading) return 'radio'
-  if (spOn(sp) && sp.playing) return 'spotify'
-  if (spOn(sp) && sp.pausedAt && Date.now() - sp.pausedAt < SP_LOCK_REST) return 'spotify' // just paused: stays a minute
-  return tab === 'spotify' && spOn(sp) ? 'spotify' : 'radio'
-}
+// Which music the Hide bar and the lock screen show: musicSource() in lib/player.js (whatever is playing wins).
 
 // What's playing, small: in the Hide bar (variant "bar") and on the lock screen ("lock"). Radio: play / pause for
 // everyone. Spotify: cover, track, artists; the owner also gets play / pause and next (the button spins until Spotify
 // confirms the change). The lock shows only music that plays: nothing at all when nothing does, and a paused Spotify
-// for a minute (then it goes, unless it plays again or the track changes).
-const SP_LOCK_REST = 60_000 // the lock screen lets a paused Spotify go after this (same track, nothing new)
-function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify, station, info }) {
+// for a minute (then it goes, unless it plays again or the track changes). Player (Tavarian's home station): Listen /
+// stop for everyone, ⏭ for the owner; on the lock only while this tab listens or the station plays.
+function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify, station, info, player }) {
   const mounted = useMounted()
   const ctl = useSpotifyControl(onSpotify)
   const lock = variant === 'lock'
@@ -2865,6 +2869,11 @@ function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify, stat
         {ctl.err && <span className="text-[10px] text-red-400 whitespace-nowrap" role="status">{ctl.err}</span>}
       </div>
     )
+  }
+
+  if (source === 'tavarian' && player?.state?.song) {
+    if (lock && !player.listening && player.state.status !== 'playing') return null
+    return <PlayerMini p={player} owner={owner} lock={lock} box={box} eq={eq(player.listening && player.phase === 'playing', 'bg-lofi-primary')} />
   }
 
   if (lock && !tune.playing && !tune.loading) return null // the lock shows only music that plays
@@ -2935,19 +2944,6 @@ function SpotifyResting({ owner, ctl }) {
         </div>
       )}
     </>
-  )
-}
-
-// Player tab: the owner's own "play any song" player (streamed through the server) is next; for now a promise.
-function PlayerSoon() {
-  return (
-    <div className="grow flex flex-col items-center justify-center text-center gap-2">
-      <div className="w-16 h-16 rounded-2xl bg-lofi-surface border border-white/5 flex items-center justify-center mb-2" aria-hidden="true">
-        <i className="fa-solid fa-magnifying-glass text-xl text-lofi-primary" />
-      </div>
-      <p className="text-sm font-medium text-white">Play any song</p>
-      <p className="text-xs text-lofi-muted text-balance max-w-56">Search and play anything, streamed through home. Coming soon.</p>
-    </div>
   )
 }
 

@@ -20,7 +20,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 
   | | when | shows | back with |
   | --- | --- | --- | --- |
-  | **Hide** (I'm still here) | 👁 (bottom right) or **H** | scene + a mini bar (the music that plays: radio or Spotify, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
+  | **Hide** (I'm still here) | 👁 (bottom right) or **H** | scene + a mini bar (the music that plays: radio, Spotify or the Player, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
   | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
   | **Lock** (I'm away, hands off) | 🔒 (bottom right), **L** or **Space ×3** quickly (the screensaver never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
 
@@ -49,8 +49,19 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
     small **Up next** (click a song: a popup with its cover and *Open in Spotify*), or an empty frame when nothing plays.
     Public; signed in as the owner you also get ⏮ ⏯ ⏭ (Spotify Premium), or *Sign in to control* in a browser where you
     were signed in before. See [Spotify now playing](#spotify-now-playing).
-  - **Player**: your own "play any song" player, coming soon.
-  The picked tab is filled; a dot on a tab means that source is playing.
+  - **Player** (`app/player.js`): the home page's own station inside Tavarian (see [Tavarian player](#tavarian-player)),
+    live for every visitor: the song's cover tinting the card, its title, a progress bar on Tavarian's clock, plain states
+    (Playing · Paused on Tavarian · Loading next song · Queue is empty · Stopped · Tavarian unreachable · Disconnected —
+    new link needed / Player unavailable · Player not set up), **Up next** (the first two) and the last played; *Queue ›*
+    opens the whole list. **Listen** plays the station in this tab, at the radio's volume (the same slider and mute);
+    starting the radio stops it and Listen pauses the radio, so only one of them makes sound. Media keys and the
+    phone's lock screen show the song (play / pause = listen / stop). As with the YouTube stations, iOS stops it when the
+    phone locks.
+    Signed in as the owner you also get ⏸ / ▶ and ⏭ (for everyone listening; they spin until the station confirms), a
+    seekable progress bar, and in the list: **＋ Add** (paste a YouTube link, or search), move up / down and remove,
+    **Playlists** (your Tavarian playlists: queue one song or all), plain messages for refusals (already queued, too
+    long, not allowed outside YouTube…), and *Tavarian link: name · expires · Revoke link* (asks first, like Reset all).
+  The picked tab is filled; a dot on a tab means that source is playing (Player: the station plays on Tavarian).
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
@@ -87,7 +98,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back; it never locks |
 | Mini window | Weather Show / Hide · Date Show / Hide (under the ⧉ mini window's clock; changes show in an open one right away) |
-| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
+| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, the Player's listen / stop for anyone and ⏭ for the owner, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
 
@@ -276,6 +287,12 @@ browser <──────────── audio, with a 10-minute ticket ─
   `too_many_streams`, since Tavarian allows 2 streams per token) and closes 60 s after the last browser leaves. A
   revoked or dead token stops it for good (until the next deploy with a new token) and every tab hears `revoked`.
 - State and queue reads are cached 3 s for all visitors, keeping the last good answer when Tavarian hiccups.
+- The tab (`app/player.js`, pure helpers in `lib/player.js`): one `EventSource` while the page shows (or this tab
+  listens); if it can't stay open (errors, 429) it polls `/api/tavarian/state` every 5 s and tries the stream again
+  every 30 s. Listen gets one ticket per tab (a random `clientId` per page load), a new one a minute before it ends
+  and only while listening; a new `streamId` (song change, seek, resume) swaps the audio source, paused / loading /
+  idle lets it go and it comes back by itself; a broken stream is retried a few times (with a fresh ticket from the
+  second try).
 
 Routes:
 
