@@ -252,6 +252,63 @@ proxy location of [Settings sync](#settings-sync-owner-only), so they show only 
 Spotify Premium and a device where Spotify is open; otherwise a short message says so. A token from before the controls
 still shows now playing; run the consent again to allow the queue and the buttons.
 
+### Tavarian player
+
+Optional, server side of the music card's **Player** tab: a station inside [Tavarian](https://tavarian.wliafdew.dev)
+(its "home player") that plays any song you queue. Off until `TAVARIAN_TOKEN` is set.
+
+| env | default | what |
+| --- | --- | --- |
+| `TAVARIAN_URL` | `https://tavarian.wliafdew.dev` | Tavarian's address (API under `/api/v1`, audio under `/home-audio/stream`) |
+| `TAVARIAN_TOKEN` | empty = off | a Tavarian API token for the home player. **Only in Coolify's env** (or your `.env`): never in git, a log or a browser |
+
+```
+browser ──EventSource──> /api/tavarian/events ─┐            ┌─ one SSE stream ──> Tavarian /api/v1/home/events
+browser ──fetch────────> /api/tavarian/state  ─┼─ home-lofi ┼─ API calls (token) ─> Tavarian /api/v1/...
+owner   ──fetch────────> /api/private/settings/tavarian ┘   │
+browser <──────────── audio, with a 10-minute ticket ───────┴─ Tavarian /home-audio/stream
+```
+
+- Only this server holds the token. Browsers get no Tavarian API access; only audio comes straight from Tavarian,
+  with a short-lived listen ticket this server gets for each tab.
+- **One upstream stream** for everyone (`lib/tavarian-hub.js`): it opens when the first browser subscribes, keeps the
+  latest state and queue, fans every event out, reconnects with backoff (1 s, 2 s, 4 s … 30 s; at least 30 s after
+  `too_many_streams`, since Tavarian allows 2 streams per token) and closes 60 s after the last browser leaves. A
+  revoked or dead token stops it for good (until the next deploy with a new token) and every tab hears `revoked`.
+- State and queue reads are cached 3 s for all visitors, keeping the last good answer when Tavarian hiccups.
+
+Routes:
+
+| route | who | what |
+| --- | --- | --- |
+| `GET /api/tavarian/events` | public | Server-Sent Events: `status`, `state`, `queue`, `audio-ready`, `song-error`, `revoked`; status, state and queue right away, `: ping` every 20 s. 4 open per IP (429), 503 `tavarian_off` when not set up |
+| `GET /api/tavarian/state` | public | `{ state, queue, live }` for the first paint and as the fallback when the stream can't stay open |
+| `POST /api/tavarian/ticket` | public, same-origin JSON | `{ clientId }` → `{ ticket, expiresAt, streamUrl }`; audio: `streamUrl?streamId=…&clientId=…&ticket=…`. 10 a minute per IP |
+| `POST /api/private/settings/tavarian` | owner | `{ action, … }`: `add`, `remove`, `reorder`, `search`, `play` / `pause` / `resume` / `skip` / `stop`, `seek`, `playlists`, `playlist-songs`, `from-playlist`, `token`, `revoke` |
+
+The owner route sits in the owner-only proxy location of [Settings sync](#settings-sync-owner-only), like Spotify's
+controls. The per-IP limits read the first `X-Forwarded-For` entry, so the outermost proxy should set it to
+`$remote_addr` (inner proxies append with `$proxy_add_x_forwarded_for`).
+
+**Proxy for the event stream.** Nginx buffers responses and closes idle ones after 60 s. The app sends
+`X-Accel-Buffering: no` and pings every 20 s, but set it explicitly on every nginx in front (NPM: the proxy host's
+**Advanced** tab; use the same upstream as the host):
+
+```nginx
+location /api/tavarian/events {
+    proxy_pass http://home-lofi:3000;          # same upstream as the proxy host
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;   # inner proxies: $proxy_add_x_forwarded_for
+    proxy_buffering off;
+    proxy_cache off;
+    gzip off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+```
+
 ## Deploy (Docker)
 
 ```sh
