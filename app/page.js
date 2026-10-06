@@ -2,10 +2,10 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { AUTH_URL, SCENES, SCENES_URL, SERVICES } from '../lib/data'
+import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
-import { DEFAULTS, SETTINGS_KEY, clockParts, parseSettings, sceneWeather, themeColors, toUnit } from '../lib/settings'
+import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
@@ -108,7 +108,12 @@ export default function Home() {
   const [badVariants, setBadVariants] = useState(() => new Set())
   const wantMode = set.weather !== 'live' ? set.weather : wx === undefined ? null : sceneWeather(wx?.code)
   const mode = wantMode && badVariants.has(`${wantMode}/${scene}`) ? 'signature' : wantMode
-  const base = scene && mode && (mode === 'signature' ? `${SCENES_URL}/${scene}` : `${SCENES_URL}/${mode}/${scene}`)
+  // Day / night: DAY_SCENES play their day/ files from sunrise to sunset (checked on every 1 s clock tick, so the
+  // switch is on time); a missing day file falls back to the night one the same way. A new base = a new variant for
+  // SceneCanvas, so it cross-fades at the same playback time.
+  const wantDay = !!now && DAY_SCENES.includes(scene) && isDaytime(wx, now)
+  const variant = mode && dayVariant(mode, scene, wantDay, badVariants)
+  const base = scene && variant && sceneBase(SCENES_URL, scene, variant)
   const [sceneDown, setSceneDown] = useState(false) // signature files missing / host down -> night sky fallback
   useEffect(() => setSceneDown(false), [base])
   const onSceneFail = (m) => (m === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${m}/${scene}`)))
@@ -317,7 +322,7 @@ export default function Home() {
       <NightSky />
       {/* Full-screen animated scene (decorative) */}
       {base && !sceneDown && (
-        <SceneCanvas key={scene} base={base} mode={mode} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
+        <SceneCanvas key={scene} base={base} mode={variant} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
       )}
       <div
         className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus || idle || softLock ? 'opacity-0' : ''}`}
@@ -343,7 +348,7 @@ export default function Home() {
               className="order-2 sm:order-none ml-auto sm:ml-0"
               set={set}
               update={update}
-              scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name }}
+              scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
