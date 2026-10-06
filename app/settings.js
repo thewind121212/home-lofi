@@ -143,6 +143,30 @@ function SyncStatus({ status }) {
 }
 
 export function Settings({ dlg, set, update, reset, sync }) {
+  // Reset all asks first: a warning row with Cancel (focused) and "Yes, reset", which wakes after a moment so a
+  // double-click can't confirm; the row gives up after 8 s, or when the panel closes
+  const [sure, setSure] = useState(false)
+  const [armed, setArmed] = useState(false)
+  const resetBtn = useRef(null)
+  const asked = useRef(false)
+  useEffect(() => {
+    if (sure) asked.current = true
+    else if (asked.current && dlg.current?.open) (asked.current = false), resetBtn.current?.focus() // focus back where it was
+  }, [sure])
+  useEffect(() => {
+    if (!sure) return
+    setArmed(false)
+    const a = setTimeout(() => setArmed(true), 800)
+    const t = setTimeout(() => setSure(false), 8000)
+    return () => (clearTimeout(a), clearTimeout(t))
+  }, [sure])
+  useEffect(() => {
+    const d = dlg.current
+    const off = () => setSure(false)
+    d?.addEventListener('close', off)
+    return () => d?.removeEventListener('close', off)
+  }, [dlg])
+  const synced = ['synced', 'syncing', 'offline'].includes(sync)
   const radio = (key, legend, options, extra) => (
     <Choice legend={legend} name={key} value={set[key]} options={options} onChange={(v) => update({ [key]: v })}>
       {extra}
@@ -245,13 +269,45 @@ export function Settings({ dlg, set, update, reset, sync }) {
         </section>
 
         <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
-          <SyncStatus status={sync} />
-          <button
-            onClick={reset}
-            className="h-9 px-4 rounded-full border border-white/10 font-mono text-xs text-lofi-muted hover:text-white hover:border-lofi-secondary/60 transition-colors flex items-center gap-2"
-          >
-            <i className="fa-solid fa-rotate-left" aria-hidden="true" /> Reset all
-          </button>
+          {sure ? (
+            <div
+              role="alertdialog"
+              aria-labelledby="reset-q"
+              // Esc backs out of the question, not the whole panel
+              onKeyDown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), setSure(false))}
+              className="w-full flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 motion-safe:animate-[panel-in_0.2s_ease-out]">
+              <p id="reset-q" className="text-xs text-red-200 flex items-center gap-2.5 min-w-0">
+                <i className="fa-solid fa-triangle-exclamation text-red-400" aria-hidden="true" />
+                <span>
+                  Reset every setting{synced ? ' on all your devices' : ''}? <span className="text-red-200/70">This can't be undone.</span>
+                </span>
+              </p>
+              <div className="flex gap-2 shrink-0">
+                <button autoFocus onClick={() => setSure(false)} className="h-9 px-4 rounded-full border border-white/15 font-mono text-xs text-lofi-text hover:text-white hover:border-white/30 transition-colors">
+                  Cancel
+                </button>
+                {/* aria-disabled, not disabled: Chrome gives a click on a disabled button to the dialog behind it, which closes */}
+                <button
+                  aria-disabled={!armed}
+                  onClick={() => armed && (setSure(false), reset())}
+                  className="h-9 px-4 rounded-full bg-red-500/85 text-white font-mono text-xs font-bold hover:bg-red-500 aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-red-500/85 transition-[background-color,opacity] duration-300 flex items-center gap-2"
+                >
+                  <i className="fa-solid fa-rotate-left" aria-hidden="true" /> Yes, reset
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <SyncStatus status={sync} />
+              <button
+                ref={resetBtn}
+                onClick={() => setSure(true)}
+                className="h-9 px-4 rounded-full border border-white/10 font-mono text-xs text-lofi-muted hover:text-white hover:border-red-400/60 transition-colors flex items-center gap-2"
+              >
+                <i className="fa-solid fa-rotate-left" aria-hidden="true" /> Reset all
+              </button>
+            </>
+          )}
         </div>
       </div>
     </dialog>
