@@ -22,6 +22,9 @@ services:
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       SPOTIFY_REFRESH_TOKEN: ${SPOTIFY_REFRESH_TOKEN:-}
+      # Player tab: the Tavarian home player, see README "Tavarian player" (off unless TAVARIAN_TOKEN is set)
+      TAVARIAN_URL: ${TAVARIAN_URL:-https://tavarian.wliafdew.dev}
+      TAVARIAN_TOKEN: ${TAVARIAN_TOKEN:-}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)
       DATABASE_URL: ${DATABASE_URL:-}
       OWNER_USER: ${OWNER_USER:-}
