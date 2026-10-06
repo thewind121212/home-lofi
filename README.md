@@ -10,6 +10,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Scenes**: full-screen, seamlessly looping pixel-art cities, drawn onto a canvas with smoothing off, so the pixels stay sharp up to 4K.
   The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
   the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
+  Some scenes have a **day** version that plays from sunrise to sunset at the Weather card's location (see [Scenes](#scenes)).
 - **Hide, Screensaver, Lock**: three ways to see just the scene, each with one job.
 
   | | when | shows | back with |
@@ -325,6 +326,22 @@ The scene picker's Scene weather picks one; **Live** follows the current weather
 missing for a scene, that scene quietly falls back to its Signature files; only a missing Signature shows the night sky.
 So variants can be uploaded one scene at a time. Pixel art looks best at an integer upscale with nearest-neighbour scaling
 (`ffmpeg -vf scale=1920:1080:flags=neighbor`).
+
+**Day versions** (optional) mirror the whole layout under `day/`, same three files per scene:
+
+```
+scenes/day/<id>.{webm,mp4,webp}              Signature by day
+scenes/day/<weather>/<id>.{webm,mp4,webp}    clear, drizzle, rain, thunderstorm, snow, leaves by day
+```
+
+Scenes listed in `DAY_SCENES` (`lib/data.js`) play their `day/` files from **sunrise to sunset** at the Weather card's
+location, and the night files the rest of the time; every other scene is always night. Add an id once its `day/` files
+are uploaded. Sunrise / sunset come with `/api/weather` (today's, as timestamps), so the switch happens on the minute
+without a reload (the scene cross-fades at the same playback time, or swaps instantly with reduced motion). Without
+them it uses the weather's day / night flag, and while the weather hasn't loaded (or failed) the browser's clock,
+day = 06:00–18:00. Day works with every Scene weather: by day the path is `day/` + the night one (Rain →
+`day/rain/<id>`). A missing day file falls back to the night file, like a missing weather variant. The scene picker
+says which one plays (☀️ Daytime / 🌙 Night · follows the sun in <city>).
 
 ## Add a public service
 
