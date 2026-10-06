@@ -66,7 +66,7 @@ Sites (the Hub turns compact in the narrow column). A long group like All scroll
 ## Settings
 
 ⚙️ (bottom right, under 👁 and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
-(`home-lofi:settings`); **Reset all** goes back to the defaults. For visitors nothing is sent to the server.
+(`home-lofi:settings`); **Reset all** goes back to the defaults, after a confirm (Cancel is focused, *Yes, reset* wakes after a moment, and the question gives up after 8 s). For visitors nothing is sent to the server.
 The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 
 | setting | options |
@@ -80,7 +80,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back; it never locks |
-| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, Spotify ⏯ ⏭ for the owner; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
+| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
 

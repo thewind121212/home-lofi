@@ -2406,6 +2406,12 @@ function dur(sec) {
 
 // /api/spotify, polled every 15 s while the tab is visible (the server asks Spotify at most every 10 s).
 // undefined = loading; { enabled: false } = not set up, and polling stops. Returns [state, apply(fresh state)].
+// pausedAt: since when it's been paused on this same track (the lock screen lets it go after a minute of that)
+const mark = (prev, d) => ({
+  ...d,
+  seen: Date.now(),
+  pausedAt: d.playing || !d.track ? null : prev && !prev.playing && prev.track === d.track && prev.pausedAt ? prev.pausedAt : Date.now(),
+})
 function useSpotify() {
   const [sp, setSp] = useState()
   useEffect(() => {
@@ -2416,7 +2422,7 @@ function useSpotify() {
         .then((r) => r.json())
         .then((d) => {
           if (!alive) return
-          setSp({ ...d, seen: Date.now() })
+          setSp((prev) => mark(prev, d))
           if (d.enabled === false) stop()
         }, () => {})
     const t = setInterval(get, 15_000)
@@ -2425,7 +2431,7 @@ function useSpotify() {
     get()
     return () => ((alive = false), stop())
   }, [])
-  return [sp, (d) => setSp({ ...d, seen: Date.now() })]
+  return [sp, (d) => setSp((prev) => mark(prev, d))]
 }
 
 // Spotify tab: what I'm listening to (public: track, artists, cover, link). A still cover over a blurred, faint copy of
@@ -2437,6 +2443,7 @@ const SP_ERR = {
   device: 'Open Spotify on a device first',
   scope: 'Reconnect Spotify to allow controls',
   spotify: "Spotify didn't answer",
+  slow: "Spotify hasn't confirmed it yet",
 }
 // The owner's controls (signed in, Premium): POST /api/private/settings/spotify -> the fresh state, shown at once.
 function useSpotifyControl(onState) {
@@ -2460,7 +2467,7 @@ function useSpotifyControl(onState) {
         cache: 'no-store',
       })
       const d = await r.json().catch(() => ({}))
-      if (r.ok) onState(d)
+      if (r.ok) onState(d), d.confirmed === false && setErr(SP_ERR.slow) // shows what Spotify says now, either way
       else setErr(SP_ERR[d.error] ?? SP_ERR.spotify)
     } catch {
       setErr(SP_ERR.spotify)
@@ -2635,22 +2642,34 @@ function SignInToControl() {
   )
 }
 
-// Which music the Hide bar and the lock screen show: whatever is playing, else the picked tab (Spotify only when it
-// has a track; the Player tab joins once it exists), else the radio.
+// Which music the Hide bar and the lock screen show: whatever is playing (Spotify for a minute after it's paused),
+// else the picked tab (Spotify only when it has a track; the Player tab joins once it exists), else the radio.
 const spOn = (sp) => Boolean(sp?.enabled && sp.track)
 function musicSource(tab, tune, sp) {
   if (tune.playing || tune.loading) return 'radio'
   if (spOn(sp) && sp.playing) return 'spotify'
+  if (spOn(sp) && sp.pausedAt && Date.now() - sp.pausedAt < SP_LOCK_REST) return 'spotify' // just paused: stays a minute
   return tab === 'spotify' && spOn(sp) ? 'spotify' : 'radio'
 }
 
 // What's playing, small: in the Hide bar (variant "bar") and on the lock screen ("lock"). Radio: play / pause for
-// everyone. Spotify: cover, track, artists; the owner also gets play / pause and next. The lock shows nothing when
-// nothing plays.
+// everyone. Spotify: cover, track, artists; the owner also gets play / pause and next (the button spins until Spotify
+// confirms the change). The lock shows only music that plays: nothing at all when nothing does, and a paused Spotify
+// for a minute (then it goes, unless it plays again or the track changes).
+const SP_LOCK_REST = 60_000 // the lock screen lets a paused Spotify go after this (same track, nothing new)
 function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify, station, info }) {
   const mounted = useMounted()
   const ctl = useSpotifyControl(onSpotify)
   const lock = variant === 'lock'
+  // lock: how long Spotify has sat paused; re-render when the minute is up
+  const [, tick] = useState(0)
+  const resting = lock && sp && !sp.playing && sp.pausedAt ? Date.now() - sp.pausedAt : null
+  useEffect(() => {
+    if (resting == null || resting >= SP_LOCK_REST) return
+    const t = setTimeout(() => tick((n) => n + 1), SP_LOCK_REST - resting + 50)
+    return () => clearTimeout(t)
+  }, [lock, sp?.playing, sp?.pausedAt])
+  const spGone = resting != null && resting >= SP_LOCK_REST && !ctl.busy
   const eq = (on, color) => (
     <span className="max-[374px]:hidden flex items-end gap-0.5 h-4 shrink-0" aria-hidden="true">
       {[10, 16, 7, 13].map((h, i) => (
@@ -2660,7 +2679,7 @@ function MiniPlayer({ variant, source, tune, onRadio, sp, owner, onSpotify, stat
   )
   const box = lock ? 'glass-panel rounded-2xl p-2 pr-3 flex items-center gap-3 max-w-[calc(100vw-2rem)] font-mono text-sm text-white' : 'contents'
 
-  if (source === 'spotify' && spOn(sp)) {
+  if (source === 'spotify' && spOn(sp) && !spGone) {
     const artists = sp.artists.join(', ')
     return (
       <div className={box} role={lock ? 'group' : undefined} aria-label={lock ? 'Now playing' : undefined}>
