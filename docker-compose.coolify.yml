@@ -8,6 +8,7 @@ services:
       context: .
       args:
         NEXT_PUBLIC_SCENES_URL: ${SCENES_URL:-} # build-time: redeploy after changing it
+        NEXT_PUBLIC_SCENES_CORS: ${SCENES_CORS:-} # 1 = the scene host sends Access-Control-Allow-Origin (README, Scenes)
     restart: unless-stopped
     expose:
       - "3000"

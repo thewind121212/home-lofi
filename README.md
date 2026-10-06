@@ -11,6 +11,11 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
   the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
   Some scenes have a **day** version that plays from sunrise to sunset at the Weather card's location (see [Scenes](#scenes)).
+- **Mini window**: ⧉ (bottom right, under ⚙️) opens a picture-in-picture window that floats over other apps: the scene
+  as it plays (pixel-sharp, with the dim, theme, Scene weather and day / night as on the page), the clock, the date and
+  the weather (Settings › Mini window). It follows setting changes live and keeps running in a background tab; ⧉ again
+  or the window's ✕ closes it. Chrome, Edge, Safari (no button in Firefox, which has no video picture-in-picture).
+  From a static scene host it needs `SCENES_CORS=1` (see [Scenes](#scenes)), else it shows the clock over a night sky.
 - **Hide, Screensaver, Lock**: three ways to see just the scene, each with one job.
 
   | | when | shows | back with |
@@ -81,6 +86,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back; it never locks |
+| Mini window | Weather Show / Hide · Date Show / Hide (under the ⧉ mini window's clock; changes show in an open one right away) |
 | Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
@@ -111,6 +117,7 @@ Change it for your own domain.
 | --- | --- | --- |
 | `GATE_SECRET` | required, ≥ 16 chars | `/api/private` (see below) |
 | `SCENES_URL` | empty = `/scenes` (`public/scenes`) | where scene videos load from, e.g. a static host; **build-time** (rebuild after changing). The Docker image has no scenes, see [Scenes](#scenes) |
+| `SCENES_CORS` | empty | `1` = the `SCENES_URL` host sends `Access-Control-Allow-Origin`, so the mini window can draw the scene; **build-time**. Don't set it without the header: every scene would fail to load |
 | `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
@@ -285,7 +292,9 @@ The scene videos are not in this repository: they are large, and the art is
 **not** contain scenes (`.dockerignore` skips `public/scenes/`), so images stay small and nothing is copied per deploy.
 Upload to e.g. `https://static.example.com/scenes/` and set `SCENES_URL` to that before `docker compose up -d --build`.
 The server must answer byte-range requests (HTTP 206), which any normal web server does. A long `Cache-Control` on that
-path helps.
+path helps. For the ⧉ mini window to show the scene, the host must also send `Access-Control-Allow-Origin` (e.g. `*`, or
+your dashboard's origin; nginx: `add_header Access-Control-Allow-Origin * always;`) and the build needs `SCENES_CORS=1`:
+the page can't read pixels from another origin without it (scenes served from `/scenes` need nothing).
 
 Optional: to serve them from the app itself instead, leave `SCENES_URL` empty and mount the folder into the container
 with your own compose override (not in the default compose files):
