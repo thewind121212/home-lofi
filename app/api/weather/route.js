@@ -1,4 +1,4 @@
-import { parseWeatherParams, wmo, uvLabel, aqiBand } from '../../../lib/weather'
+import { parseWeatherParams, wmo, uvLabel, aqiBand, sunToday } from '../../../lib/weather'
 import { upstream } from '../../../lib/upstream'
 
 export async function GET(request) {
@@ -22,6 +22,7 @@ export async function GET(request) {
       code: c.weather_code,
       ...wmo(c.weather_code, isDay),
       isDay,
+      ...sunToday(w), // the scene's day / night (lib/settings.js isDaytime)
       humidity: c.relative_humidity_2m,
       wind: Math.round(c.wind_speed_10m),
       rainChance,
