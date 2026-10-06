@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useEffect, useRef, useState } from 'react'
-import { AUTH_URL, SCENES, SCENES_URL } from '../lib/data'
+import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL } from '../lib/data'
 import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
@@ -94,6 +94,13 @@ function weatherHint(set, { want, mode, from }) {
   const t = live ? `Live now: ${SCENE_WX[want][0]}${from ? ` in ${from}` : ''}` : ''
   const miss = want !== mode ? `${SCENE_WX[want][0]} isn't available for this scene yet, showing Signature` : ''
   return [t, miss].filter(Boolean).join(' · ')
+}
+
+// Day / night line for DAY_SCENES (nothing for night-only scenes, or while Live waits): what plays, and what decides it
+function dayHint({ id, base, wantDay, day, from }) {
+  if (!base || !DAY_SCENES.includes(id)) return ''
+  if (wantDay && !day) return "☀️ Daytime · this scene's day version isn't available, showing night"
+  return `${day ? '☀️ Daytime' : '🌙 Night'} · ${from ? `follows the sun in ${from}` : 'follows your clock'}`
 }
 
 // The lock screen's look (the screensaver keeps the plain one). In the Settings dialog, and alone on the lock
@@ -346,13 +353,14 @@ export function ScenePoster({ base, down, className = '', imgClass = '' }) {
 
 // The header's scene button (mini picture of the scene as shown + the Scene weather badge) and its popup: the scene
 // (opens the Gallery) and the Scene weather chips. Same dialog pattern as Settings; .scene-pop makes it a popover
-// under the button from sm, the bottom sheet below. scene = { id, base, down, want, mode, from } (see Home)
+// under the button from sm, the bottom sheet below. scene = { id, base, down, want, mode, from, wantDay, day } (see Home)
 export function ScenePicker({ set, update, scene, onGallery, className = '' }) {
   const btn = useRef(null)
   const dlg = useRef(null)
   const name = sceneName(scene.id ?? 'london')
   const wx = wxName(set.weather, scene.want)
   const hint = weatherHint(set, scene)
+  const dayLine = dayHint(scene)
   // the popover hangs under the button, right edges aligned; absolute in the top layer = page coordinates, so it
   // scrolls with the page
   const place = () => {
@@ -476,6 +484,11 @@ export function ScenePicker({ set, update, scene, onGallery, className = '' }) {
           {hint && (
             <p className="-mt-1 text-[11px] font-mono text-lofi-muted" aria-live="polite">
               {hint}
+            </p>
+          )}
+          {dayLine && (
+            <p className="-mt-2 text-[11px] font-mono text-lofi-muted" aria-live="polite">
+              {dayLine}
             </p>
           )}
         </div>
