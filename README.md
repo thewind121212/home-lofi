@@ -15,12 +15,11 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   | --- | --- | --- | --- |
   | **Hide** (I'm still here) | 👁 (bottom right) or **H** | scene + a mini bar (the music that plays: radio or Spotify, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
   | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
-  | **Lock** (I'm away, hands off) | 🔒 (bottom right), **L** or **Space ×3** quickly (the screensaver never locks) | scene + clock + weather + **swipe to unlock**, in its own look, + what's playing (Lock screen › Music) | **swiping** the knob across, or **holding Space** ~1 s (let go to stop); → five times |
+  | **Lock** (I'm away, hands off) | 🔒 (bottom right), **L** or **Space ×3** quickly (the screensaver never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s (let go to stop); ↑ five times |
 
-  The lock has its own look (Settings › Lock screen, or 🎨 on the lock screen); the screensaver keeps the plain one.
-  After 3 s without use the lock's controls fold smoothly into a small breathing *swipe to unlock* and what's playing
-  glides down into their place; bringing the pointer to the bottom, a click / tap anywhere or holding Space opens them
-  again (other keys, like Alt+Tab, don't). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake the screensaver either.
+  The lock has its own look (Settings › Lock screen, or 🎨 top right on the lock screen); the screensaver keeps the plain one.
+  🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere (other keys, like
+  Alt+Tab, don't wake it). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake the screensaver either.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
@@ -71,7 +70,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back; it never locks |
-| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above the unlock slider: radio play / pause for anyone, Spotify ⏯ ⏭ for the owner; Dim fades it with the controls when idle) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 next to the unlock pill): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
+| Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, Spotify ⏯ ⏭ for the owner; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
 

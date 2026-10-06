@@ -399,11 +399,12 @@ export default function Home() {
           <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
         </div>
       )}
-      {softLock ? <ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} /> : idle && <ClockScreen now={now} clock={set.clock} look={saverLook(set)} />}
-      {softLock && (
-        <LockControls onUnlock={unlock} set={set} update={update}>
+      {softLock ? (
+        <LockScreen onUnlock={unlock} set={set} update={update} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />}>
           {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
-        </LockControls>
+        </LockScreen>
+      ) : (
+        idle && <ClockScreen now={now} clock={set.clock} look={saverLook(set)} />
       )}
       {idle && !softLock && <WakeHint />}
       {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
@@ -515,194 +516,196 @@ function WakeHint() {
   )
 }
 
-// The lock screen's controls, bottom center: what's playing (Lock screen › Music: bright, or dim = fades when the controls
-// rest), then 🎨 (the lock screen's look: the only settings that change while locked) and the swipe to unlock.
-// After 3 s without use they fold, smoothly, into a small breathing "swipe to unlock" and the music glides down into
-// their place. The pointer coming to this area, a click / tap anywhere or holding Space opens them again; other keys
-// (Alt+Tab to another window) and moving the mouse elsewhere don't.
+// The lock screen: the clock layer, what's playing (Lock screen › Music: bright, or dim = fades when nobody's there) and a
+// breathing "swipe to unlock" at the bottom, 🎨 (its look: the only settings that change while locked) top right.
+// Unlock: swipe up anywhere (mouse or finger): the screen follows, and far enough (or a quick flick) it slides away;
+// a short swipe springs back, so a bump, a cat or a stray key can't unlock. Or hold Space ~1 s (letting go springs back),
+// or ↑ five times. 🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere; other
+// keys (Alt+Tab to another window) and moving the mouse elsewhere don't wake anything.
 const REST_MS = 3000
-function LockControls({ onUnlock, set, update, children }) {
-  const [open, setOpen] = useState(true)
+const SPACE_MS = 1000
+function LockScreen({ onUnlock, set, update, screen, children }) {
+  const [dy, setDy] = useState(0) // how far the screen is pushed up, px
+  const [held, setHeld] = useState(false) // a finger / the mouse or Space is moving it: no spring transition
+  const [leaving, setLeaving] = useState(false)
+  const [awake, setAwake] = useState(true) // a recent click / tap
+  const [over, setOver] = useState({ corner: false, music: false }) // the pointer is there
   const [look, setLook] = useState(false)
-  const inside = useRef(false) // the pointer is over this area
   const timer = useRef(null)
+  const press = useRef(null) // the pointer that went down: { id, y, last: [y, t], moved }
+  const raf = useRef(0)
+  const dyRef = useRef(0)
+  dyRef.current = dy
+  const goal = () => Math.min(260, innerHeight * 0.3) // pushed this far, it unlocks
   const rest = () => {
     clearTimeout(timer.current)
-    timer.current = setTimeout(() => !inside.current && setOpen(false), REST_MS)
+    timer.current = setTimeout(() => setAwake(false), REST_MS)
+  }
+  const leave = () => {
+    if (motionOff()) return onUnlock()
+    setLeaving(true)
+    setHeld(false)
+    setDy(innerHeight)
+    setTimeout(onUnlock, 320)
   }
   useEffect(() => {
     rest()
-    // a click / tap anywhere on the lock screen shows them (keys don't: Alt+Tab to another window)
-    const onDown = () => (setOpen(true), rest())
-    addEventListener('pointerdown', onDown, true)
-    return () => {
-      clearTimeout(timer.current)
-      removeEventListener('pointerdown', onDown, true)
-    }
-  }, [])
-  useEffect(() => (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps them open
-  // holding Space slides the knob: open while it's held, rest again after
-  const engage = (on) => (on ? (setOpen(true), clearTimeout(timer.current)) : rest())
-  const shown = open || look
-  // a row that folds to nothing by animating its height (grid rows 1fr <-> 0fr), so what's above glides
-  const fold = (on) => `grid transition-[grid-template-rows,opacity] duration-500 ease-out ${on ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`
-  return (
-    <div
-      onPointerEnter={() => ((inside.current = true), setOpen(true), clearTimeout(timer.current))}
-      onPointerLeave={() => ((inside.current = false), rest())}
-      className="fixed z-30 inset-x-0 bottom-0 pt-10 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4"
-    >
-      {look && (
-        <section
-          aria-label="Lock screen look"
-          onKeyDown={(e) => e.key === 'Escape' && setLook(false)}
-          className="glass-panel rounded-3xl p-5 mb-3 w-full max-w-md text-lofi-text motion-safe:animate-[panel-in_0.3s_cubic-bezier(0.2,0.8,0.2,1)]"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-white flex items-center gap-2">
-              <i className="fa-solid fa-palette text-lofi-primary text-xs" aria-hidden="true" /> Lock screen
-            </h2>
-            <button
-              onClick={() => setLook(false)}
-              aria-label="Close"
-              className="w-7 h-7 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
-            >
-              <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
-            </button>
-          </div>
-          <LockLook id="lock" set={set} update={update} />
-        </section>
-      )}
-      {!look && children && (
-        <div className={`mb-3 transition-opacity duration-700 ${set.lockMusic === 'dim' && !shown ? 'opacity-30' : 'opacity-100'}`}>{children}</div>
-      )}
-      <div className={fold(shown)} inert={!shown}>
-        <div className="overflow-hidden">
-          <div className="flex items-center gap-2 p-1">
-            <button
-              onClick={() => setLook((v) => !v)}
-              aria-label="Lock screen look"
-              aria-expanded={look}
-              title="Lock screen look"
-              className={`glass-panel w-14 h-14 shrink-0 rounded-full flex items-center justify-center transition-colors ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'}`}
-            >
-              <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
-            </button>
-            <SwipeUnlock onUnlock={onUnlock} onEngage={engage} />
-          </div>
-        </div>
-      </div>
-      {/* resting: just a breathing hint; clicking / tapping it (or Enter on it) opens the controls */}
-      <div className={fold(!shown)} inert={shown}>
-        <div className="overflow-hidden">
-          <button
-            onClick={() => setOpen(true)}
-            aria-label="Show unlock"
-            className="h-8 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
-          >
-            <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
-            swipe to unlock
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Swipe to unlock: drag the knob to the end, or hold Space (~1 s: the knob slides across; letting go stops it and it
-// springs back), or → five times. A short drag springs back, so a bump, a cat or a stray key can't unlock.
-// Idle, the text breathes with a soft light sweep; hovered, it lights up and the arrow nudges.
-const KNOB = 48
-const SPACE_MS = 1000
-function SwipeUnlock({ onUnlock, onEngage }) {
-  const track = useRef(null)
-  const knob = useRef(null)
-  const from = useRef(0)
-  const [x, setX] = useState(0) // the knob's offset, px
-  const [drag, setDrag] = useState(false)
-  const [hover, setHover] = useState(false)
-  const [auto, setAuto] = useState(false) // Space is sliding it
-  const raf = useRef(0)
-  const max = () => (track.current ? track.current.clientWidth - KNOB - 8 : 200)
-  const settle = (v) => (v >= max() * 0.9 ? (setX(max()), onUnlock()) : setX(0)) // far enough unlocks, else springs back
-  useEffect(() => {
-    const stop = () => {
-      cancelAnimationFrame(raf.current)
-      raf.current = 0
-      setAuto(false)
-    }
-    const down = (e) => {
-      if (e.code !== 'Space') return
-      e.preventDefault() // no page scroll, no click on a focused button
-      if (e.repeat || raf.current) return
-      onEngage?.(true)
-      setAuto(true)
-      const t0 = performance.now()
-      const step = (t) => {
-        const v = Math.min(1, (t - t0) / SPACE_MS) * max()
-        setX(v)
-        if (v >= max()) return stop(), onUnlock()
+    const onDown = () => (setAwake(true), rest()) // a click / tap anywhere wakes it (keys don't: Alt+Tab)
+    const stop = () => (cancelAnimationFrame(raf.current), (raf.current = 0), setHeld(false))
+    const keyDown = (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault() // no page scroll, no press on a focused button
+        if (e.repeat || raf.current) return
+        setAwake(true)
+        setHeld(true)
+        const t0 = performance.now()
+        const step = (t) => {
+          const v = Math.min(1, (t - t0) / SPACE_MS) * goal()
+          setDy(v)
+          if (v >= goal()) return stop(), leave()
+          raf.current = requestAnimationFrame(step)
+        }
         raf.current = requestAnimationFrame(step)
+      } else if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.target.closest?.('[data-noswipe]')) {
+        e.preventDefault()
+        const v = Math.max(0, dyRef.current + (e.key === 'ArrowUp' ? 1 : -1) * (goal() / 5))
+        v >= goal() - 1 ? leave() : setDy(v)
       }
-      raf.current = requestAnimationFrame(step)
     }
-    const up = (e) => {
+    const keyUp = (e) => {
       if (e.code !== 'Space' || !raf.current) return
       e.preventDefault()
       stop()
-      setX(0) // let go early: springs back
-      onEngage?.(false)
+      setDy(0) // let go early: springs back
+      rest()
     }
-    addEventListener('keydown', down, true)
-    addEventListener('keyup', up, true)
+    addEventListener('pointerdown', onDown, true)
+    addEventListener('keydown', keyDown, true)
+    addEventListener('keyup', keyUp, true)
     return () => {
+      clearTimeout(timer.current)
       cancelAnimationFrame(raf.current)
-      removeEventListener('keydown', down, true)
-      removeEventListener('keyup', up, true)
+      removeEventListener('pointerdown', onDown, true)
+      removeEventListener('keydown', keyDown, true)
+      removeEventListener('keyup', keyUp, true)
     }
   }, [])
-  const move = (e) => drag && setX(Math.min(max(), Math.max(0, e.clientX - from.current)))
-  const key = (e) => {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
-    e.preventDefault()
-    const v = Math.min(max(), Math.max(0, x + (e.key === 'ArrowRight' ? 1 : -1) * (max() / 5)))
-    v >= max() ? settle(v) : setX(v)
+  useEffect(() => (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps 🎨 there
+
+  // swipe: only upward moves count; past 8 px it's a swipe (so a tap still presses a button)
+  const down = (e) => {
+    if (leaving || (e.pointerType === 'mouse' && e.button !== 0) || e.target.closest('[data-noswipe]')) return
+    press.current = { id: e.pointerId, y: e.clientY, last: [e.clientY, e.timeStamp], v: 0, moved: false }
   }
-  const p = x / max()
+  const move = (e) => {
+    const p = press.current
+    if (!p || p.id !== e.pointerId) return
+    const d = p.y - e.clientY
+    if (!p.moved) {
+      if (d < 8) return
+      p.moved = true
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+      setHeld(true)
+    }
+    const dt = e.timeStamp - p.last[1]
+    if (dt > 0) p.v = (p.last[0] - e.clientY) / dt // px / ms, upward
+    p.last = [e.clientY, e.timeStamp]
+    setDy(Math.max(0, d))
+  }
+  const up = (e) => {
+    const p = press.current
+    if (!p || p.id !== e.pointerId) return
+    press.current = null
+    if (!p.moved) return
+    setHeld(false)
+    const flick = p.v > 0.4 && e.timeStamp - p.last[1] < 120 && dyRef.current > 40
+    dyRef.current >= goal() || flick ? leave() : setDy(0)
+  }
+  const cancel = () => press.current && ((press.current = null), setHeld(false), setDy(0))
+  // the hint, clicked: a little lift to show which way
+  const nudge = () => {
+    if (motionOff() || dyRef.current) return
+    setDy(36)
+    setTimeout(() => setDy((v) => (v === 36 ? 0 : v)), 220)
+  }
+
+  const hover = (k, on) => (setOver((o) => ({ ...o, [k]: on })), on ? setAwake(true) : rest())
+  const tools = awake || over.corner || look
+  const dim = set.lockMusic === 'dim' && !awake && !over.music && !dy
+  const p = Math.min(1, dy / goal())
   return (
     <div
-      ref={track}
-      onPointerEnter={() => setHover(true)}
-      onPointerLeave={() => setHover(false)}
-      className="glass-panel relative w-72 max-w-[calc(100vw-6.5rem)] h-14 rounded-full select-none touch-none [-webkit-touch-callout:none]"
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={cancel}
+      className="fixed inset-0 z-30 select-none touch-none [-webkit-touch-callout:none]"
+      style={{
+        transform: `translateY(${-dy}px)`,
+        opacity: leaving ? 0 : 1 - p * 0.5,
+        transition: held ? 'none' : 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease-out',
+      }}
     >
-      <span
-        className={`absolute inset-0 pl-12 flex items-center justify-center font-mono text-sm tracking-wide pointer-events-none transition-colors ${hover || drag || auto ? 'text-white' : 'unlock-shimmer'}`}
-        style={{ opacity: Math.max(0, 1 - p * 1.6) }}
-        aria-hidden="true"
+      {screen}
+      {/* 🎨 top right: comes with the pointer in the corner or a click / tap; its panel opens below it */}
+      <div
+        onPointerEnter={() => hover('corner', true)}
+        onPointerLeave={() => hover('corner', false)}
+        className="absolute z-10 top-0 right-0 pl-20 pb-20 pt-[max(1rem,env(safe-area-inset-top))] pr-4 sm:pt-6 sm:pr-6"
       >
-        swipe to unlock
-      </span>
-      <span
-        ref={knob}
-        role="slider"
-        tabIndex={0}
-        aria-label="Swipe to unlock"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(p * 100)}
-        aria-valuetext={p > 0 ? `${Math.round(p * 100)}%` : 'locked, hold Space or press right arrow to slide'}
-        onPointerDown={(e) => (e.currentTarget.setPointerCapture?.(e.pointerId), (from.current = e.clientX - x), setDrag(true))}
-        onPointerMove={move}
-        onPointerUp={() => drag && (setDrag(false), settle(x))}
-        onPointerCancel={() => (setDrag(false), setX(0))}
-        onKeyDown={key}
-        onContextMenu={(e) => e.preventDefault()} // long-press on phones: no menu
-        className={`absolute top-1 left-1 w-12 h-12 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center cursor-grab active:cursor-grabbing shadow-[0_0_18px_color-mix(in_oklab,var(--color-lofi-primary)_45%,transparent)] ${drag || auto ? '' : 'transition-transform duration-300 ease-out'}`}
-        style={{ transform: `translateX(${x}px)` }}
-      >
-        <i className={`fa-solid ${p > 0.9 ? 'fa-lock-open' : 'fa-arrow-right'} ${hover && !drag && p === 0 ? 'motion-safe:animate-nudge' : ''}`} aria-hidden="true" />
-      </span>
+        <button
+          onClick={() => setLook((v) => !v)}
+          aria-label="Lock screen look"
+          aria-expanded={look}
+          title="Lock screen look"
+          className={`glass-panel w-12 h-12 rounded-full flex items-center justify-center transition-[opacity,translate,color] duration-500 ${look ? 'text-lofi-primary' : 'text-lofi-text hover:text-lofi-primary'} ${tools ? 'opacity-100' : 'opacity-0 -translate-y-2 pointer-events-none'}`}
+        >
+          <i className="fa-solid fa-palette text-sm" aria-hidden="true" />
+        </button>
+        {look && (
+          <section
+            data-noswipe
+            aria-label="Lock screen look"
+            onKeyDown={(e) => e.key === 'Escape' && setLook(false)}
+            className="glass-panel absolute right-4 sm:right-6 top-full -mt-14 rounded-3xl p-5 w-[min(28rem,calc(100vw-2rem))] max-h-[calc(100dvh-8rem)] overflow-y-auto overscroll-contain touch-auto select-text text-lofi-text motion-safe:animate-[panel-in_0.3s_cubic-bezier(0.2,0.8,0.2,1)]"
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-sm font-medium text-white flex items-center gap-2">
+                <i className="fa-solid fa-palette text-lofi-primary text-xs" aria-hidden="true" /> Lock screen
+              </h2>
+              <button
+                onClick={() => setLook(false)}
+                aria-label="Close"
+                className="w-7 h-7 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+              >
+                <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
+              </button>
+            </div>
+            <LockLook id="lock" set={set} update={update} />
+          </section>
+        )}
+      </div>
+      {/* bottom center: what's playing, then the breathing hint */}
+      <div className="absolute inset-x-0 bottom-0 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4">
+        {children && (
+          <div
+            onPointerEnter={() => hover('music', true)}
+            onPointerLeave={() => hover('music', false)}
+            className={`mb-3 transition-opacity duration-700 ${dim ? 'opacity-30' : 'opacity-100'}`}
+          >
+            {children}
+          </div>
+        )}
+        <button
+          onClick={nudge}
+          aria-label="Swipe up to unlock (or hold Space, or press the up arrow five times)"
+          className="h-8 px-4 flex items-center gap-2 font-mono text-xs tracking-[0.2em] text-white/80 motion-safe:animate-breathe"
+          style={{ opacity: 1 - p }}
+        >
+          <i className="fa-solid fa-chevron-up text-[10px]" aria-hidden="true" />
+          swipe to unlock
+        </button>
+      </div>
     </div>
   )
 }
