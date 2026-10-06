@@ -24,12 +24,21 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
-  - **Radio**: 10 chill live stations (lofi, café jazz, piano, classical, strings, Japanese city pop, Ghibli piano, bossa
-    nova, synthwave, deep sleep), audio only through a hidden YouTube IFrame player. ◀ ▶ switch stations without
-    stopping, the name opens the full list, and the last pick is remembered. It only starts when you click, and has volume control.
-    No video IDs in the code: `lib/stations.js` names each station's channel and a title word, and `/api/stations`
-    finds the current live stream with [youtubei.js](https://github.com/LuanRT/YouTube.js) (no API key), cached for 1 hour.
-    So a stream that ends and restarts under a new ID is picked up by itself.
+  - **Radio** (`app/radio.js`): 30 chill stations in 7 moods (focus, chill, jazz & café, piano & classical, Asia,
+    synth & retro, sleep & ambient), with the station's cover, what's on (the live stream's title, or the song on an
+    internet radio) and how many are listening. ⏮ ⏭, a one-tap strip of every station, and the name opens the full list
+    (filter by mood, or 📱 *Screen off*). Volume slider with mute (remembered; iOS only takes the hardware buttons), a 🌙
+    sleep timer (15–90 min, fades out) and 🔗 share (`/?station=<id>` opens with that station and a pulsing ▶).
+    Play / pause / switching fade (crossfade between the two kinds); a station that won't start or dies is skipped
+    with a note. Media keys, headphones and the phone's lock screen control it (Media Session, with the cover).
+    Two kinds of station (`lib/stations.js`):
+    - **YouTube** (22): 24/7 live streams, audio only through a hidden IFrame player. No video IDs in the code: each
+      station names a channel and a title word, and `/api/radio` finds the current live stream with
+      [youtubei.js](https://github.com/LuanRT/YouTube.js) (no API key), cached for 1 hour, so a restarted stream is
+      picked up by itself. They stop when a phone locks, and are skipped if YouTube is blocked (ad blockers).
+    - **📱 Internet radio** (8): the station's own audio stream in an `<audio>` element, so it **keeps playing with a
+      phone's screen off**. `/api/radio/now` reads the song from the station's now-playing API, or from the stream's
+      ICY tag (`lib/radio-now.js`, cached 20 s).
   - **Spotify**: what you're listening to (a still cover tinting the card, track, artists, a live progress bar) and a
     small **Up next** (click a song: a popup with its cover and *Open in Spotify*), or an empty frame when nothing plays.
     Public; signed in as the owner you also get ⏮ ⏯ ⏭ (Spotify Premium), or *Sign in to control* in a browser where you
