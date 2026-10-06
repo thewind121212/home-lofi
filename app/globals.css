@@ -339,3 +339,31 @@ html[data-fade]:not([data-motion='reduce']) {
   animation: none !important;
   transition: none !important;
 }
+
+/* radio: the station strip scrolls sideways without a bar */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* radio: the volume slider, a thin track filled up to the value (--v) with a round knob */
+.radio-volume {
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--color-lofi-primary) var(--v), rgb(255 255 255 / 0.15) var(--v));
+  cursor: pointer;
+}
+.radio-volume::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-lofi-primary) 35%, transparent);
+}
+.radio-volume::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 9999px;
+  background: #fff;
+}

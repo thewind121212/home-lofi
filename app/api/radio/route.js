@@ -1,6 +1,6 @@
 import { stationStreams } from '../../../lib/youtube'
 
-// { stationId: videoId | null }: each radio station's live stream right now (lib/youtube.js, refreshed hourly)
+// { stationId: { v, title, watching } | null }: each YouTube station's live stream right now (lib/youtube.js, hourly)
 export async function GET() {
   try {
     return Response.json(await stationStreams(), { headers: { 'cache-control': 'public, max-age=600' } })
