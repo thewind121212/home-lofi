@@ -3,7 +3,8 @@ import { ACTIONS, failure, forget, isAction, READS, tavarianOn } from '../../../
 import { hub } from '../../../../../lib/tavarian-hub'
 
 // The owner's Player controls: POST { action, ...args } (see ACTIONS in lib/tavarian.js) -> { song | queue | state |
-// results | playlists | songs | added + skipped (+ source, found, truncated for an import) | token | revoked }, or
+// results | playlists | songs | added + skipped (+ source, found, truncated for an import) | removed + skipped + queue
+// (remove-bulk, clear) | token | revoked }, or
 // { error, code }. An import can take up to 2 minutes (lib/tavarian.js IMPORT_TIMEOUT); everything else 5 s.
 // Lives in the owner-only zone (lib/gate.js ownerOf): the proxy's /api/private/settings location covers this path too.
 const HEADERS = { 'cache-control': 'no-store, private' }
