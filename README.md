@@ -52,25 +52,36 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   - **Player** (`app/player.js`): the home page's own station inside Tavarian (see [Tavarian player](#tavarian-player)),
     live for every visitor: the song's cover tinting the card, its title, a progress bar on Tavarian's clock, plain states
     (Playing · Paused on Tavarian · Loading next song · Queue is empty · Stopped · Tavarian unreachable · Disconnected —
-    new link needed / Player unavailable · Player not set up), **Up next** (the first two) and the last played; *Queue ›*
-    opens the whole list. **Listen** plays the station in this tab, at the radio's volume (the same slider and mute);
-    starting the radio stops it and Listen pauses the radio, so only one of them makes sound. Media keys and the
-    phone's lock screen show the song (play / pause = listen / stop). As with the YouTube stations, iOS stops it when the
-    phone locks.
-    Signed in as the owner you also get ⏸ / ▶ and ⏭ (for everyone listening; they spin until the station confirms), a
-    seekable progress bar and **＋ Add** (labeled on phones, where it takes the volume slider's room; a round ＋ from
-    `sm` up). Add opens a sheet (a bottom sheet on phones) with two tabs: **Search or link**, one box for both (2+
+    new link needed / Player unavailable · Player not set up; a long title takes two lines), **Up next** (the first two)
+    and the last played; *Queue ›* opens the whole list. **One round ▶ / ⏸ button**: for a visitor it listens to the
+    station in this tab (at the radio's volume: the same slider and mute) or stops; starting the radio stops it and
+    listening pauses the radio, so only one of them makes sound. Tuning in spins in the same button (on phones the line
+    under the player is just a spinner too). Media keys and the phone's lock screen show the song and follow the same
+    button. As with the YouTube stations, iOS stops it when the phone locks.
+    Signed in as the owner the row is ⏮ · ▶ / ⏸ · ⏭ · volume · ＋: ▶ listens here and also resumes a paused station or
+    plays a stopped queue (one tap), ⏸ pauses it for everyone and stops listening here (like a Spotify Connect pause);
+    while the station plays and this tab doesn't listen, ▶ just listens here. ⏮ / ⏭ are for everyone (they spin until
+    the station confirms). Also a seekable progress bar and **＋ Add** (labeled on phones, where it takes the volume
+    slider's room; a round ＋ from `sm` up). Add opens a sheet (the same `<dialog>` as Settings: a bottom sheet on phones,
+    centered from `sm`, animated in and out, ✕ / Esc / a tap outside closes it; only its lists scroll, never the page
+    behind it) with two tabs: **Search or link**, one box for both (2+
     letters searches YouTube, each result: *Now* · *Next* · *Add*; a pasted YouTube video gets Play now / Play next /
     Add to end, a link with `list=` offers *this video* or *the whole playlist*, a playlist or Spotify link offers the
     import) and **Import playlist** (a YouTube playlist, or a Spotify playlist /
     album / track: Add to end / Play next / Play now; "Importing… this can take a while", then N added, M skipped with
-    the reasons, and "first 100 only" when Tavarian cut it). In the queue every song has *Now*, *Next* and remove, and a
+    the reasons, and "first 100 only" when Tavarian cut it). Song titles in the sheet take up to two lines (the whole
+    title on hover, or behind a small ⌄ on the row). In the queue every song has *Now*, *Next* and remove, and a
     handle ⋮⋮ to reorder: drag it with the mouse (a line shows where it lands), on a phone hold it ~0.4 s (a small buzz)
-    then drag (a plain swipe still scrolls); ↑ / ↓ on the focused handle move it too. After ⏭ or *Now* the line under
+    then drag (a plain swipe still scrolls); ↑ / ↓ on the focused handle move it too. **Select** puts a box on every row
+    (tap the row or the box; Select all / None and the count) and a bar at the bottom with **Remove selected (N)**, one
+    call to Tavarian; **Clear queue** asks first like Reset all (Cancel focused, *Yes, clear* wakes after a moment, the
+    question gives up after 8 s) and can also stop the current song. After ⏭ or *Now* the line under
     the player says what happens (*Skipped A · loading B…*, then *Playing B*). The station plays in several places at
     once, so mistakes can be undone: **Undo** for 5 s after Play now / ⏭ (A comes back at the second it was at, B back
-    in its place), remove (back in its place), a move, Play next, Add and an import (its songs go again, paced when
-    Tavarian says "too fast"). Each button locks while its request is in flight; a refusal is a plain message (already
+    in its place), remove (back in its place), Remove selected (the songs come back in their places, added one by one:
+    over 15 it says "Undo would take a while" and still offers it, with the seconds left), a move, Play next, Add and an
+    import (its songs go again in one call, paced one by one on an older Tavarian when it says "too fast"). Clear queue
+    has no Undo: its question is the guard. Each button locks while its request is in flight; a refusal is a plain message (already
     queued, already played, too long, live stream, not allowed outside YouTube, no YouTube match…) and changes nothing.
     Also **Playlists** (your Tavarian playlists: queue one song or all) and *Tavarian link: name · expires · Revoke link*
     (asks first, like Reset all).
@@ -109,7 +120,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Clock | 24h / 12h (header and screensaver / lock clock) |
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
-| Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back; it never locks |
+| Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back (the tap that wakes it never opens a card: its click is swallowed, and the panels ignore the pointer for 0.4 s after they come back from the screensaver, the lock or Hide); it never locks |
 | Mini window | Weather Show / Hide · Date Show / Hide (under the ⧉ mini window's clock; changes show in an open one right away) |
 | Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, the Player's listen / stop for anyone and ⏭ for the owner, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
@@ -314,7 +325,7 @@ Routes:
 | `GET /api/tavarian/events` | public | Server-Sent Events: `status`, `state`, `queue`, `audio-ready`, `song-error`, `revoked`; status, state and queue right away, `: ping` every 20 s. 4 open per IP (429), 503 `tavarian_off` when not set up |
 | `GET /api/tavarian/state` | public | `{ state, queue, live }` for the first paint and as the fallback when the stream can't stay open |
 | `POST /api/tavarian/ticket` | public, same-origin JSON | `{ clientId }` → `{ ticket, expiresAt, streamUrl }`; audio: `streamUrl?streamId=…&clientId=…&ticket=…`. 10 a minute per IP |
-| `POST /api/private/settings/tavarian` | owner | `{ action, … }`: `add` (`youtubeUrl`, `placement`: `end` / `next` / `now`), `import` (`url`, `placement`), `play-now` / `next` (`id`), `remove`, `reorder`, `search`, `play` / `pause` / `resume` / `skip` / `stop`, `seek`, `playlists`, `playlist-songs`, `from-playlist`, `token`, `revoke` |
+| `POST /api/private/settings/tavarian` | owner | `{ action, … }`: `add` (`youtubeUrl`, `placement`: `end` / `next` / `now`), `import` (`url`, `placement`), `play-now` / `next` (`id`), `remove`, `remove-bulk` (`ids`: 1-200 song ids → `removed`, `skipped`, `queue`), `clear` (`includeCurrent`), `reorder`, `search`, `play` / `pause` / `resume` / `skip` / `stop`, `seek`, `playlists`, `playlist-songs`, `from-playlist`, `token`, `revoke` |
 
 The owner route sits in the owner-only proxy location of [Settings sync](#settings-sync-owner-only), like Spotify's
 controls. Every call to Tavarian gives up after 5 s, except `import` (a playlist can take tens of seconds): 2 minutes,

@@ -7,19 +7,20 @@
 //   while listening) and plays Tavarian's audio straight from Tavarian; a new streamId (song change, seek, resume)
 //   swaps the source; paused / idle / loading on Tavarian lets the element go, and it comes back by itself when the
 //   station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
-// - PlayerPanel (the tab), PlayerSheet (queue, recent, and for the owner: Add — Search or link · Import playlist —,
-//   playlists, the Tavarian link) and PlayerMini (Hide bar and lock screen). Guests listen and watch; the owner's
+// - PlayerPanel (the tab), PlayerSheet (a <dialog> like Settings: queue, recent, and for the owner: Add — Search or
+//   link · Import playlist —, playlists, the Tavarian link) and PlayerMini (Hide bar and lock screen). Guests listen and watch; the owner's
 //   buttons post to /api/private/settings/tavarian, lock while it's in flight and spin until a state shows the change.
-// - useOwnerOps(): the owner's queue actions (Play now / next, remove, drag reorder, add, import) with Undo for 5 s
+// - useOwnerOps(): the owner's queue actions (Play now / next, remove, remove selected, clear, drag reorder, add,
+//   import) with Undo for 5 s
 //   and the "Skipped A · loading B…" line; useDragReorder(): the queue's drag handles (mouse, or hold on a phone).
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  audioUrl, classifyLink, clockOffset, confirms, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, placedText, placementIcon, placementLabel, plain,
-  playlistUrl, positionAt, reasonText, sourceLabel, renewIn, restoreOrder, sameOrder, songErrorText, statusInfo, thumbOf, ticketOk, transitionLine, undoPlan, videoUrl,
+  allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
+  placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, slowUndo, songErrorText, sourceLabel, statusInfo,
+  thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
-import { motionOff } from './settings'
+import { closeDialog, motionOff } from './settings'
 
 const POLL_MS = 5000 // fallback polling of /api/tavarian/state
 const SSE_RETRY_MS = 30_000 // while polling, try the event stream again this often
@@ -196,7 +197,8 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   live.current = { tv, owner, onListen }
   const fn = useRef({})
   // the Media Session handlers while this tab listens (claimed from the radio in listen())
-  const media = useRef({ play: () => fn.current.listen(), pause: () => fn.current.stop(), stop: () => fn.current.stop() }).current
+  // (play / pause follow the one button's rule: for the owner they also resume / pause the station)
+  const media = useRef({ play: () => m.want || fn.current.press(), pause: () => m.want && fn.current.press(), stop: () => fn.current.stop() }).current
 
   const apply = () => {
     if (audio.current) audio.current.volume = m.fixed ? 1 : Math.max(0, Math.min(1, (m.level / 100) * m.gain))
@@ -328,7 +330,18 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     setPhase('off')
     halt()
   }
-  fn.current = { sync, retry, stop, listen }
+  // the one play / pause button (lib/player.js mainAction): listen / stop here, and for the owner also resume / play /
+  // pause the station. listen() runs first, inside the tap (iOS). act(action): the owner's call (the card passes its
+  // spinning one); -> the kind it did
+  function press(act) {
+    const { tv, owner } = live.current
+    const a = mainAction({ owner, listening: m.want, status: tv.state?.status, queued: tv.queue?.items?.length ?? 0 })
+    if (a.kind === 'stop' || a.kind === 'pause') stop()
+    else listen()
+    if (owner && a.posts) (act ?? ((k) => tavarianPost({ action: k }).then((r) => r.ok && live.current.tv.takeState(r.data.state))))(a.kind)
+    return a.kind
+  }
+  fn.current = { sync, retry, stop, listen, press }
 
   useEffect(() => {
     m.id = newClientId()
@@ -439,7 +452,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     fixedVolume,
     listen,
     stop,
-    toggle: () => (m.want ? stop() : listen()),
+    press, // the one play / pause button
     // the radio's volume and mute (0-100, 0 = muted), for this element too
     setVolume: (v) => ((m.level = v), apply()),
   }
@@ -601,6 +614,36 @@ export function useOwnerOps(p) {
       offer(`Removed ${plain(song.title)}`, { kind: 'remove', song, index })
       return true
     })
+  // Select mode's Remove selected: one call (one write on Tavarian); Undo adds them back and puts the order back
+  // (paced: more than a few songs take a while, and the line says so)
+  const removeMany = (songs) =>
+    run('remove-bulk', async () => {
+      const before = ids()
+      songs = songs.filter((s) => before.includes(s.id)) // (one that plays by now stays: remove-bulk would stop it)
+      if (!songs.length) return say('Those songs had already gone', true), false
+      const r = await post({ action: 'remove-bulk', ids: songs.map((s) => s.id) })
+      if (!r.ok) return fail(r)
+      takeQueue(r)
+      const skipped = new Set(r.data.skipped ?? [])
+      const gone = songs.filter((s) => !skipped.has(s.id))
+      const n = gone.length
+      if (!n) return say('Those songs had already gone', true), false
+      const plan = undoPlan({ kind: 'bulk', songs: gone, ids: before })
+      const slow = slowUndo(plan)
+      setToast({ text: `Removed ${n} song${n === 1 ? '' : 's'}${slow ? ' · Undo would take a while' : ''}`, plan, until: Date.now() + UNDO_MS })
+      return true
+    })
+  // Clear queue (after the two-step question): every queued song; also what plays, when asked. No Undo
+  const clear = (includeCurrent) =>
+    run('clear', async () => {
+      const r = await post({ action: 'clear', ...(includeCurrent && { includeCurrent: true }) })
+      if (!r.ok) return fail(r)
+      takeQueue(r)
+      if (includeCurrent) live.current.refresh()
+      const n = r.data.removed ?? 0
+      say(n ? `Cleared the queue: ${n} song${n === 1 ? '' : 's'} removed${includeCurrent ? ', stopped' : ''}` : 'The queue was already empty')
+      return true
+    })
   // a new order (drag and drop, or the handle's arrow keys); shown at once, put back if Tavarian refuses
   const reorder = (order, song, to) =>
     run('reorder', async () => {
@@ -651,6 +694,40 @@ export function useOwnerOps(p) {
     if (placement === 'now') setTrans({ from: snap.from, at: Date.now() })
     offer(`Added ${summary.added} song${summary.added === 1 ? '' : 's'}${summary.skipped ? ` · skipped ${summary.skipped}` : ''}`, { kind: 'added', ids: added, placement, ...snap })
     return true
+  }
+
+  // Many calls for one Undo (an import's songs, the songs of a Remove selected): two at a time; a refusal in `fine` is
+  // all right (it already went / is already there). Tavarian limits how fast a token may call: on "too fast" wait as
+  // long as it says, then go on (the line shows how far it got: "Undoing… 12 of 40 added back")
+  async function paced(items, call, { verb, fine = [] }) {
+    const left = [...items]
+    const total = left.length
+    let done = 0
+    let bad = null
+    let pause = null
+    const worker = async () => {
+      while (left.length && !bad) {
+        if (pause) await pause
+        if (bad || !left.length) break
+        const item = left.shift()
+        const q = await call(item)
+        if (q.status === 429) {
+          left.unshift(item)
+          const s = Math.min(90, q.retryAfter || 30)
+          pause ??= new Promise((r) => {
+            setProgress({ verb, done, total, until: Date.now() + s * 1000 })
+            setTimeout(() => ((pause = null), setProgress({ verb, done, total }), r()), s * 1000)
+          })
+          continue
+        }
+        if (!q.ok && !fine.includes(q.code)) bad = q
+        done++
+        if (total > 4) setProgress((g) => ({ verb, done, total, until: g?.until > Date.now() ? g.until : 0 }))
+      }
+    }
+    await Promise.all([worker(), worker()])
+    setProgress(null)
+    return bad ?? { ok: true }
   }
 
   // ---- Undo: the plan's steps, in order; the first refusal stops it with a plain message ----
@@ -705,36 +782,43 @@ export function useOwnerOps(p) {
       return q
     }
     if (st.do === 'remove') {
-      // two at a time (an import can be 100); one that already played or went is fine. Tavarian limits how fast a
-      // token may call: on "too fast" wait as long as it says, then go on (the line shows how far it got)
-      const left = [...st.ids]
-      const total = left.length
-      let done = 0
-      let bad = null
-      let pause = null
-      const worker = async () => {
-        while (left.length && !bad) {
-          if (pause) await pause
-          const id = left.shift()
-          const q = await post({ action: 'remove', id })
-          if (q.status === 429) {
-            left.unshift(id)
-            const s = Math.min(90, q.retryAfter || 30)
-            pause ??= new Promise((r) => {
-              setProgress({ done, total, until: Date.now() + s * 1000 })
-              setTimeout(() => ((pause = null), setProgress({ done, total }), r()), s * 1000)
-            })
-            continue
-          }
-          if (q.ok) takeQueue(q)
-          else if (q.code !== 'not_found' && q.code !== 'not_queued') bad = q
-          done++
-          if (total > 4) setProgress((g) => ({ done, total, until: g?.until > Date.now() ? g.until : 0 }))
-        }
+      // one call when Tavarian has remove-bulk (an import's 100 songs: one write); an older one: one by one, paced
+      // (only what's still queued: remove-bulk would also stop one of them that plays by now, a single remove doesn't)
+      const queued = new Set(ids())
+      let rest = st.ids.filter((id) => queued.has(id))
+      if (!rest.length) return { ok: true }
+      if (rest.length > 1) {
+        const r = await post({ action: 'remove-bulk', ids: rest.slice(0, 200) })
+        if (r.ok) takeQueue(r), (rest = rest.slice(200))
+        else if (r.code !== 'http_404') return r
+        if (!rest.length) return { ok: true }
       }
-      await Promise.all([worker(), worker()])
-      setProgress(null)
-      return bad ?? { ok: true }
+      return paced(rest, async (id) => {
+        const q = await post({ action: 'remove', id })
+        if (q.ok) takeQueue(q)
+        return q
+      }, { verb: 'removed', fine: ['not_found', 'not_queued'] })
+    }
+    if (st.do === 'readd') {
+      // the removed songs come back at the end (one still or again queued keeps its place), then the old order
+      const map = new Map() // old id -> the id it came back under
+      const queued = new Map((live.current.queue?.items ?? []).map((s) => [s.youtubeId, s.id]))
+      const todo = st.songs.filter((s) => (queued.has(s.youtubeId) ? (map.set(s.id, queued.get(s.youtubeId)), false) : true))
+      const r = await paced(todo, async (s) => {
+        const q = await post({ action: 'add', youtubeUrl: videoUrl(s.youtubeId), placement: 'end' })
+        if (q.ok && q.data.song?.id != null) map.set(s.id, q.data.song.id)
+        return q
+      }, { verb: 'added back', fine: ['duplicate'] })
+      if (!r.ok) return r
+      live.current.refresh()
+      const back = [...map.values()]
+      await waitFor((s, q) => back.every((id) => q.some((x) => x.id === id)), 8000)
+      const now = ids()
+      const order = restoreOrder(remapOrder(st.ids, map), now)
+      if (sameOrder(order, now)) return { ok: true }
+      const q = await post({ action: 'reorder', ids: order })
+      takeQueue(q)
+      return q
     }
     return { ok: true }
   }
@@ -752,7 +836,7 @@ export function useOwnerOps(p) {
     })
   }
 
-  return { busy, toast, trans, tl, importing, imported, progress, say, skip, previous, playNow, playNext, remove, reorder, add, importList, undo }
+  return { busy, toast, trans, tl, importing, imported, progress, say, skip, previous, playNow, playNext, remove, removeMany, clear, reorder, add, importList, undo }
 }
 
 // what the line under the player (and the sheet's status line) says for the owner's actions, or null
@@ -761,11 +845,14 @@ function opsLine(ops) {
   if (ops.busy === 'undo') {
     const g = ops.progress
     const s = g?.until ? Math.ceil((g.until - Date.now()) / 1000) : 0
-    return { text: g ? `Undoing… ${g.done} of ${g.total} removed${s > 0 ? ` · Tavarian asks to slow down: going on in ${s} s` : ''}` : 'Undoing…', spin: true, ticks: s > 0 }
+    return { text: g ? `Undoing… ${g.done} of ${g.total} ${g.verb ?? 'removed'}${s > 0 ? ` · Tavarian asks to slow down: going on in ${s} s` : ''}` : 'Undoing…', spin: true, ticks: s > 0 }
   }
+  if (ops.busy === 'clear') return { text: 'Clearing the queue…', spin: true }
+  if (ops.busy === 'remove-bulk') return { text: 'Removing…', spin: true }
   const t = ops.toast
   if (t?.err) return { text: t.text, err: true }
-  if (t) return { text: t.trans && ops.tl ? ops.tl.text : t.text, undo: Boolean(t.plan) }
+  // (a slow Undo shows how long it's still offered)
+  if (t) return { text: t.trans && ops.tl ? ops.tl.text : t.text, undo: Boolean(t.plan), until: t.until ?? 0, ticks: Boolean(t.until) }
   if (ops.tl) return { text: ops.tl.text, spin: !ops.tl.done }
   if (ops.importing) return { text: 'Importing a playlist… this can take a while', spin: true }
   return null
@@ -786,6 +873,7 @@ function OpsLine({ line, ops, wrap, className = '' }) {
       {line?.undo && (
         <button onClick={ops.undo} className="shrink-0 -my-1.5 py-1.5 px-1.5 font-bold text-lofi-primary hover:text-white flex items-center gap-1 transition-colors">
           <i className="fa-solid fa-rotate-left text-[0.9em]" aria-hidden="true" /> Undo
+          {line.until > 0 && <span className="font-normal tabular-nums text-lofi-muted">{Math.max(0, Math.ceil((line.until - Date.now()) / 1000))} s</span>}
         </button>
       )}
     </p>
@@ -880,7 +968,7 @@ function useDragReorder({ ids, disabled, onDrop }) {
     const cancel = (ev) => ev.pointerId === pid && end()
     const noScroll = (ev) => active && ev.cancelable && ev.preventDefault()
     const noMenu = (ev) => ev.preventDefault()
-    const keyOut = (ev) => ev.key === 'Escape' && end()
+    const keyOut = (ev) => ev.key === 'Escape' && (ev.preventDefault(), end()) // (just the drag: the sheet stays open)
     function end() {
       clearTimeout(timer)
       cancelAnimationFrame(raf)
@@ -918,6 +1006,60 @@ function useDragReorder({ ids, disabled, onDrop }) {
   return { list, drag, pressing, start, key }
 }
 
+// ---- long titles ----
+// one ResizeObserver for every title on the page (a queue can be 200 rows)
+let sizeWatch = null
+const sizeCalls = new WeakMap()
+function watchSize(el, f) {
+  if (typeof ResizeObserver === 'undefined') return f(), () => {}
+  sizeWatch ??= new ResizeObserver((entries) => entries.forEach((e) => sizeCalls.get(e.target)?.()))
+  sizeCalls.set(el, f)
+  sizeWatch.observe(el)
+  f()
+  return () => (sizeWatch.unobserve(el), sizeCalls.delete(el))
+}
+// the card's title: does it take two lines (then the line under it makes room)?
+function useTwoLines(ref, text) {
+  const [two, setTwo] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    return watchSize(el, () => setTwo(el.clientHeight > 1.5 * (parseFloat(getComputedStyle(el).lineHeight) || 24)))
+  }, [text])
+  return two
+}
+// a row's title: two lines at most, the whole one on hover (title) and, when it's cut, behind a small ⌄ that opens
+// the row (phones have no hover)
+function SongTitle({ text }) {
+  const ref = useRef(null)
+  const [open, setOpen] = useState(false)
+  const [cut, setCut] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || open) return
+    return watchSize(el, () => setCut(overflows(el.scrollHeight, el.clientHeight)))
+  }, [text, open])
+  return (
+    <span className="flex items-start gap-1 min-w-0">
+      <span ref={ref} title={text} className={`min-w-0 flex-1 text-xs font-medium text-white break-words ${open ? 'block' : 'line-clamp-2'}`}>
+        {text}
+      </span>
+      {(open || cut) && (
+        <button
+          type="button"
+          onClick={(e) => (e.stopPropagation(), setOpen((o) => !o))}
+          aria-expanded={open}
+          aria-label={open ? 'Show less of the title' : `Show the whole title: ${text}`}
+          title={open ? 'Show less' : 'Show the whole title'}
+          className="shrink-0 -my-1 -mr-1 w-6 h-6 rounded-full flex items-center justify-center text-lofi-muted hover:text-white hover:bg-white/5 transition-colors"
+        >
+          <i className={`fa-solid ${open ? 'fa-chevron-up' : 'fa-chevron-down'} text-[9px]`} aria-hidden="true" />
+        </button>
+      )}
+    </span>
+  )
+}
+
 // ---- pieces ----
 function Cover({ song, size = 'w-24 h-24', on, children }) {
   const art = thumbOf(song)
@@ -941,21 +1083,25 @@ function Round({ label, icon, onClick, busy, disabled, className = '' }) {
     </button>
   )
 }
-const listenLabel = (p) => (!p.listening ? 'Listen' : p.phase === 'connecting' ? 'Tuning in' : 'Stop')
-
-// ⏸ / ▶ for the owner: pause while it plays (or loads), resume when paused, play when stopped with a queue
-function playAction(p) {
-  const s = p.state?.status
-  if (s === 'playing' || s === 'loading') return ['pause', 'Pause for everyone', 'fa-pause']
-  if (s === 'paused') return ['resume', 'Resume for everyone', 'fa-play ml-0.5']
-  return ['play', 'Play the queue', 'fa-play ml-0.5']
-}
+const mainOf = (p, owner) => mainAction({ owner, listening: p.listening, phase: p.phase, status: p.state?.status, queued: p.queue?.items?.length ?? 0 })
+const STATION_ACTS = ['pause', 'resume', 'play']
 
 // The Player tab
 export function PlayerPanel({ p, owner, vol }) {
   const ctl = useTavarianControl(p)
   const ops = useOwnerOps(p)
-  const [sheet, setSheet] = useState(null) // the sheet's open view: queue | recent | search | link | import | playlists
+  const [sheet, setSheet] = useState(null) // the sheet's open view: queue | recent | search | import | playlists
+  const dlg = useRef(null)
+  // a view set: the <dialog> opens (showModal, like Settings) and Add's box or ✕ takes the focus; it closes through
+  // closeDialog (the exit animation), and only its close event lets go of the view
+  useEffect(() => {
+    const d = dlg.current
+    if (!sheet || !d || d.open) return
+    d.showModal()
+    ;(d.querySelector('[data-autofocus]') ?? d.querySelector('[data-close]'))?.focus({ preventScroll: true })
+  }, [sheet])
+  const title = useRef(null)
+  const twoLines = useTwoLines(title, p.state?.song?.title)
   const [drag, setDrag] = useState(null) // the seek bar while it's held (seconds)
   const playing = p.state?.status === 'playing'
   const [, tick] = useState(0)
@@ -972,7 +1118,7 @@ export function PlayerPanel({ p, owner, vol }) {
   const dur = song?.durationSeconds > 0 ? song.durationSeconds : 0
   const pos = drag ?? positionAt(p.state, p.offset)
   const hearing = p.listening && p.phase === 'playing'
-  const [act, actLabel, actIcon] = playAction(p)
+  const main = mainOf(p, owner)
   const locked = ctl.busy != null || ops.busy != null // one tap = one action
   const commitSeek = () => {
     if (drag == null) return
@@ -1001,7 +1147,9 @@ export function PlayerPanel({ p, owner, vol }) {
   const titleOf = (id) => [p.state?.song, ...items, ...recent].find((s) => s && s.id === id)?.title
   const err = ctl.err ?? (songError ? songErrorText(songError.reason, titleOf(songError.songId)) : null)
   const mine = owner ? opsLine(ops) : null
-  const line = err ?? p.note ?? (p.listening && p.phase === 'connecting' ? 'Tuning in…' : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
+  const tuning = p.listening && p.phase === 'connecting'
+  // (phones: tuning in is just the spinner, here and on Listen; the words stay for screen readers)
+  const line = err ?? p.note ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
   const next = items.slice(0, 2)
   return (
     <>
@@ -1016,10 +1164,11 @@ export function PlayerPanel({ p, owner, vol }) {
             </span>
             {hearing && <EqBars />}
           </p>
-          <p className="text-base font-medium text-white truncate" title={plain(song?.title)}>
+          {/* a long title takes two lines; then the line under it gives up its room (the card keeps its height) */}
+          <p ref={title} className="text-base font-medium text-white line-clamp-2 break-words" title={plain(song?.title) || undefined}>
             {plain(song?.title) || (info.key === 'empty' ? 'Nothing queued' : info.key === 'stopped' ? `${items.length} in the queue` : 'Home station')}
           </p>
-          <p className="text-xs text-lofi-muted truncate">{song ? 'Tavarian · home station' : owner ? 'Add a song to start' : 'Nothing on the home station right now'}</p>
+          {!(song && twoLines) && <p className="text-xs text-lofi-muted truncate">{song ? 'Tavarian · home station' : owner ? 'Add a song to start' : 'Nothing on the home station right now'}</p>}
           {song && (
             <div className="mt-1.5 flex items-center gap-2 text-[10px] font-mono text-lofi-muted tabular-nums">
               <span>{mmss(pos)}</span>
@@ -1052,24 +1201,21 @@ export function PlayerPanel({ p, owner, vol }) {
       </div>
 
       <div className="relative mt-auto flex items-center gap-1.5 pt-2">
+        {/* [⏮] [● play / pause] [⏭] [mute + volume] [+] for the owner; a guest gets [● listen / stop] [mute + volume] */}
+        {owner && <Round label="Previous song for everyone" icon="fa-backward-step" onClick={ops.previous} busy={ops.busy === 'previous'} disabled={!p.queue?.recent?.length || locked} />}
         <button
-          onClick={p.toggle}
+          onClick={() => p.press(ctl.act)}
+          disabled={owner && locked}
           aria-pressed={p.listening}
-          aria-label={p.listening ? 'Stop listening' : 'Listen to the home station'}
-          className="h-10 pl-4 pr-5 shrink-0 rounded-full bg-lofi-primary text-lofi-base font-bold text-sm flex items-center gap-2 hover:bg-lofi-highlight transition-all hover:scale-105 shadow-[0_0_15px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
+          aria-label={main.label}
+          title={main.label}
+          className="w-11 h-11 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-all hover:scale-105 disabled:opacity-60 disabled:hover:scale-100 shadow-[0_0_15px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
         >
-          <i className={`fa-solid ${p.listening && p.phase === 'connecting' ? 'fa-spinner fa-spin' : p.listening ? 'fa-stop' : 'fa-headphones'} text-sm`} aria-hidden="true" />
-          {listenLabel(p)}
+          <i className={`fa-solid ${STATION_ACTS.includes(ctl.busy) ? 'fa-spinner fa-spin' : main.icon} text-base`} aria-hidden="true" />
         </button>
-        {owner && (
-          <>
-            <Round label="Previous song for everyone" icon="fa-backward-step" onClick={ops.previous} busy={ops.busy === 'previous'} disabled={!p.queue?.recent?.length || locked} className="ml-1" />
-            <Round label={actLabel} icon={actIcon} onClick={() => ctl.act(act)} busy={['pause', 'resume', 'play'].includes(ctl.busy)} disabled={(act === 'play' && !items.length) || locked} />
-            <Round label="Skip for everyone" icon="fa-forward-step" onClick={ops.skip} busy={ops.busy === 'skip'} disabled={!song || locked} />
-          </>
-        )}
+        {owner && <Round label="Skip for everyone" icon="fa-forward-step" onClick={ops.skip} busy={ops.busy === 'skip'} disabled={!song || locked} />}
         {!vol.fixedVolume && (
-          <div className="flex items-center gap-1 min-w-0 flex-1 ml-1">
+          <div className="flex items-center gap-1 min-w-0 flex-1 ml-1.5">
             <button onClick={vol.toggleMute} aria-label={vol.muted ? 'Unmute' : 'Mute'} title={vol.muted ? 'Unmute' : 'Mute'} className="w-7 h-7 shrink-0 flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
               <i className={`fa-solid ${vol.muted || vol.volume === 0 ? 'fa-volume-xmark' : vol.volume < 50 ? 'fa-volume-low' : 'fa-volume-high'} text-xs`} aria-hidden="true" />
             </button>
@@ -1115,7 +1261,9 @@ export function PlayerPanel({ p, owner, vol }) {
             {(next.length ? next : recent.slice(0, 2)).map((s) => (
               <li key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
                 <img src={thumbOf(s) ?? undefined} alt="" className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
-                <span className="text-white/80 truncate">{plain(s.title)}</span>
+                <span className="text-white/80 truncate" title={plain(s.title)}>
+                  {plain(s.title)}
+                </span>
                 {s.durationSeconds > 0 && <span className="text-lofi-muted font-mono text-[10px] shrink-0 ml-auto">{mmss(s.durationSeconds)}</span>}
               </li>
             ))}
@@ -1131,7 +1279,7 @@ export function PlayerPanel({ p, owner, vol }) {
           {line}
         </p>
       )}
-      {sheet && <PlayerSheet p={p} owner={owner} ops={ops} view={sheet} setView={setSheet} onClose={() => setSheet(null)} />}
+      <PlayerSheet dlg={dlg} p={p} owner={owner} ops={ops} view={sheet} setView={setSheet} onClosed={() => setSheet(null)} />
     </>
   )
 }
@@ -1148,16 +1296,14 @@ function EqBars() {
 
 // a song in a list: (a drag handle), thumbnail, title, a second line, then the row's buttons. stack: on phones the
 // buttons get a line of their own (search results: room for their words)
-function SongRow({ s, sub, on, lead, stack, lifted, className = '', children, ...rest }) {
-  const look = lifted ? 'relative z-10 bg-lofi-surface border-lofi-primary/60 shadow-2xl opacity-95' : on ? 'bg-lofi-primary/15 border-lofi-primary/40' : 'border-white/5 bg-lofi-base/40'
+function SongRow({ s, sub, on, picked, lead, stack, lifted, className = '', children, ...rest }) {
+  const look = lifted ? 'relative z-10 bg-lofi-surface border-lofi-primary/60 shadow-2xl opacity-95' : on ? 'bg-lofi-primary/15 border-lofi-primary/40' : picked ? 'bg-red-500/10 border-red-400/40' : 'border-white/5 bg-lofi-base/40'
   return (
     <li {...rest} className={`flex items-center gap-2 rounded-xl p-1.5 pr-2 border ${stack ? 'max-sm:flex-wrap' : ''} ${look} ${className}`}>
       {lead}
       <img src={thumbOf(s) ?? s.coverThumbnail ?? undefined} alt="" className="w-12 h-7 sm:w-16 sm:h-9 rounded-md object-cover shrink-0 bg-lofi-surface" />
       <span className="min-w-0 flex-1">
-        <span className="block text-xs font-medium text-white truncate" title={plain(s.title ?? s.name)}>
-          {plain(s.title ?? s.name)}
-        </span>
+        <SongTitle text={fullTitle(s)} />
         {sub && <span className="block text-[10px] text-lofi-muted truncate">{sub}</span>}
       </span>
       {children && <span className={`flex items-center gap-1 shrink-0 ${stack ? 'max-sm:basis-full max-sm:justify-end' : ''}`}>{children}</span>}
@@ -1219,24 +1365,60 @@ const ADD_VIEWS = [
   ['import', 'Import', 'fa-list-ul', 'Import playlist'],
 ]
 
-// Queue, recent, and for the owner Add (Search or link · Import playlist), Playlists and the Tavarian link. A
-// window over the page (a sheet on phones; portalled to <body>, like the station list). Esc / ✕ / outside closes.
-export function PlayerSheet({ p, owner, ops, view, setView, onClose }) {
-  const close = useRef(null)
-  const box = useRef(null)
-  const [seed, setSeed] = useState('') // text handed from one Add tab to another
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+// The sheet keeps the page still: only its lists ([data-scroll]) scroll. The modal <dialog> makes the page inert, but a
+// wheel or a swipe over the header, the chips, the backdrop, or past a list's end would still scroll the page (iOS
+// above all): while it's open those are cancelled here, with overscroll-behavior: contain on the lists as the first
+// line (and touch-action in globals.css .tv-sheet).
+function canScroll(from, stop, dy) {
+  for (let el = from; el && el !== stop; el = el.parentElement) {
+    const o = getComputedStyle(el).overflowY
+    if ((o === 'auto' || o === 'scroll') && el.scrollHeight > el.clientHeight + 1 && (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1)) return true
+  }
+  return false
+}
+function useStillPage(dlg, open) {
   useEffect(() => {
-    if (!box.current?.contains(document.activeElement)) close.current?.focus({ preventScroll: true }) // (Add focuses its box)
-    const onKey = (e) => e.key === 'Escape' && (e.stopPropagation(), onCloseRef.current())
-    addEventListener('keydown', onKey, true)
-    return () => removeEventListener('keydown', onKey, true)
-  }, [])
+    const d = dlg.current
+    if (!d || !open) return
+    let x0 = 0
+    let y0 = 0
+    // (on the window while the sheet is open: a wheel over the backdrop doesn't reach the dialog)
+    const wheel = (e) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // pinch zoom, sideways (the chips)
+      if (!(d.contains(e.target) && canScroll(e.target, d, e.deltaY))) e.preventDefault()
+    }
+    const start = (e) => ((x0 = e.touches[0]?.clientX ?? 0), (y0 = e.touches[0]?.clientY ?? 0))
+    const move = (e) => {
+      if (e.touches.length !== 1 || !e.cancelable) return
+      const dx = x0 - e.touches[0].clientX
+      const dy = y0 - e.touches[0].clientY
+      if (Math.abs(dx) > Math.abs(dy)) return
+      if (!(d.contains(e.target) && canScroll(e.target, d, dy))) e.preventDefault()
+    }
+    const opts = { capture: true, passive: false }
+    addEventListener('wheel', wheel, opts)
+    addEventListener('touchstart', start, { capture: true, passive: true })
+    addEventListener('touchmove', move, opts)
+    return () => {
+      removeEventListener('wheel', wheel, opts)
+      removeEventListener('touchstart', start, { capture: true })
+      removeEventListener('touchmove', move, opts)
+    }
+  }, [dlg, open])
+}
+
+// Queue, recent, and for the owner Add (Search or link · Import playlist), Playlists and the Tavarian link. The same
+// <dialog> as Settings (.wx-sheet: a bottom sheet on phones, centered from sm; the same way in and out): ✕, Esc or a
+// tap on the backdrop closes it, animated (closeDialog). Its content exists only while a view is open.
+export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
+  const [seed, setSeed] = useState('') // text handed from one Add tab to another
+  const press = useRef(false) // the press began on the backdrop (a drag that ends there is not a tap on it)
+  useStillPage(dlg, Boolean(view))
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
   const adding = ADD_VIEWS.some(([id]) => id === view)
   const go = (v, text = '') => (setSeed(text), setView(v))
+  const close = () => closeDialog(dlg.current)
   const views = [
     ['queue', `Queue · ${items.length}`],
     ['recent', 'Recent'],
@@ -1251,72 +1433,81 @@ export function PlayerSheet({ p, owner, ops, view, setView, onClose }) {
     )
   }
   const line = owner ? opsLine(ops) : null
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6 bg-lofi-base/70 backdrop-blur-sm motion-safe:animate-[fade-in_0.2s_ease-out]" onClick={onClose}>
-      <div
-        ref={box}
-        role="dialog"
-        aria-modal="true"
-        aria-label={adding ? 'Add songs to the home station' : 'Home station'}
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full sm:max-w-xl h-[85dvh] sm:h-[min(640px,85dvh)] glass-panel rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col min-h-0 text-lofi-text motion-safe:animate-[panel-in_0.25s_cubic-bezier(0.2,0.8,0.2,1)]"
-      >
-        <div className="flex items-center justify-between mb-2 px-1">
-          <h2 className="text-sm font-medium text-white flex items-center gap-2">
-            <i className="fa-solid fa-music text-lofi-primary text-xs" aria-hidden="true" /> Home station <span className="font-mono text-[11px] text-lofi-muted">Tavarian</span>
-          </h2>
-          <button ref={close} onClick={onClose} aria-label="Close" className="w-8 h-8 rounded-full bg-lofi-base/60 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
-            <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
-          </button>
-        </div>
-        <div className="flex gap-1.5 overflow-x-auto scrollbar-none mb-3 shrink-0">{views.map(chip)}</div>
-        {owner && adding && (
-          <div role="tablist" aria-label="Add songs" className="grid grid-cols-3 gap-1 p-1 mb-3 shrink-0 rounded-2xl bg-lofi-base/50 border border-white/5">
-            {ADD_VIEWS.map(([id, label, icon, wide]) => (
-              <button
-                key={id}
-                role="tab"
-                aria-selected={view === id}
-                onClick={() => go(id)}
-                className={`h-9 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${view === id ? 'bg-lofi-surface text-white font-medium shadow' : 'text-lofi-muted hover:text-white'}`}
-              >
-                <i className={`fa-solid ${icon} text-[11px] ${view === id ? 'text-lofi-primary' : ''}`} aria-hidden="true" />
-                {wide ? (
-                  <>
-                    <span className="sm:hidden">{label}</span>
-                    <span className="max-sm:hidden">{wide}</span>
-                  </>
-                ) : (
-                  label
-                )}
-              </button>
-            ))}
+  return (
+    <dialog
+      ref={dlg}
+      aria-label={adding ? 'Add songs to the home station' : 'Home station'}
+      onPointerDown={(e) => (press.current = e.target === dlg.current)}
+      onClick={(e) => e.target === dlg.current && press.current && close()}
+      onCancel={(e) => {
+        e.preventDefault() // Esc: animate out first
+        close()
+      }}
+      onClose={() => {
+        delete dlg.current.dataset.closing
+        onClosed()
+      }}
+      className="wx-sheet tv-sheet sm:max-w-xl glass-panel text-lofi-text"
+    >
+      {view && (
+        <div className="h-full flex flex-col min-h-0 p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center justify-between mb-2 px-1 shrink-0">
+            <h2 className="text-sm font-medium text-white flex items-center gap-2">
+              <i className="fa-solid fa-music text-lofi-primary text-xs" aria-hidden="true" /> Home station <span className="font-mono text-[11px] text-lofi-muted">Tavarian</span>
+            </h2>
+            <button data-close onClick={close} aria-label="Close" className="w-8 h-8 rounded-full bg-lofi-base/60 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
+              <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
+            </button>
           </div>
-        )}
-        <div data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain -mr-1 pr-1">
-          {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
-          {view === 'recent' && (
-            <SongList empty="Nothing played yet">
-              {recent.map((s) => (
-                <SongRow key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${reasonText(s.failReason)}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
-                  {owner && s.youtubeId && <PlaceBtns s={s} p={p} ops={ops} short />}
-                </SongRow>
+          <div className="flex gap-1.5 overflow-x-auto overscroll-contain touch-pan-x scrollbar-none mb-3 shrink-0">{views.map(chip)}</div>
+          {owner && adding && (
+            // one column per Add tab, so they always fill the bar
+            <div role="tablist" aria-label="Add songs" className="grid gap-1 p-1 mb-3 shrink-0 rounded-2xl bg-lofi-base/50 border border-white/5" style={{ gridTemplateColumns: `repeat(${ADD_VIEWS.length}, minmax(0, 1fr))` }}>
+              {ADD_VIEWS.map(([id, label, icon, wide]) => (
+                <button
+                  key={id}
+                  role="tab"
+                  aria-selected={view === id}
+                  onClick={() => go(id)}
+                  className={`h-9 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${view === id ? 'bg-lofi-surface text-white font-medium shadow' : 'text-lofi-muted hover:text-white'}`}
+                >
+                  <i className={`fa-solid ${icon} text-[11px] ${view === id ? 'text-lofi-primary' : ''}`} aria-hidden="true" />
+                  {wide ? (
+                    <>
+                      <span className="sm:hidden">{label}</span>
+                      <span className="max-sm:hidden">{wide}</span>
+                    </>
+                  ) : (
+                    label
+                  )}
+                </button>
               ))}
-            </SongList>
+            </div>
           )}
-          {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
-          {owner && view === 'import' && <ImportView ops={ops} seed={seed} go={go} />}
-          {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
-        </div>
-        {owner && <OpsLine wrap line={line} ops={ops} className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono ${line?.err ? '' : 'text-lofi-primary'}`} />}
-        {owner && (
-          <div className="shrink-0 mt-1 pt-2 border-t border-white/5 space-y-1.5">
-            <LinkRow p={p} />
+          <div key={view} data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain touch-pan-y -mr-1 pr-1">
+            {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
+            {view === 'recent' && (
+              <SongList empty="Nothing played yet">
+                {recent.map((s) => (
+                  <SongRow key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${reasonText(s.failReason)}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
+                    {owner && s.youtubeId && <PlaceBtns s={s} p={p} ops={ops} short />}
+                  </SongRow>
+                ))}
+              </SongList>
+            )}
+            {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
+            {owner && view === 'import' && <ImportView ops={ops} seed={seed} go={go} />}
+            {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
           </div>
-        )}
-      </div>
-    </div>,
-    document.body,
+          {owner && <OpsLine wrap line={line} ops={ops} className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono ${line?.err ? '' : 'text-lofi-primary'}`} />}
+          {owner && (
+            <div className="shrink-0 mt-1 pt-2 border-t border-white/5 space-y-1.5">
+              <LinkRow p={p} />
+            </div>
+          )}
+        </div>
+      )}
+    </dialog>
   )
 }
 
@@ -1326,13 +1517,36 @@ function SongList({ empty, children }) {
 }
 const H3 = ({ children, className = '' }) => <h3 className={`text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1.5 px-1 ${className}`}>{children}</h3>
 
+// The queue. The owner can also pick songs (Select: a box on each row, tap the row or the box; Select all / None and
+// the count, with Remove selected (N) in a bar that stays at the bottom) and Clear queue (asks first, like Settings ›
+// Reset all; it can also stop what plays)
 function QueueView({ p, owner, ops, onAdd }) {
   const items = p.queue?.items ?? []
+  const ids = items.map((s) => s.id)
   const song = p.state?.song
   const lock = ops.busy != null
-  const dnd = useDragReorder({ ids: items.map((s) => s.id), disabled: !owner || lock, onDrop: (order, id, to) => ops.reorder(order, items.find((s) => s.id === id), to) })
+  const [sel, setSel] = useState(null) // a Set of ids while picking, else null
+  const [asking, setAsking] = useState(false) // Clear queue's question
+  const clearBtn = useRef(null)
+  const asked = useRef(false)
+  useEffect(() => {
+    if (asking) asked.current = true
+    else if (asked.current) (asked.current = false), clearBtn.current?.focus({ preventScroll: true }) // focus back where it was
+  }, [asking])
+  const picked = pickedIds(sel, ids)
+  const all = allPicked(sel, ids)
+  const picking = owner && sel != null
+  const dnd = useDragReorder({ ids, disabled: !owner || lock || picking, onDrop: (order, id, to) => ops.reorder(order, items.find((s) => s.id === id), to) })
   const d = dnd.drag
   const showLine = d && d.gap !== d.from && d.gap !== d.from + 1
+  useEffect(() => {
+    if (picking && !items.length) setSel(null) // nothing left to pick
+  }, [picking, items.length])
+  const removePicked = async () => {
+    const songs = items.filter((s) => sel?.has(s.id))
+    if (songs.length && (await ops.removeMany(songs))) setSel(null)
+  }
+  const toolBtn = 'h-6 px-2 shrink-0 whitespace-nowrap rounded-full border text-[10px] font-mono normal-case tracking-normal flex items-center gap-1 transition-colors disabled:opacity-40'
   return (
     <>
       {owner && (
@@ -1348,20 +1562,39 @@ function QueueView({ p, owner, ops, onAdd }) {
           </ul>
         </>
       )}
-      <H3 className="flex items-center justify-between gap-2">
-        <span>Up next</span>
-        {owner && items.length > 1 && (
-          <span className="normal-case tracking-normal text-[10px]">
-            <span className="max-sm:hidden">drag ⋮⋮ to reorder</span>
-            <span className="sm:hidden">hold ⋮⋮, then drag</span>
+      {asking ? (
+        <ClearQuestion n={items.length} playing={Boolean(song) && p.state?.status !== 'idle'} onCancel={() => setAsking(false)} onClear={(cur) => (setAsking(false), ops.clear(cur))} />
+      ) : (
+        <H3 className="flex items-center gap-2 min-h-6">
+          <span className="shrink-0">Up next</span>
+          <span className="grow min-w-0 truncate text-right normal-case tracking-normal text-[10px]">
+            {owner && !picking && items.length > 1 && (
+              <>
+                <span className="max-sm:hidden">drag ⋮⋮ to reorder</span>
+                <span className="sm:hidden">hold ⋮⋮ to drag</span>
+              </>
+            )}
           </span>
-        )}
-      </H3>
+          {owner && items.length > 0 && (
+            <>
+              <button onClick={() => setSel(picking ? null : new Set())} aria-pressed={picking} disabled={!picking && lock} className={`${toolBtn} ${picking ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'}`}>
+                <i className={`fa-solid ${picking ? 'fa-check' : 'fa-list-check'} text-[9px]`} aria-hidden="true" /> {picking ? 'Done' : 'Select'}
+              </button>
+              {!picking && (
+                <button ref={clearBtn} onClick={() => setAsking(true)} disabled={lock} aria-label="Clear queue" className={`${toolBtn} border-white/10 text-lofi-muted hover:text-red-300 hover:border-red-400/60`}>
+                  <i className="fa-solid fa-trash-can text-[9px]" aria-hidden="true" /> Clear<span className="max-sm:hidden"> queue</span>
+                </button>
+              )}
+            </>
+          )}
+        </H3>
+      )}
       {items.length ? (
-        <ol ref={dnd.list} className="relative space-y-1.5">
+        <ol ref={dnd.list} className="relative space-y-1.5" aria-label={picking ? 'Up next: pick songs' : 'Up next'}>
           {items.map((s, i) => {
             const moving = d?.id === s.id
             const t = plain(s.title)
+            const on = picking && sel.has(s.id)
             return (
               <SongRow
                 key={s.id}
@@ -1369,26 +1602,39 @@ function QueueView({ p, owner, ops, onAdd }) {
                 data-row={i}
                 sub={`${i + 1}${s.durationSeconds > 0 ? ` · ${mmss(s.durationSeconds)}` : ''}`}
                 lifted={moving}
-                className={dnd.pressing === s.id ? 'ring-1 ring-lofi-primary/50' : ''}
+                picked={on}
+                onClick={picking ? () => setSel((x) => toggleIn(x, s.id)) : undefined}
+                className={`${dnd.pressing === s.id ? 'ring-1 ring-lofi-primary/50' : ''} ${picking ? 'cursor-pointer select-none' : ''}`}
                 style={moving ? { transform: `translateY(${d.dy}px) scale(1.02)` } : undefined}
                 lead={
-                  owner && (
-                    <button
-                      type="button"
-                      onPointerDown={(e) => dnd.start(e, i)}
-                      onKeyDown={(e) => dnd.key(e, i)}
-                      onContextMenu={(e) => e.preventDefault()}
-                      disabled={lock || items.length < 2}
-                      aria-label={`Move ${t}: drag, or press up / down`}
-                      title="Drag to reorder (on a phone: hold, then drag)"
-                      className={`w-6 h-9 -ml-0.5 shrink-0 rounded-lg flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 select-none [-webkit-touch-callout:none] ${moving ? 'cursor-grabbing text-lofi-primary' : 'cursor-grab'} ${dnd.pressing === s.id ? 'bg-lofi-primary/20 text-lofi-primary' : ''}`}
-                    >
-                      <i className="fa-solid fa-grip-vertical text-xs" aria-hidden="true" />
-                    </button>
+                  picking ? (
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => setSel((x) => toggleIn(x, s.id))}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${t}`}
+                      className="w-4 h-4 mx-1 shrink-0 accent-lofi-primary cursor-pointer"
+                    />
+                  ) : (
+                    owner && (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => dnd.start(e, i)}
+                        onKeyDown={(e) => dnd.key(e, i)}
+                        onContextMenu={(e) => e.preventDefault()}
+                        disabled={lock || items.length < 2}
+                        aria-label={`Move ${t}: drag, or press up / down`}
+                        title="Drag to reorder (on a phone: hold, then drag)"
+                        className={`w-6 h-9 -ml-0.5 shrink-0 rounded-lg flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 select-none [-webkit-touch-callout:none] ${moving ? 'cursor-grabbing text-lofi-primary' : 'cursor-grab'} ${dnd.pressing === s.id ? 'bg-lofi-primary/20 text-lofi-primary' : ''}`}
+                      >
+                        <i className="fa-solid fa-grip-vertical text-xs" aria-hidden="true" />
+                      </button>
+                    )
                   )
                 }
               >
-                {owner && (
+                {owner && !picking && (
                   <>
                     <Pill short primary text="Now" icon="fa-play" label={`Play now: ${t}`} onClick={() => ops.playNow(s)} busy={ops.busy === `now:${s.id}`} disabled={lock} />
                     <Pill short text="Next" icon="fa-angles-up" label={`Play next: ${t}`} onClick={() => ops.playNext(s)} busy={ops.busy === `next:${s.id}`} disabled={lock || i === 0} />
@@ -1407,7 +1653,79 @@ function QueueView({ p, owner, ops, onAdd }) {
       ) : (
         <p className="text-xs text-lofi-muted text-center py-6">The queue is empty.</p>
       )}
+      {picking && items.length > 0 && (
+        // stays at the bottom of the list while it scrolls
+        <div className="sticky bottom-0 z-30 mt-2 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-lofi-base px-2.5 py-2 shadow-[0_-8px_24px_rgb(0_0_0/0.35)]">
+          <button onClick={() => setSel(new Set(ids))} disabled={all} className={`${toolBtn} h-7 border-white/10 text-lofi-text hover:text-white hover:border-white/30`}>
+            Select all
+          </button>
+          <button onClick={() => setSel(new Set())} disabled={!picked.length} className={`${toolBtn} h-7 border-white/10 text-lofi-text hover:text-white hover:border-white/30`}>
+            None
+          </button>
+          <span className="text-[10px] font-mono text-lofi-muted tabular-nums" role="status">
+            {pickedText(picked.length, items.length)}
+          </span>
+          <button
+            onClick={removePicked}
+            disabled={!picked.length || lock}
+            className="ml-auto h-8 px-3 rounded-full bg-red-500/85 text-white font-mono text-[11px] font-bold hover:bg-red-500 disabled:opacity-40 disabled:hover:bg-red-500/85 transition-colors flex items-center gap-1.5"
+          >
+            <i className={`fa-solid ${ops.busy === 'remove-bulk' ? 'fa-spinner fa-spin' : 'fa-trash-can'} text-[10px]`} aria-hidden="true" /> Remove selected ({picked.length})
+          </button>
+        </div>
+      )}
     </>
+  )
+}
+
+// Clear queue's question, like Settings › Reset all: Cancel is focused, "Yes, clear" wakes after a moment (so a
+// double tap can't confirm), the question gives up after 8 s (ticking the box gives it 8 s more). Esc backs out of
+// it, not the sheet. No Undo after: this is the guard
+function ClearQuestion({ n, playing, onCancel, onClear }) {
+  const [armed, setArmed] = useState(false)
+  const [cur, setCur] = useState(false) // also stop what plays
+  const [t0, setT0] = useState(0)
+  useEffect(() => {
+    const a = setTimeout(() => setArmed(true), 800)
+    return () => clearTimeout(a)
+  }, [])
+  useEffect(() => {
+    const t = setTimeout(onCancel, 8000)
+    return () => clearTimeout(t)
+  }, [t0])
+  return (
+    <div
+      role="alertdialog"
+      aria-labelledby="tv-clear-q"
+      onKeyDown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), onCancel())}
+      className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-red-400/30 bg-red-500/10 px-3 py-2.5 motion-safe:animate-[panel-in_0.2s_ease-out]"
+    >
+      <p id="tv-clear-q" className="text-[11px] text-red-200 flex items-center gap-2 min-w-0">
+        <i className="fa-solid fa-triangle-exclamation text-red-400" aria-hidden="true" />
+        <span>
+          Clear the queue ({n} song{n === 1 ? '' : 's'})? <span className="text-red-200/70">For everyone, and it can't be undone.</span>
+        </span>
+      </p>
+      {playing && (
+        <label className="basis-full flex items-center gap-2 text-[11px] text-lofi-text cursor-pointer">
+          <input type="checkbox" checked={cur} onChange={(e) => (setCur(e.target.checked), setT0((x) => x + 1))} className="w-4 h-4 accent-red-500" />
+          Also stop the current song
+        </label>
+      )}
+      <div className="flex gap-2 shrink-0 ml-auto">
+        <button autoFocus onClick={onCancel} className="h-8 px-3 rounded-full border border-white/15 font-mono text-[11px] text-lofi-text hover:text-white hover:border-white/30 transition-colors">
+          Cancel
+        </button>
+        {/* aria-disabled, not disabled: a click on a disabled button would go to the dialog behind it */}
+        <button
+          aria-disabled={!armed}
+          onClick={() => armed && onClear(cur)}
+          className="h-8 px-3 rounded-full bg-red-500/85 text-white font-mono text-[11px] font-bold hover:bg-red-500 aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-red-500/85 transition-[background-color,opacity] duration-300 flex items-center gap-1.5"
+        >
+          <i className="fa-solid fa-trash-can" aria-hidden="true" /> Yes, clear
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -1469,6 +1787,7 @@ function TextBox({ inputRef, value, onChange, icon, label, placeholder, paste })
         <i className={`fa-solid ${icon} absolute left-3 top-1/2 -translate-y-1/2 text-xs text-lofi-muted`} aria-hidden="true" />
         <input
           ref={inputRef}
+          data-autofocus // (the sheet focuses it when it opens on this view)
           type={paste ? 'url' : 'search'}
           inputMode={paste ? 'url' : 'search'}
           value={value}
@@ -1857,16 +2176,18 @@ export function PlayerMini({ p, owner, lock, box, eq }) {
   const ctl = useTavarianControl(p)
   const song = p.state?.song
   const status = statusInfo({ state: p.state, reachable: p.reachable }).label
+  const main = mainOf(p, owner)
   return (
     <div className={box} role={lock ? 'group' : undefined} aria-label={lock ? 'Now playing' : undefined}>
       <button
-        onClick={p.toggle}
+        onClick={() => p.press(ctl.act)}
+        disabled={owner && ctl.busy != null}
         aria-pressed={p.listening}
-        title={p.listening ? 'Stop listening' : 'Listen'}
-        aria-label={p.listening ? 'Stop listening to the home station' : 'Listen to the home station'}
-        className="w-9 h-9 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-colors shadow-[0_0_12px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
+        title={main.label}
+        aria-label={`${main.label}: home station`}
+        className="w-9 h-9 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-colors disabled:opacity-60 shadow-[0_0_12px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)]"
       >
-        <i className={`fa-solid text-xs ${p.listening && p.phase === 'connecting' ? 'fa-spinner fa-spin' : p.listening ? 'fa-stop' : 'fa-headphones'}`} aria-hidden="true" />
+        <i className={`fa-solid text-xs ${STATION_ACTS.includes(ctl.busy) ? 'fa-spinner fa-spin' : main.icon}`} aria-hidden="true" />
       </button>
       {mounted && song && <img src={thumbOf(song) ?? undefined} alt="" className={`${lock ? 'w-11 h-11 rounded-xl' : 'max-sm:hidden w-8 h-8 rounded-lg'} object-cover shrink-0 ${p.state?.status === 'playing' ? '' : 'opacity-70'}`} />}
       <span className={`min-w-0 font-sans ${lock ? 'max-w-52' : 'max-sm:hidden max-w-40'}`}>
