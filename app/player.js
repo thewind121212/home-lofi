@@ -7,12 +7,17 @@
 //   while listening) and plays Tavarian's audio straight from Tavarian; a new streamId (song change, seek, resume)
 //   swaps the source; paused / idle / loading on Tavarian lets the element go, and it comes back by itself when the
 //   station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
-// - PlayerPanel (the tab), PlayerSheet (queue, recent, and for the owner: add, playlists, the Tavarian link) and
-//   PlayerMini (Hide bar and lock screen). Guests listen and watch; the owner's buttons post to
-//   /api/private/settings/tavarian and spin until a state shows the change.
+// - PlayerPanel (the tab), PlayerSheet (queue, recent, and for the owner: Add — Search · Paste link · Import playlist —,
+//   playlists, the Tavarian link) and PlayerMini (Hide bar and lock screen). Guests listen and watch; the owner's
+//   buttons post to /api/private/settings/tavarian, lock while it's in flight and spin until a state shows the change.
+// - useOwnerOps(): the owner's queue actions (Play now / next, remove, drag reorder, add, import) with Undo for 5 s
+//   and the "Skipped A · loading B…" line; useDragReorder(): the queue's drag handles (mouse, or hold on a phone).
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { audioUrl, clockOffset, confirms, isYouTubeUrl, mmss, moveId, newClientId, plain, positionAt, renewIn, statusInfo, thumbOf, ticketOk } from '../lib/player'
+import {
+  audioUrl, classifyLink, clockOffset, confirms, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, placedText, placementIcon, placementLabel, plain,
+  playlistUrl, positionAt, reasonText, sourceLabel, renewIn, restoreOrder, sameOrder, songErrorText, statusInfo, thumbOf, ticketOk, transitionLine, undoPlan, videoUrl,
+} from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
 import { motionOff } from './settings'
 
@@ -44,7 +49,7 @@ export async function tavarianPost(body) {
     r.status === 429 ? `Too fast: try again in ${wait || 30} s`
     : r.type === 'opaqueredirect' || r.status === 401 || r.status === 403 || (r.status === 404 && !d.code) ? 'Sign in again to control the player'
     : (d.error ?? 'Tavarian refused the request')
-  return { ok: false, status: r.status, code: d.code ?? null, error }
+  return { ok: false, status: r.status, code: d.code ?? null, error, retryAfter: wait || null }
 }
 
 // ---- the live station ----
@@ -53,6 +58,7 @@ export function useTavarian({ keep = false } = {}) {
   const [d, setD] = useState({ state: null, queue: null, offset: 0, off: false, revoked: false, reachable: true, link: 'connecting', hub: null })
   const [songError, setSongError] = useState(null)
   const sync = useRef(() => {})
+  const refresh = useRef(() => {})
   const keepRef = useRef(keep)
   keepRef.current = keep
 
@@ -117,6 +123,9 @@ export function useTavarian({ keep = false } = {}) {
       on('status', (v) => {
         if (v.status === 'idle' && v.reason === 'tavarian_off') return end({ off: true, link: 'off' })
         put(() => ({ hub: v, link: 'live', ...(v.status === 'live' && { reachable: true }), ...(v.status === 'retrying' && { reachable: false }) }))
+        // the server's own stream to Tavarian is down (e.g. too_many_streams): ask /api/tavarian/state meanwhile (it
+        // uses Tavarian's API, not a stream), so the page and the owner's queue don't go stale; the next event stops it
+        if (v.status === 'retrying' && !poll) (poll = setInterval(get, POLL_MS)), get()
       })
       on('state', (v) => put(() => ({ state: v, offset: clockOffset(v.serverNowMs), reachable: true, link: 'live' })))
       on('queue', (v) => put(() => ({ queue: v })))
@@ -147,6 +156,7 @@ export function useTavarian({ keep = false } = {}) {
         if (!es && !poll) open()
       } else close()
     }
+    refresh.current = () => !stopped && get()
     get() // the first paint (the event stream sends the same a moment later)
     sync.current()
     const onVis = () => {
@@ -169,6 +179,7 @@ export function useTavarian({ keep = false } = {}) {
     takeState: (state) => state && setD((p) => ({ ...p, state, offset: clockOffset(state.serverNowMs) })),
     setQueue: (queue) => queue && setD((p) => ({ ...p, queue })),
     setRevoked: () => setD((p) => ({ ...p, revoked: true })),
+    refresh: () => refresh.current(), // state + queue again (after an owner's add / import: their answers have no queue)
   }
 }
 
@@ -453,6 +464,427 @@ export function useTavarianControl(p) {
   return { act, busy: busy?.action ?? null, err }
 }
 
+// ---- the owner's queue actions: one at a time, a plain message when refused, and Undo for 5 s ----
+// The station plays in several places at once, so a wrong tap changes the music everywhere: every change that can be
+// put back offers Undo (lib/player.js undoPlan), and ⏭ / Play now say what happens ("Skipped A · loading B…").
+const UNDO_MS = 5000
+const TRANS_MS = 40_000 // the skip line gives up after this when the next song never plays
+const SLOW_IMPORT = "The import is taking long: Tavarian may still be adding songs, check the queue in a minute"
+
+export function useOwnerOps(p) {
+  const [busy, setBusy] = useState(null) // the action in flight ('skip', 'now:<id>', 'undo', …): other buttons wait
+  const [toast, setToast] = useState(null) // { text, err, plan: Undo's steps, trans: its text is the skip line }
+  const [trans, setTrans] = useState(null) // { from, at }: after ⏭ / Play now, until the next song plays
+  const [importing, setImporting] = useState(null) // { url, placement, since }
+  const [imported, setImported] = useState(null) // { url, summary, data } or { url, error }
+  const [progress, setProgress] = useState(null) // a long Undo: { done, total, until (Tavarian said wait till then) }
+  const lock = useRef(null)
+  const importLock = useRef(false)
+  const live = useRef(p)
+  live.current = p
+  const ids = () => (live.current.queue?.items ?? []).map((s) => s.id)
+  const tl = transitionLine(trans, p.state)
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), toast.plan ? UNDO_MS : toast.err ? 7000 : 4000)
+    return () => clearTimeout(t)
+  }, [toast])
+  useEffect(() => {
+    if (!trans) return
+    const t = setTimeout(() => setTrans(null), tl?.done ? 4000 : Math.max(0, TRANS_MS - (Date.now() - trans.at)))
+    return () => clearTimeout(t)
+  }, [trans, tl?.done])
+
+  const say = (text, err = false) => setToast({ text, err })
+  const offer = (text, entry, withTrans = false) => setToast({ text, plan: undoPlan(entry), trans: withTrans })
+  const fail = (r) => (say(r.error, true), false)
+  // resolves true once the live state / queue passes `ok` (the event stream brings them), false after `ms`
+  const waitFor = (ok, ms) =>
+    new Promise((resolve) => {
+      const t0 = Date.now()
+      const check = () => (ok(live.current.state, live.current.queue?.items ?? []) ? resolve(true) : Date.now() - t0 > ms ? resolve(false) : setTimeout(check, 150))
+      check()
+    })
+  // one action at a time: a tap while another one is in flight does nothing
+  async function run(key, f) {
+    if (lock.current) return false
+    lock.current = key
+    setBusy(key)
+    try {
+      return await f()
+    } finally {
+      lock.current = null
+      setBusy(null)
+    }
+  }
+  // what plays now (to come back to)
+  const snapshot = () => {
+    const s = live.current.state
+    const on = Boolean(s?.song) && ['playing', 'paused', 'loading'].includes(s.status)
+    return { from: on ? s.song : null, at: on ? positionAt(s, live.current.offset) : 0, paused: s?.status === 'paused' }
+  }
+  const takeQueue = (r) => r.ok && live.current.setQueue(r.data.queue)
+  const post = tavarianPost
+
+  const skip = () =>
+    run('skip', async () => {
+      const prev = live.current.state
+      const snap = snapshot()
+      const next = live.current.queue?.items?.[0] ?? null
+      const r = await post({ action: 'skip' })
+      if (!r.ok) return fail(r)
+      live.current.takeState(r.data.state)
+      setTrans({ from: snap.from, at: Date.now() })
+      offer(next ? `Now playing ${plain(next.title)}` : 'Skipped', { kind: 'now', ...snap, to: next, toIndex: next ? 0 : null }, true)
+      await waitFor((s) => confirms('skip', prev, s), CONFIRM_MS) // the button spins until the station shows it
+      return true
+    })
+  const playNow = (song) =>
+    run(`now:${song.id}`, async () => {
+      const snap = snapshot()
+      const index = ids().indexOf(song.id)
+      const r = await post({ action: 'play-now', id: song.id })
+      if (!r.ok) return fail(r)
+      live.current.takeState(r.data.state)
+      setTrans({ from: snap.from, at: Date.now() })
+      offer(`Now playing ${plain(song.title)}`, { kind: 'now', ...snap, to: song, toIndex: index < 0 ? null : index }, true)
+      return true
+    })
+  const playNext = (song) =>
+    run(`next:${song.id}`, async () => {
+      const before = ids()
+      const r = await post({ action: 'next', id: song.id })
+      if (!r.ok) return fail(r)
+      takeQueue(r)
+      offer(`Up next: ${plain(song.title)}`, { kind: 'order', ids: before })
+      return true
+    })
+  const remove = (song) =>
+    run(`remove:${song.id}`, async () => {
+      const index = ids().indexOf(song.id)
+      const r = await post({ action: 'remove', id: song.id })
+      if (!r.ok) return fail(r)
+      takeQueue(r)
+      offer(`Removed ${plain(song.title)}`, { kind: 'remove', song, index })
+      return true
+    })
+  // a new order (drag and drop, or the handle's arrow keys); shown at once, put back if Tavarian refuses
+  const reorder = (order, song, to) =>
+    run('reorder', async () => {
+      const before = live.current.queue
+      const was = ids()
+      if (sameOrder(order, was)) return true
+      const byId = new Map((before?.items ?? []).map((s) => [s.id, s]))
+      live.current.setQueue({ ...before, items: order.map((id) => byId.get(id)).filter(Boolean) })
+      const r = await post({ action: 'reorder', ids: order })
+      if (!r.ok) return live.current.setQueue(before), fail(r)
+      takeQueue(r)
+      offer(song ? `Moved ${plain(song.title)} to #${to + 1}` : 'Moved', { kind: 'order', ids: was })
+      return true
+    })
+  // one YouTube video: placement now | next | end
+  const add = (url, placement = 'end', title) =>
+    run(`add:${url}:${placement}`, async () => {
+      const snap = snapshot()
+      const r = await post({ action: 'add', youtubeUrl: url, placement })
+      if (!r.ok) return fail(r)
+      const song = r.data.song
+      live.current.refresh()
+      if (placement === 'now') setTrans({ from: snap.from, at: Date.now() })
+      offer(placedText(placement, song?.title ?? title), { kind: 'added', ids: song?.id != null ? [song.id] : [], placement, ...snap }, placement === 'now')
+      return true
+    })
+  // a whole playlist (YouTube) or a Spotify playlist / album / track: can take a while, so it has its own lock and
+  // the other buttons keep working meanwhile
+  async function importList(url, placement = 'end') {
+    if (importLock.current) return false
+    importLock.current = true
+    const snap = snapshot()
+    setImported(null)
+    setImporting({ url, placement, since: Date.now() })
+    const r = await post({ action: 'import', url, placement })
+    importLock.current = false
+    setImporting(null)
+    if (!r.ok) {
+      const error = r.status === 504 || r.status === 0 || r.code === 'timeout' ? SLOW_IMPORT : r.error
+      setImported({ url, error })
+      return say(error, true), false
+    }
+    const summary = importSummary(r.data)
+    setImported({ url, summary, data: r.data })
+    live.current.refresh()
+    const added = (r.data.added ?? []).map((s) => s.id)
+    if (!added.length) return say(summary.text, true), false
+    if (placement === 'now') setTrans({ from: snap.from, at: Date.now() })
+    offer(`Added ${summary.added} song${summary.added === 1 ? '' : 's'}${summary.skipped ? ` · skipped ${summary.skipped}` : ''}`, { kind: 'added', ids: added, placement, ...snap })
+    return true
+  }
+
+  // ---- Undo: the plan's steps, in order; the first refusal stops it with a plain message ----
+  async function step(st) {
+    if (st.do === 'stop') {
+      const r = await post({ action: 'stop' })
+      if (r.ok) live.current.takeState(r.data.state)
+      return r
+    }
+    if (st.do === 'restore') {
+      // the song that played comes back now, at the second it was at (and paused, if it was)
+      const r = await post({ action: 'add', youtubeUrl: videoUrl(st.song.youtubeId), placement: 'now' })
+      if (!r.ok) return r
+      const id = r.data.song?.id
+      if (st.at) {
+        // (Tavarian takes a seek while the song still loads: it starts right there)
+        const q = await post({ action: 'seek', seconds: st.at })
+        if (!q.ok) return q
+        live.current.takeState(q.data.state)
+      }
+      if (st.paused) {
+        if (!(await waitFor((s) => s?.song?.id === id && s.status === 'playing', 20_000))) return { ok: false, error: "it didn't start in time" }
+        const q = await post({ action: 'pause' })
+        if (!q.ok) return q
+        live.current.takeState(q.data.state)
+      }
+      return r
+    }
+    if (st.do === 'requeue') {
+      // added again (it lands at the end), then moved back to its place
+      let id = (live.current.queue?.items ?? []).find((s) => s.youtubeId === st.song.youtubeId)?.id
+      if (id == null) {
+        const r = await post({ action: 'add', youtubeUrl: videoUrl(st.song.youtubeId), placement: 'end' })
+        if (!r.ok) return r
+        id = r.data.song?.id
+        live.current.refresh()
+        await waitFor((s, q) => q.some((x) => x.id === id), 6000)
+      }
+      const now = ids()
+      const order = insertAt(now.includes(id) ? now : [...now, id], id, st.index)
+      if (sameOrder(order, now)) return { ok: true }
+      const q = await post({ action: 'reorder', ids: order })
+      takeQueue(q)
+      return q
+    }
+    if (st.do === 'order') {
+      const now = ids()
+      const order = restoreOrder(st.ids, now)
+      if (sameOrder(order, now)) return { ok: true }
+      const q = await post({ action: 'reorder', ids: order })
+      takeQueue(q)
+      return q
+    }
+    if (st.do === 'remove') {
+      // two at a time (an import can be 100); one that already played or went is fine. Tavarian limits how fast a
+      // token may call: on "too fast" wait as long as it says, then go on (the line shows how far it got)
+      const left = [...st.ids]
+      const total = left.length
+      let done = 0
+      let bad = null
+      let pause = null
+      const worker = async () => {
+        while (left.length && !bad) {
+          if (pause) await pause
+          const id = left.shift()
+          const q = await post({ action: 'remove', id })
+          if (q.status === 429) {
+            left.unshift(id)
+            const s = Math.min(90, q.retryAfter || 30)
+            pause ??= new Promise((r) => {
+              setProgress({ done, total, until: Date.now() + s * 1000 })
+              setTimeout(() => ((pause = null), setProgress({ done, total }), r()), s * 1000)
+            })
+            continue
+          }
+          if (q.ok) takeQueue(q)
+          else if (q.code !== 'not_found' && q.code !== 'not_queued') bad = q
+          done++
+          if (total > 4) setProgress((g) => ({ done, total, until: g?.until > Date.now() ? g.until : 0 }))
+        }
+      }
+      await Promise.all([worker(), worker()])
+      setProgress(null)
+      return bad ?? { ok: true }
+    }
+    return { ok: true }
+  }
+  function undo() {
+    const plan = toast?.plan
+    if (!plan || lock.current) return
+    setToast(null)
+    setTrans(null)
+    run('undo', async () => {
+      for (const st of plan) {
+        const r = await step(st)
+        if (!r.ok) return say(`Couldn't undo: ${r.error}`, true)
+      }
+      say('Undone')
+    })
+  }
+
+  return { busy, toast, trans, tl, importing, imported, progress, say, skip, playNow, playNext, remove, reorder, add, importList, undo }
+}
+
+// what the line under the player (and the sheet's status line) says for the owner's actions, or null
+function opsLine(ops) {
+  if (!ops) return null
+  if (ops.busy === 'undo') {
+    const g = ops.progress
+    const s = g?.until ? Math.ceil((g.until - Date.now()) / 1000) : 0
+    return { text: g ? `Undoing… ${g.done} of ${g.total} removed${s > 0 ? ` · Tavarian asks to slow down: going on in ${s} s` : ''}` : 'Undoing…', spin: true, ticks: s > 0 }
+  }
+  const t = ops.toast
+  if (t?.err) return { text: t.text, err: true }
+  if (t) return { text: t.trans && ops.tl ? ops.tl.text : t.text, undo: Boolean(t.plan) }
+  if (ops.tl) return { text: ops.tl.text, spin: !ops.tl.done }
+  if (ops.importing) return { text: 'Importing a playlist… this can take a while', spin: true }
+  return null
+}
+function OpsLine({ line, ops, wrap, className = '' }) {
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!line?.ticks) return
+    const t = setInterval(() => tick((n) => n + 1), 1000) // the countdown
+    return () => clearInterval(t)
+  }, [line?.ticks])
+  return (
+    <p className={`flex items-center justify-center gap-2 min-w-0 ${className}`} role="status" aria-live="polite">
+      <span className={`${wrap ? 'line-clamp-2 text-center' : 'truncate'} ${line?.err ? 'text-red-400' : ''}`}>
+        {line?.spin && <i className="fa-solid fa-spinner fa-spin mr-1.5" aria-hidden="true" />}
+        {line?.text ?? ''}
+      </span>
+      {line?.undo && (
+        <button onClick={ops.undo} className="shrink-0 -my-1.5 py-1.5 px-1.5 font-bold text-lofi-primary hover:text-white flex items-center gap-1 transition-colors">
+          <i className="fa-solid fa-rotate-left text-[0.9em]" aria-hidden="true" /> Undo
+        </button>
+      )}
+    </p>
+  )
+}
+
+// ---- drag to reorder: a mouse drags the handle (⋮⋮) at once; a finger holds it ~400 ms first (a small buzz says
+// "go"), so a plain swipe over the list still scrolls. Pointer events; while a finger drags, touchmove is cancelled
+// so the list doesn't scroll under it (but it scrolls by itself near the top / bottom edge) ----
+const HOLD_MS = 400
+function useDragReorder({ ids, disabled, onDrop }) {
+  const [drag, setDrag] = useState(null) // { id, from, gap, dy, top }: the row that moves and the drop line
+  const [pressing, setPressing] = useState(null) // a finger holds this id's handle (not dragging yet)
+  const list = useRef(null)
+  const g = useRef(null)
+  const latest = useRef({ ids, onDrop })
+  latest.current = { ids, onDrop }
+  useEffect(() => () => g.current?.end(), [])
+
+  function start(e, index) {
+    if (disabled || g.current || (e.pointerType === 'mouse' && e.button !== 0)) return
+    const touch = e.pointerType !== 'mouse'
+    if (!touch) e.preventDefault() // no text selection while dragging
+    const handle = e.currentTarget
+    const id = latest.current.ids[index]
+    const scroller = list.current?.closest('[data-scroll]')
+    const pid = e.pointerId
+    const x0 = e.clientX
+    const y0 = e.clientY
+    let active = false
+    let timer = 0
+    let raf = 0
+    let lastY = y0
+    let mids = []
+    let tops = []
+    let bottom = 0
+    let s0 = 0
+    let gap = index
+    const scrolled = () => (scroller?.scrollTop ?? 0) - s0
+    const update = (y) => {
+      lastY = y
+      const cy = y + scrolled()
+      gap = gapAt(mids, cy)
+      setDrag({ id, from: index, gap, dy: cy - y0, top: gap >= tops.length ? bottom + 3 : tops[gap] - 3 })
+    }
+    const edge = () => {
+      if (!active) return
+      const r = scroller?.getBoundingClientRect()
+      const v = !r ? 0 : lastY < r.top + 48 ? -Math.ceil((r.top + 48 - lastY) / 6) : lastY > r.bottom - 48 ? Math.ceil((lastY - r.bottom + 48) / 6) : 0
+      if (v) {
+        const before = scroller.scrollTop
+        scroller.scrollTop += v
+        if (scroller.scrollTop !== before) update(lastY)
+      }
+      raf = requestAnimationFrame(edge)
+    }
+    const activate = () => {
+      setPressing(null)
+      const rows = [...(list.current?.children ?? [])].filter((el) => el.dataset.row != null)
+      if (!rows.length) return end()
+      const lt = list.current.getBoundingClientRect().top
+      const rects = rows.map((r) => r.getBoundingClientRect())
+      mids = rects.map((r) => r.top + r.height / 2)
+      tops = rects.map((r) => r.top - lt)
+      bottom = rects.at(-1).bottom - lt
+      s0 = scroller?.scrollTop ?? 0
+      active = true
+      if (touch) navigator.vibrate?.(10)
+      try {
+        handle.setPointerCapture(pid)
+      } catch {}
+      update(lastY)
+      raf = requestAnimationFrame(edge)
+    }
+    const move = (ev) => {
+      if (ev.pointerId !== pid) return
+      if (active) return update(ev.clientY)
+      const d = Math.hypot(ev.clientX - x0, ev.clientY - y0)
+      if (!touch && d > 3) activate()
+      else if (touch && d > 8) end() // a swipe, not a hold: the list scrolls and nothing moves
+    }
+    const up = (ev) => {
+      if (ev.pointerId !== pid) return
+      const was = active
+      end()
+      if (!was) return
+      const now = latest.current.ids // (the queue may have moved on while dragging)
+      const from = now.indexOf(id)
+      const to = Math.min(gapIndex(index, gap), now.length - 1)
+      if (from >= 0 && to !== from) latest.current.onDrop(moveTo(now, from, to), id, to)
+    }
+    const cancel = (ev) => ev.pointerId === pid && end()
+    const noScroll = (ev) => active && ev.cancelable && ev.preventDefault()
+    const noMenu = (ev) => ev.preventDefault()
+    const keyOut = (ev) => ev.key === 'Escape' && end()
+    function end() {
+      clearTimeout(timer)
+      cancelAnimationFrame(raf)
+      active = false
+      removeEventListener('pointermove', move)
+      removeEventListener('pointerup', up)
+      removeEventListener('pointercancel', cancel)
+      removeEventListener('touchmove', noScroll)
+      removeEventListener('contextmenu', noMenu, true)
+      removeEventListener('keydown', keyOut, true)
+      g.current = null
+      setPressing(null)
+      setDrag(null)
+    }
+    addEventListener('pointermove', move)
+    addEventListener('pointerup', up)
+    addEventListener('pointercancel', cancel)
+    addEventListener('touchmove', noScroll, { passive: false })
+    addEventListener('contextmenu', noMenu, true)
+    addEventListener('keydown', keyOut, true)
+    g.current = { end }
+    if (touch) {
+      setPressing(id)
+      timer = setTimeout(activate, HOLD_MS)
+    }
+  }
+  // the handle's ↑ / ↓ keys move it one place
+  function key(e, index) {
+    const d = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
+    if (!d || disabled) return
+    e.preventDefault()
+    const order = moveId(ids, ids[index], d)
+    if (order) onDrop(order, ids[index], index + d)
+  }
+  return { list, drag, pressing, start, key }
+}
+
 // ---- pieces ----
 function Cover({ song, size = 'w-24 h-24', on, children }) {
   const art = thumbOf(song)
@@ -489,7 +921,8 @@ function playAction(p) {
 // The Player tab
 export function PlayerPanel({ p, owner, vol }) {
   const ctl = useTavarianControl(p)
-  const [sheet, setSheet] = useState(null) // the sheet's open view: queue | recent | add | playlists
+  const ops = useOwnerOps(p)
+  const [sheet, setSheet] = useState(null) // the sheet's open view: queue | recent | search | link | import | playlists
   const [drag, setDrag] = useState(null) // the seek bar while it's held (seconds)
   const playing = p.state?.status === 'playing'
   const [, tick] = useState(0)
@@ -507,6 +940,7 @@ export function PlayerPanel({ p, owner, vol }) {
   const pos = drag ?? positionAt(p.state, p.offset)
   const hearing = p.listening && p.phase === 'playing'
   const [act, actLabel, actIcon] = playAction(p)
+  const locked = ctl.busy != null || ops.busy != null // one tap = one action
   const commitSeek = () => {
     if (drag == null) return
     ctl.act('seek', { seconds: Math.round(drag) })
@@ -531,7 +965,9 @@ export function PlayerPanel({ p, owner, vol }) {
   }
 
   const songError = p.songError && Date.now() - p.songError.at < 8000 ? p.songError : null
-  const err = ctl.err ?? (songError ? `A song couldn't play${songError.reason ? ` (${songError.reason})` : ''}: skipped` : null)
+  const titleOf = (id) => [p.state?.song, ...items, ...recent].find((s) => s && s.id === id)?.title
+  const err = ctl.err ?? (songError ? songErrorText(songError.reason, titleOf(songError.songId)) : null)
+  const mine = owner ? opsLine(ops) : null
   const line = err ?? p.note ?? (p.listening && p.phase === 'connecting' ? 'Tuning in…' : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : owner ? '⏸ ⏭ change it for everyone listening here' : '')
   const next = items.slice(0, 2)
   return (
@@ -594,8 +1030,8 @@ export function PlayerPanel({ p, owner, vol }) {
         </button>
         {owner && (
           <>
-            <Round label={actLabel} icon={actIcon} onClick={() => ctl.act(act)} busy={['pause', 'resume', 'play'].includes(ctl.busy)} disabled={act === 'play' && !items.length} className="ml-1" />
-            <Round label="Skip for everyone" icon="fa-forward-step" onClick={() => ctl.act('skip')} busy={ctl.busy === 'skip'} disabled={!song} />
+            <Round label={actLabel} icon={actIcon} onClick={() => ctl.act(act)} busy={['pause', 'resume', 'play'].includes(ctl.busy)} disabled={(act === 'play' && !items.length) || locked} className="ml-1" />
+            <Round label="Skip for everyone" icon="fa-forward-step" onClick={ops.skip} busy={ops.busy === 'skip'} disabled={!song || locked} />
           </>
         )}
         {!vol.fixedVolume && (
@@ -611,27 +1047,34 @@ export function PlayerPanel({ p, owner, vol }) {
               value={vol.muted ? 0 : vol.volume}
               onChange={(e) => vol.setLevel(Number(e.target.value))}
               aria-label="Volume"
-              className="radio-volume min-w-0 flex-1"
+              className={`radio-volume min-w-0 flex-1 ${owner ? 'max-sm:hidden' : ''}`}
               style={{ '--v': `${vol.muted ? 0 : vol.volume}%` }}
             />
           </div>
         )}
+        {/* the owner's Add: "+ Add" on a phone (it takes the slider's room: mute stays, the phone's own buttons set the
+            volume); a round + from sm up, next to the slider */}
+        {owner && (
+          <button
+            onClick={() => setSheet('search')}
+            aria-haspopup="dialog"
+            aria-label="Add songs (search, paste a link, import a playlist)"
+            title="Add songs: search, paste a link, import a playlist"
+            className={`h-10 max-sm:px-3.5 sm:w-10 shrink-0 rounded-full border border-lofi-primary/50 bg-lofi-primary/15 text-lofi-primary font-bold text-sm flex items-center justify-center gap-1.5 hover:bg-lofi-primary hover:text-lofi-base transition-colors ${vol.fixedVolume ? 'ml-auto' : ''}`}
+          >
+            <i className={`fa-solid ${ops.importing ? 'fa-spinner fa-spin' : 'fa-plus'} text-sm`} aria-hidden="true" />
+            <span className="sm:hidden">Add</span>
+          </button>
+        )}
       </div>
 
-      {/* Up next (or the last played): the first two; the header opens the whole list (and Add, for the owner) */}
+      {/* Up next (or the last played): the first two; the header opens the whole list */}
       <div className="relative mt-2 min-w-0 h-[52px] shrink-0">
         <p className="flex items-center justify-between h-4 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">
           <span>{next.length ? 'Up next' : recent.length ? 'Last played' : 'Queue'}</span>
-          <span className="flex items-center gap-3 normal-case tracking-normal text-[10px]">
-            {owner && (
-              <button onClick={() => setSheet('add')} aria-haspopup="dialog" aria-label="Add a song" className="hover:text-white transition-colors">
-                ＋ Add
-              </button>
-            )}
-            <button onClick={() => setSheet(next.length || !recent.length ? 'queue' : 'recent')} aria-haspopup="dialog" aria-label={`Queue: ${items.length} song${items.length === 1 ? '' : 's'}`} className="hover:text-white transition-colors">
-              {next.length || !recent.length ? `Queue · ${items.length}` : `Recent · ${recent.length}`} ›
-            </button>
-          </span>
+          <button onClick={() => setSheet(next.length || !recent.length ? 'queue' : 'recent')} aria-haspopup="dialog" aria-label={`Queue: ${items.length} song${items.length === 1 ? '' : 's'}`} className="normal-case tracking-normal text-[10px] hover:text-white transition-colors">
+            {next.length || !recent.length ? `Queue · ${items.length}` : `Recent · ${recent.length}`} ›
+          </button>
         </p>
         {next.length > 0 || recent.length > 0 ? (
           <ul>
@@ -644,13 +1087,17 @@ export function PlayerPanel({ p, owner, vol }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-lofi-muted italic pt-1">{owner ? 'The queue is empty: ＋ Add puts a song in it.' : 'The queue is empty.'}</p>
+          <p className="text-[11px] text-lofi-muted italic pt-1">{owner ? 'The queue is empty: Add puts a song in it.' : 'The queue is empty.'}</p>
         )}
       </div>
-      <p className={`relative shrink-0 h-4 mt-1 text-[10px] font-mono text-center truncate ${err ? 'text-red-400' : 'text-lofi-muted'}`} aria-live="polite">
-        {line}
-      </p>
-      {sheet && <PlayerSheet p={p} owner={owner} view={sheet} setView={setSheet} onClose={() => setSheet(null)} />}
+      {mine ? (
+        <OpsLine line={mine} ops={ops} className="relative shrink-0 h-4 mt-1 text-[10px] font-mono text-lofi-muted" />
+      ) : (
+        <p className={`relative shrink-0 h-4 mt-1 text-[10px] font-mono text-center truncate ${err ? 'text-red-400' : 'text-lofi-muted'}`} aria-live="polite">
+          {line}
+        </p>
+      )}
+      {sheet && <PlayerSheet p={p} owner={owner} ops={ops} view={sheet} setView={setSheet} onClose={() => setSheet(null)} />}
     </>
   )
 }
@@ -665,18 +1112,21 @@ function EqBars() {
   )
 }
 
-// a song in a list: thumbnail, title, a second line, then the row's buttons
-function SongRow({ s, sub, on, children }) {
+// a song in a list: (a drag handle), thumbnail, title, a second line, then the row's buttons. stack: on phones the
+// buttons get a line of their own (search results: room for their words)
+function SongRow({ s, sub, on, lead, stack, lifted, className = '', children, ...rest }) {
+  const look = lifted ? 'relative z-10 bg-lofi-surface border-lofi-primary/60 shadow-2xl opacity-95' : on ? 'bg-lofi-primary/15 border-lofi-primary/40' : 'border-white/5 bg-lofi-base/40'
   return (
-    <li className={`flex items-center gap-2 rounded-xl p-1.5 pr-2 border ${on ? 'bg-lofi-primary/15 border-lofi-primary/40' : 'border-white/5 bg-lofi-base/40'}`}>
-      <img src={thumbOf(s) ?? s.coverThumbnail ?? undefined} alt="" className="w-16 h-9 rounded-md object-cover shrink-0 bg-lofi-surface" />
+    <li {...rest} className={`flex items-center gap-2 rounded-xl p-1.5 pr-2 border ${stack ? 'max-sm:flex-wrap' : ''} ${look} ${className}`}>
+      {lead}
+      <img src={thumbOf(s) ?? s.coverThumbnail ?? undefined} alt="" className="w-12 h-7 sm:w-16 sm:h-9 rounded-md object-cover shrink-0 bg-lofi-surface" />
       <span className="min-w-0 flex-1">
         <span className="block text-xs font-medium text-white truncate" title={plain(s.title ?? s.name)}>
           {plain(s.title ?? s.name)}
         </span>
         {sub && <span className="block text-[10px] text-lofi-muted truncate">{sub}</span>}
       </span>
-      {children}
+      {children && <span className={`flex items-center gap-1 shrink-0 ${stack ? 'max-sm:basis-full max-sm:justify-end' : ''}`}>{children}</span>}
     </li>
   )
 }
@@ -691,6 +1141,21 @@ const SmallBtn = ({ label, icon, onClick, busy, done, disabled }) => (
     <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : done ? 'fa-check' : icon}`} aria-hidden="true" />
   </button>
 )
+// a small pill with an icon and a word (the word hides on phones when `short`)
+function Pill({ label, text, icon, onClick, busy, disabled, primary, short, className = '' }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || busy}
+      aria-label={label}
+      title={label}
+      className={`h-7 shrink-0 rounded-full flex items-center justify-center gap-1.5 text-[11px] font-mono border transition-colors disabled:opacity-40 ${short ? 'max-sm:w-7 sm:px-2.5' : 'px-2.5'} ${primary ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold hover:bg-lofi-highlight' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'} ${className}`}
+    >
+      <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : icon} text-[10px]`} aria-hidden="true" />
+      <span className={short ? 'max-sm:hidden' : ''}>{text}</span>
+    </button>
+  )
+}
 const ago = (iso) => {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return ''
@@ -698,12 +1163,35 @@ const ago = (iso) => {
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
 }
 
-// Queue, recent, and for the owner Add (link or search), Playlists and the Tavarian link. A window over the page
-// (a sheet on phones; portalled to <body>, like the station list). Esc / ✕ / outside closes.
-export function PlayerSheet({ p, owner, view, setView, onClose }) {
+// Play now / Play next / Add for a YouTube song (a search result, a recent one). One already queued is played /
+// moved from its place instead of added twice.
+function PlaceBtns({ s, p, ops, short }) {
+  const url = s.youtubeUrl ?? videoUrl(s.youtubeId)
+  const queued = (p.queue?.items ?? []).find((x) => x.youtubeId === s.youtubeId)
+  const current = p.state?.song?.youtubeId === s.youtubeId && p.state?.status !== 'idle'
+  const t = plain(s.title)
+  const lock = ops.busy != null
+  return (
+    <>
+      <Pill short={short} primary text="Now" icon={current ? 'fa-volume-high' : 'fa-play'} label={current ? `Playing now: ${t}` : `Play now: ${t}`} disabled={lock || current} busy={ops.busy === (queued ? `now:${queued.id}` : `add:${url}:now`)} onClick={() => (queued ? ops.playNow(queued) : ops.add(url, 'now', s.title))} />
+      <Pill short={short} text="Next" icon="fa-angles-up" label={`Play next: ${t}`} disabled={lock || current || (queued && p.queue.items[0]?.id === queued.id)} busy={ops.busy === (queued ? `next:${queued.id}` : `add:${url}:next`)} onClick={() => (queued ? ops.playNext(queued) : ops.add(url, 'next', s.title))} />
+      <Pill short={short} text={queued ? 'Queued' : 'Add'} icon={queued ? 'fa-check' : 'fa-plus'} label={queued ? `In the queue: ${t}` : `Add to the end: ${t}`} disabled={lock || Boolean(queued)} busy={ops.busy === `add:${url}:end`} onClick={() => ops.add(url, 'end', s.title)} />
+    </>
+  )
+}
+
+const ADD_VIEWS = [
+  ['search', 'Search', 'fa-magnifying-glass'],
+  ['link', 'Paste link', 'fa-link'],
+  ['import', 'Import', 'fa-list-ul', 'Import playlist'],
+]
+
+// Queue, recent, and for the owner Add (Search · Paste link · Import playlist), Playlists and the Tavarian link. A
+// window over the page (a sheet on phones; portalled to <body>, like the station list). Esc / ✕ / outside closes.
+export function PlayerSheet({ p, owner, ops, view, setView, onClose }) {
   const close = useRef(null)
   const box = useRef(null)
-  const [msg, setMsg] = useState(null) // { text, err }
+  const [seed, setSeed] = useState('') // text handed from one Add tab to another
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
   useEffect(() => {
@@ -712,30 +1200,31 @@ export function PlayerSheet({ p, owner, view, setView, onClose }) {
     addEventListener('keydown', onKey, true)
     return () => removeEventListener('keydown', onKey, true)
   }, [])
-  useEffect(() => {
-    if (!msg) return
-    const t = setTimeout(() => setMsg(null), msg.err ? 7000 : 4000)
-    return () => clearTimeout(t)
-  }, [msg])
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
+  const adding = ADD_VIEWS.some(([id]) => id === view)
+  const go = (v, text = '') => (setSeed(text), setView(v))
   const views = [
     ['queue', `Queue · ${items.length}`],
     ['recent', 'Recent'],
-    ...(owner ? [['add', '＋ Add'], ['playlists', 'Playlists']] : []),
+    ...(owner ? [['search', '＋ Add'], ['playlists', 'Playlists']] : []),
   ]
-  const chip = ([id, label]) => (
-    <button key={id} onClick={() => setView(id)} aria-pressed={view === id} className={`shrink-0 h-7 px-2.5 rounded-full text-[11px] border transition-colors ${view === id ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold' : 'border-white/10 text-lofi-muted hover:text-white'}`}>
-      {label}
-    </button>
-  )
+  const chip = ([id, label]) => {
+    const on = view === id || (id === 'search' && adding)
+    return (
+      <button key={id} onClick={() => go(id)} aria-pressed={on} className={`shrink-0 h-7 px-2.5 rounded-full text-[11px] border transition-colors ${on ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold' : 'border-white/10 text-lofi-muted hover:text-white'}`}>
+        {label}
+      </button>
+    )
+  }
+  const line = owner ? opsLine(ops) : null
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-6 bg-lofi-base/70 backdrop-blur-sm motion-safe:animate-[fade-in_0.2s_ease-out]" onClick={onClose}>
       <div
         ref={box}
         role="dialog"
         aria-modal="true"
-        aria-label="Home station"
+        aria-label={adding ? 'Add songs to the home station' : 'Home station'}
         onClick={(e) => e.stopPropagation()}
         className="relative w-full sm:max-w-xl h-[85dvh] sm:h-[min(640px,85dvh)] glass-panel rounded-t-3xl sm:rounded-3xl p-4 sm:p-5 pb-[max(1rem,env(safe-area-inset-bottom))] flex flex-col min-h-0 text-lofi-text motion-safe:animate-[panel-in_0.25s_cubic-bezier(0.2,0.8,0.2,1)]"
       >
@@ -748,23 +1237,46 @@ export function PlayerSheet({ p, owner, view, setView, onClose }) {
           </button>
         </div>
         <div className="flex gap-1.5 overflow-x-auto scrollbar-none mb-3 shrink-0">{views.map(chip)}</div>
-        <div className="min-h-0 grow overflow-y-auto overscroll-contain -mr-1 pr-1">
-          {view === 'queue' && <QueueView p={p} owner={owner} setMsg={setMsg} onAdd={() => setView('add')} />}
+        {owner && adding && (
+          <div role="tablist" aria-label="Add songs" className="grid grid-cols-3 gap-1 p-1 mb-3 shrink-0 rounded-2xl bg-lofi-base/50 border border-white/5">
+            {ADD_VIEWS.map(([id, label, icon, wide]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => go(id)}
+                className={`h-9 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${view === id ? 'bg-lofi-surface text-white font-medium shadow' : 'text-lofi-muted hover:text-white'}`}
+              >
+                <i className={`fa-solid ${icon} text-[11px] ${view === id ? 'text-lofi-primary' : ''}`} aria-hidden="true" />
+                {wide ? (
+                  <>
+                    <span className="sm:hidden">{label}</span>
+                    <span className="max-sm:hidden">{wide}</span>
+                  </>
+                ) : (
+                  label
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <div data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain -mr-1 pr-1">
+          {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
           {view === 'recent' && (
             <SongList empty="Nothing played yet">
               {recent.map((s) => (
-                <SongRow key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${s.failReason}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
-                  {owner && <AddBtn url={`https://www.youtube.com/watch?v=${s.youtubeId}`} title={s.title} label="Queue it again" setMsg={setMsg} />}
+                <SongRow key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${reasonText(s.failReason)}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
+                  {owner && s.youtubeId && <PlaceBtns s={s} p={p} ops={ops} short />}
                 </SongRow>
               ))}
             </SongList>
           )}
-          {owner && view === 'add' && <AddView setMsg={setMsg} queued={items} />}
-          {owner && view === 'playlists' && <PlaylistsView setMsg={setMsg} />}
+          {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
+          {owner && view === 'link' && <LinkView p={p} ops={ops} seed={seed} go={go} />}
+          {owner && view === 'import' && <ImportView ops={ops} seed={seed} go={go} />}
+          {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
         </div>
-        <p className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono text-center ${msg?.err ? 'text-red-400' : 'text-lofi-primary'}`} role="status" aria-live="polite">
-          {msg?.text ?? ''}
-        </p>
+        {owner && <OpsLine wrap line={line} ops={ops} className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono ${line?.err ? '' : 'text-lofi-primary'}`} />}
         {owner && (
           <div className="shrink-0 mt-1 pt-2 border-t border-white/5 space-y-1.5">
             <p className="text-[10px] font-mono text-lofi-muted text-center">⏸ ⏭ and the queue change it for everyone listening on the home page.</p>
@@ -781,92 +1293,101 @@ function SongList({ empty, children }) {
   const has = Array.isArray(children) ? children.some(Boolean) && children.length > 0 : Boolean(children)
   return has ? <ul className="space-y-1.5">{children}</ul> : <p className="text-xs text-lofi-muted text-center py-8">{empty}</p>
 }
+const H3 = ({ children, className = '' }) => <h3 className={`text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1.5 px-1 ${className}`}>{children}</h3>
 
-function QueueView({ p, owner, setMsg, onAdd }) {
+function QueueView({ p, owner, ops, onAdd }) {
   const items = p.queue?.items ?? []
-  const [busy, setBusy] = useState(null) // the id being removed / moved
   const song = p.state?.song
-  async function remove(s) {
-    setBusy(s.id)
-    const r = await tavarianPost({ action: 'remove', id: s.id })
-    setBusy(null)
-    if (r.ok) p.setQueue(r.data.queue), setMsg({ text: `Removed: ${plain(s.title)}` })
-    else setMsg({ text: r.error, err: true })
-  }
-  async function move(s, d) {
-    const ids = moveId(
-      items.map((x) => x.id),
-      s.id,
-      d,
-    )
-    if (!ids) return
-    const before = p.queue
-    p.setQueue({ ...p.queue, items: ids.map((id) => items.find((x) => x.id === id)) }) // at once; the answer confirms
-    setBusy(s.id)
-    const r = await tavarianPost({ action: 'reorder', ids })
-    setBusy(null)
-    if (r.ok) p.setQueue(r.data.queue)
-    else p.setQueue(before), setMsg({ text: r.error, err: true })
-  }
+  const lock = ops.busy != null
+  const dnd = useDragReorder({ ids: items.map((s) => s.id), disabled: !owner || lock, onDrop: (order, id, to) => ops.reorder(order, items.find((s) => s.id === id), to) })
+  const d = dnd.drag
+  const showLine = d && d.gap !== d.from && d.gap !== d.from + 1
   return (
     <>
+      {owner && (
+        <button onClick={onAdd} className="w-full h-11 mb-3 rounded-2xl border border-dashed border-lofi-primary/50 bg-lofi-primary/10 text-lofi-primary text-sm font-bold flex items-center justify-center gap-2 hover:bg-lofi-primary/20 transition-colors">
+          <i className="fa-solid fa-plus" aria-hidden="true" /> Add songs <span className="font-normal text-xs text-lofi-muted max-sm:hidden">search · paste a link · import a playlist</span>
+        </button>
+      )}
       {song && (
         <>
-          <h3 className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1.5 px-1">Now</h3>
+          <H3>Now</H3>
           <ul className="mb-3">
             <SongRow s={song} on sub={`${statusInfo({ state: p.state }).label}${song.durationSeconds > 0 ? ` · ${mmss(song.durationSeconds)}` : ''}`} />
           </ul>
         </>
       )}
-      <h3 className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1.5 px-1">Up next</h3>
+      <H3 className="flex items-center justify-between gap-2">
+        <span>Up next</span>
+        {owner && items.length > 1 && (
+          <span className="normal-case tracking-normal text-[10px]">
+            <span className="max-sm:hidden">drag ⋮⋮ to reorder</span>
+            <span className="sm:hidden">hold ⋮⋮, then drag</span>
+          </span>
+        )}
+      </H3>
       {items.length ? (
-        <ol className="space-y-1.5">
-          {items.map((s, i) => (
-            <SongRow key={s.id} s={s} sub={`${i + 1}${s.durationSeconds > 0 ? ` · ${mmss(s.durationSeconds)}` : ''}`}>
-              {owner && (
-                <span className="flex items-center shrink-0">
-                  <SmallBtn label={`Move up: ${s.title}`} icon="fa-arrow-up" onClick={() => move(s, -1)} disabled={i === 0 || busy != null} />
-                  <SmallBtn label={`Move down: ${s.title}`} icon="fa-arrow-down" onClick={() => move(s, 1)} disabled={i === items.length - 1 || busy != null} />
-                  <SmallBtn label={`Remove: ${s.title}`} icon="fa-xmark" onClick={() => remove(s)} busy={busy === s.id} disabled={busy != null} />
-                </span>
-              )}
-            </SongRow>
-          ))}
+        <ol ref={dnd.list} className="relative space-y-1.5">
+          {items.map((s, i) => {
+            const moving = d?.id === s.id
+            const t = plain(s.title)
+            return (
+              <SongRow
+                key={s.id}
+                s={s}
+                data-row={i}
+                sub={`${i + 1}${s.durationSeconds > 0 ? ` · ${mmss(s.durationSeconds)}` : ''}`}
+                lifted={moving}
+                className={dnd.pressing === s.id ? 'ring-1 ring-lofi-primary/50' : ''}
+                style={moving ? { transform: `translateY(${d.dy}px) scale(1.02)` } : undefined}
+                lead={
+                  owner && (
+                    <button
+                      type="button"
+                      onPointerDown={(e) => dnd.start(e, i)}
+                      onKeyDown={(e) => dnd.key(e, i)}
+                      onContextMenu={(e) => e.preventDefault()}
+                      disabled={lock || items.length < 2}
+                      aria-label={`Move ${t}: drag, or press up / down`}
+                      title="Drag to reorder (on a phone: hold, then drag)"
+                      className={`w-6 h-9 -ml-0.5 shrink-0 rounded-lg flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 select-none [-webkit-touch-callout:none] ${moving ? 'cursor-grabbing text-lofi-primary' : 'cursor-grab'} ${dnd.pressing === s.id ? 'bg-lofi-primary/20 text-lofi-primary' : ''}`}
+                    >
+                      <i className="fa-solid fa-grip-vertical text-xs" aria-hidden="true" />
+                    </button>
+                  )
+                }
+              >
+                {owner && (
+                  <>
+                    <Pill short primary text="Now" icon="fa-play" label={`Play now: ${t}`} onClick={() => ops.playNow(s)} busy={ops.busy === `now:${s.id}`} disabled={lock} />
+                    <Pill short text="Next" icon="fa-angles-up" label={`Play next: ${t}`} onClick={() => ops.playNext(s)} busy={ops.busy === `next:${s.id}`} disabled={lock || i === 0} />
+                    <SmallBtn label={`Remove: ${t}`} icon="fa-xmark" onClick={() => ops.remove(s)} busy={ops.busy === `remove:${s.id}`} disabled={lock} />
+                  </>
+                )}
+              </SongRow>
+            )
+          })}
+          {showLine && (
+            <li aria-hidden="true" className="absolute z-20 left-0 right-0 h-0.5 -mt-px rounded-full bg-lofi-primary shadow-[0_0_8px_var(--color-lofi-primary)] pointer-events-none" style={{ top: d.top }}>
+              <span className="absolute -left-0.5 -top-[3px] w-2 h-2 rounded-full bg-lofi-primary" />
+            </li>
+          )}
         </ol>
       ) : (
-        <div className="text-center py-6">
-          <p className="text-xs text-lofi-muted">The queue is empty.</p>
-          {owner && (
-            <button onClick={onAdd} className="mt-2 h-8 px-4 rounded-full bg-lofi-primary text-lofi-base text-xs font-bold">
-              ＋ Add a song
-            </button>
-          )}
-        </div>
+        <p className="text-xs text-lofi-muted text-center py-6">The queue is empty.</p>
       )}
     </>
   )
 }
 
-// + : add one YouTube link to the queue; a check once it's in
-function AddBtn({ url, title, label = 'Add to the queue', setMsg, done: already }) {
-  const [state, setState] = useState(null) // busy | done
-  async function add() {
-    setState('busy')
-    const r = await tavarianPost({ action: 'add', youtubeUrl: url })
-    setState(r.ok ? 'done' : null)
-    setMsg(r.ok ? { text: `Added: ${plain(r.data.song?.title ?? title)}` } : { text: r.error, err: true })
-  }
-  return <SmallBtn label={`${label}: ${plain(title)}`} icon="fa-plus" onClick={add} busy={state === 'busy'} done={state === 'done' || already} />
-}
-
-function AddView({ setMsg, queued }) {
-  const [text, setText] = useState('')
+// ---- Add: Search ----
+function SearchView({ p, ops, seed, go }) {
+  const [text, setText] = useState(seed)
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
-  const [adding, setAdding] = useState(false)
   const input = useRef(null)
   const q = text.trim()
-  const link = isYouTubeUrl(q)
+  const link = ['video', 'playlist', 'spotify', 'mix'].includes(classifyLink(q).kind)
   useEffect(() => input.current?.focus({ preventScroll: true }), [])
   useEffect(() => {
     if (link || q.length < 2) return setResults(null), setSearching(false)
@@ -877,43 +1398,22 @@ function AddView({ setMsg, queued }) {
       if (!alive) return
       setSearching(false)
       if (r.ok) setResults(r.data.results ?? [])
-      else setResults([]), setMsg({ text: r.error, err: true })
+      else setResults([]), ops.say(r.error, true)
     }, 500)
     return () => ((alive = false), clearTimeout(t))
   }, [q, link])
-  async function addLink() {
-    if (!link || adding) return
-    setAdding(true)
-    const r = await tavarianPost({ action: 'add', youtubeUrl: q })
-    setAdding(false)
-    if (r.ok) setText(''), setMsg({ text: `Added: ${plain(r.data.song?.title) || 'the song'}` })
-    else setMsg({ text: r.error, err: true })
-  }
-  const inQueue = new Set(queued.map((s) => s.youtubeId))
   return (
     <>
-      <form onSubmit={(e) => (e.preventDefault(), addLink())} className="flex items-center gap-2 mb-3">
-        <label className="relative grow min-w-0">
-          <span className="sr-only">YouTube link or search</span>
-          <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-xs text-lofi-muted" aria-hidden="true" />
-          <input
-            ref={input}
-            type="search"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Paste a YouTube link, or search"
-            maxLength={300}
-            className="w-full h-10 pl-8 pr-3 rounded-full bg-lofi-base/60 border border-white/10 text-sm text-white placeholder:text-lofi-muted focus:outline-none focus:border-lofi-primary/60"
-          />
-        </label>
-        {link && (
-          <button type="submit" disabled={adding} className="h-10 px-4 shrink-0 rounded-full bg-lofi-primary text-lofi-base text-xs font-bold flex items-center gap-1.5 disabled:opacity-60">
-            <i className={`fa-solid ${adding ? 'fa-spinner fa-spin' : 'fa-plus'}`} aria-hidden="true" /> Add
-          </button>
-        )}
+      <form onSubmit={(e) => e.preventDefault()} className="mb-3">
+        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search YouTube" placeholder="Search YouTube: a song, an artist…" />
       </form>
       {link ? (
-        <p className="text-xs text-lofi-muted text-center py-4">A YouTube link: Add puts it at the end of the queue.</p>
+        <div className="text-center py-4">
+          <p className="text-xs text-lofi-muted">That's a link.</p>
+          <button onClick={() => go('link', q)} className="mt-2 h-8 px-4 rounded-full bg-lofi-primary text-lofi-base text-xs font-bold">
+            Open it in Paste link
+          </button>
+        </div>
       ) : searching ? (
         <p className="text-xs text-lofi-muted text-center py-4">
           <i className="fa-solid fa-spinner fa-spin mr-1.5" aria-hidden="true" /> Searching…
@@ -921,8 +1421,8 @@ function AddView({ setMsg, queued }) {
       ) : results ? (
         <SongList empty="Nothing found">
           {results.map((s) => (
-            <SongRow key={s.youtubeId} s={s} sub={[s.channel, s.durationSeconds > 0 ? mmss(s.durationSeconds) : 'live'].filter(Boolean).join(' · ')}>
-              <AddBtn url={s.youtubeUrl ?? `https://www.youtube.com/watch?v=${s.youtubeId}`} title={s.title} setMsg={setMsg} done={inQueue.has(s.youtubeId)} />
+            <SongRow key={s.youtubeId} s={s} stack sub={[s.channel, s.durationSeconds > 0 ? mmss(s.durationSeconds) : 'live'].filter(Boolean).join(' · ')}>
+              <PlaceBtns s={s} p={p} ops={ops} />
             </SongRow>
           ))}
         </SongList>
@@ -933,7 +1433,242 @@ function AddView({ setMsg, queued }) {
   )
 }
 
-function PlaylistsView({ setMsg }) {
+function TextBox({ inputRef, value, onChange, icon, label, placeholder, paste }) {
+  const canPaste = paste && typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.readText)
+  return (
+    <div className="flex items-center gap-2">
+      <label className="relative grow min-w-0">
+        <span className="sr-only">{label}</span>
+        <i className={`fa-solid ${icon} absolute left-3 top-1/2 -translate-y-1/2 text-xs text-lofi-muted`} aria-hidden="true" />
+        <input
+          ref={inputRef}
+          type={paste ? 'url' : 'search'}
+          inputMode={paste ? 'url' : 'search'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          maxLength={500}
+          autoComplete="off"
+          className="w-full h-11 pl-8 pr-3 rounded-full bg-lofi-base/60 border border-white/10 text-sm text-white placeholder:text-lofi-muted focus:outline-none focus:border-lofi-primary/60"
+        />
+      </label>
+      {canPaste && (
+        <button
+          type="button"
+          onClick={() =>
+            navigator.clipboard.readText().then(
+              (t) => onChange(t.trim().slice(0, 500)),
+              () => inputRef.current?.focus(),
+            )
+          }
+          className="h-11 px-4 shrink-0 rounded-full border border-white/10 text-xs text-lofi-text hover:text-white hover:border-white/30 flex items-center gap-1.5"
+        >
+          <i className="fa-solid fa-paste" aria-hidden="true" /> Paste
+        </button>
+      )}
+    </div>
+  )
+}
+const LINK_HINT = 'A YouTube video or playlist link, or a Spotify playlist, album or track link.'
+const spotifyWhat = (k) => `Spotify ${k.what}`
+
+// ---- Add: Paste link (one video: now / next / end; from a playlist: this video or the whole playlist) ----
+function LinkView({ p, ops, seed, go }) {
+  const [text, setText] = useState(seed)
+  const [whole, setWhole] = useState(false)
+  const input = useRef(null)
+  const k = classifyLink(text)
+  useEffect(() => input.current?.focus({ preventScroll: true }), [])
+  useEffect(() => setWhole(false), [k.url, k.list])
+  const place = async (pl) => (await ops.add(k.url, pl)) && setText('')
+  return (
+    <>
+      <div className="mb-3">
+        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-link" label="YouTube or Spotify link" placeholder="Paste a YouTube or Spotify link" paste />
+      </div>
+      {k.kind === 'empty' && <Hint>{LINK_HINT}</Hint>}
+      {k.kind === 'text' && (
+        <Hint>
+          That's not a link.{' '}
+          <button onClick={() => go('search', text.trim())} className="text-lofi-primary underline underline-offset-2 hover:text-white">
+            Search for “{text.trim().slice(0, 40)}”
+          </button>
+        </Hint>
+      )}
+      {k.kind === 'unsupported' && <Hint err>Only YouTube and Spotify links work here. {LINK_HINT}</Hint>}
+      {k.kind === 'mix' && <Hint err>That's a YouTube Mix (an endless auto playlist): it can't be imported. Paste a video from it, or a normal playlist.</Hint>}
+      {k.kind === 'video' && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 rounded-2xl p-2 border border-white/5 bg-lofi-base/40">
+            <img src={`https://i.ytimg.com/vi/${k.id}/mqdefault.jpg`} alt="" className="w-24 h-14 rounded-lg object-cover bg-lofi-surface shrink-0" />
+            <span className="min-w-0 text-xs">
+              <span className="block text-white font-medium">YouTube video</span>
+              <span className="block text-lofi-muted font-mono truncate">{k.id}</span>
+              {k.mix && <span className="block text-lofi-muted">from a Mix: only this video can be added</span>}
+            </span>
+          </div>
+          {k.list && (
+            <div role="radiogroup" aria-label="What to add" className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-lofi-base/50 border border-white/5">
+              {[
+                [false, 'This video', 'fa-film'],
+                [true, 'The whole playlist', 'fa-list-ul'],
+              ].map(([w, label, icon]) => (
+                <button key={label} role="radio" aria-checked={whole === w} onClick={() => setWhole(w)} className={`h-9 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${whole === w ? 'bg-lofi-surface text-white font-medium shadow' : 'text-lofi-muted hover:text-white'}`}>
+                  <i className={`fa-solid ${icon} text-[11px] ${whole === w ? 'text-lofi-primary' : ''}`} aria-hidden="true" /> {label}
+                </button>
+              ))}
+            </div>
+          )}
+          {whole && k.list ? (
+            <ImportBox url={playlistUrl(k.list)} what="YouTube playlist" ops={ops} />
+          ) : (
+            <PlaceRow ops={ops} busyKey={(pl) => `add:${k.url}:${pl}`} onPlace={place} disabled={ops.busy != null} />
+          )}
+        </div>
+      )}
+      {(k.kind === 'playlist' || k.kind === 'spotify') && <ImportBox url={k.url} what={k.kind === 'spotify' ? spotifyWhat(k) : 'YouTube playlist'} ops={ops} />}
+    </>
+  )
+}
+const Hint = ({ err, children }) => <p className={`text-xs text-center py-4 px-2 text-balance ${err ? 'text-red-300' : 'text-lofi-muted'}`}>{children}</p>
+
+// three big buttons: Play now · Play next · Add to end
+function PlaceRow({ onPlace, busyKey, disabled, ops }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {['now', 'next', 'end'].map((pl) => {
+        const busy = ops.busy === busyKey(pl)
+        return (
+          <button
+            key={pl}
+            onClick={() => onPlace(pl)}
+            disabled={disabled}
+            className={`h-12 rounded-2xl text-xs flex flex-col items-center justify-center gap-0.5 border transition-colors disabled:opacity-50 ${pl === 'now' ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold hover:bg-lofi-highlight' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'}`}
+          >
+            <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : placementIcon(pl)}`} aria-hidden="true" />
+            {placementLabel(pl)}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---- Add: Import playlist (YouTube playlist, Spotify playlist / album / track) ----
+function ImportView({ ops, seed, go }) {
+  const [text, setText] = useState(seed)
+  const input = useRef(null)
+  const k = classifyLink(text)
+  useEffect(() => input.current?.focus({ preventScroll: true }), [])
+  return (
+    <>
+      <div className="mb-3">
+        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-list-ul" label="Playlist link" placeholder="A YouTube playlist, or a Spotify link" paste />
+      </div>
+      {k.kind === 'empty' && <Hint>A YouTube playlist, or a Spotify playlist, album or track: its songs join the queue (up to 100 at a time).</Hint>}
+      {(k.kind === 'playlist' || k.kind === 'spotify') && <ImportBox url={k.url} what={k.kind === 'spotify' ? spotifyWhat(k) : 'YouTube playlist'} ops={ops} />}
+      {k.kind === 'video' && k.list && (
+        <>
+          <Hint>A video from a playlist: this imports the whole playlist.</Hint>
+          <ImportBox url={playlistUrl(k.list)} what="YouTube playlist" ops={ops} />
+        </>
+      )}
+      {k.kind === 'video' && !k.list && (
+        <Hint>
+          That's one video.{' '}
+          <button onClick={() => go('link', text.trim())} className="text-lofi-primary underline underline-offset-2 hover:text-white">
+            Add it in Paste link
+          </button>
+        </Hint>
+      )}
+      {k.kind === 'mix' && <Hint err>YouTube Mixes (the endless auto playlists) can't be imported: use a normal playlist.</Hint>}
+      {(k.kind === 'text' || k.kind === 'unsupported') && <Hint err>That's not a playlist link. {LINK_HINT}</Hint>}
+    </>
+  )
+}
+
+function ImportBox({ url, what, ops }) {
+  const run = ops.importing
+  const mine = run?.url === url
+  const res = ops.imported?.url === url ? ops.imported : null
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!mine) return
+    const t = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [mine])
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-lofi-muted px-1 flex items-center gap-1.5 min-w-0">
+        <i className={`${what.startsWith('Spotify') ? 'fa-brands fa-spotify text-[#1db954]' : 'fa-brands fa-youtube text-red-400'}`} aria-hidden="true" />
+        <span className="text-white whitespace-nowrap">{what}</span>
+        <span className="truncate font-mono text-[10px]">{url.replace(/^https:\/\/(www\.|open\.)?/, '')}</span>
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {['end', 'next', 'now'].map((pl) => (
+          <button
+            key={pl}
+            onClick={() => ops.importList(url, pl)}
+            disabled={Boolean(run)}
+            className={`h-12 rounded-2xl text-xs flex flex-col items-center justify-center gap-0.5 border transition-colors disabled:opacity-50 ${pl === 'end' ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold hover:bg-lofi-highlight' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'}`}
+          >
+            <i className={`fa-solid ${mine && run.placement === pl ? 'fa-spinner fa-spin' : placementIcon(pl)}`} aria-hidden="true" />
+            {placementLabel(pl)}
+          </button>
+        ))}
+      </div>
+      {mine && (
+        <div className="rounded-2xl border border-lofi-primary/30 bg-lofi-primary/10 p-3 text-xs text-center" role="status">
+          <p className="text-white font-medium">
+            <i className="fa-solid fa-spinner fa-spin mr-1.5 text-lofi-primary" aria-hidden="true" /> Importing… this can take a while
+          </p>
+          <p className="text-lofi-muted mt-1 font-mono text-[10px]">{Math.round((Date.now() - run.since) / 1000)} s · you can close this: the result shows under the player too</p>
+        </div>
+      )}
+      {run && !mine && <Hint>Another import is running: wait for it to finish.</Hint>}
+      {res && <ImportResult res={res} />}
+    </div>
+  )
+}
+function ImportResult({ res }) {
+  if (res.error)
+    return (
+      <p className="rounded-2xl border border-red-400/30 bg-red-500/10 p-3 text-xs text-red-200 text-center" role="status">
+        {res.error}
+      </p>
+    )
+  const s = res.summary
+  const src = res.data?.source
+  const name = (typeof src === 'object' && (src?.title ?? src?.name)) || sourceLabel(src)
+  const skipped = res.data?.skipped ?? []
+  return (
+    <div className={`rounded-2xl border p-3 text-xs space-y-1.5 ${s.added ? 'border-lofi-primary/30 bg-lofi-base/40' : 'border-red-400/30 bg-red-500/10'}`} role="status">
+      <p className="text-white font-medium flex items-center gap-1.5">
+        <i className={`fa-solid ${s.added ? 'fa-check text-lofi-primary' : 'fa-circle-exclamation text-red-400'}`} aria-hidden="true" />
+        {s.added ? `${s.added} song${s.added === 1 ? '' : 's'} added` : 'Nothing added'}
+        {name && <span className="text-lofi-muted font-normal truncate">· {plain(name)}</span>}
+      </p>
+      {s.found != null && <p className="text-lofi-muted">{s.found} found</p>}
+      {s.skipped > 0 && (
+        <details className="text-lofi-muted">
+          <summary className="cursor-pointer hover:text-white">
+            {s.skipped} skipped: {s.groups.map((g) => `${g.n} ${g.text}`).join(', ')}
+          </summary>
+          <ul className="mt-1 space-y-0.5 max-h-32 overflow-y-auto pl-4 list-disc">
+            {skipped.map((x, i) => (
+              <li key={i} className="truncate">
+                {plain(x.title) || x.youtubeId || 'Unknown song'} — {reasonText(x.reason)}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {s.cut && <p className="text-lofi-highlight">{s.cut[0].toUpperCase() + s.cut.slice(1)}</p>}
+    </div>
+  )
+}
+
+function PlaylistsView({ ops }) {
   const [lists, setLists] = useState(undefined) // undefined = loading, null = failed
   const [open, setOpen] = useState(null) // { list, songs }
   const [all, setAll] = useState(null) // busy | done
@@ -942,7 +1677,7 @@ function PlaylistsView({ setMsg }) {
     tavarianPost({ action: 'playlists' }).then((r) => {
       if (!alive) return
       if (r.ok) setLists(r.data.playlists ?? [])
-      else setLists(null), setMsg({ text: r.error, err: true })
+      else setLists(null), ops.say(r.error, true)
     })
     return () => (alive = false)
   }, [])
@@ -951,16 +1686,14 @@ function PlaylistsView({ setMsg }) {
     setAll(null)
     const r = await tavarianPost({ action: 'playlist-songs', id: list.id })
     setOpen((o) => (o?.list.id === list.id ? { list, songs: r.ok ? (r.data.songs ?? []) : null } : o))
-    if (!r.ok) setMsg({ text: r.error, err: true })
+    if (!r.ok) ops.say(r.error, true)
   }
   async function queue(ids) {
     const r = await tavarianPost({ action: 'from-playlist', playlistId: open.list.id, ...(ids && { youtubeIds: ids }) })
-    if (!r.ok) return setMsg({ text: r.error, err: true }), false
-    const added = r.data.added?.length ?? 0
-    const skipped = r.data.skipped ?? []
-    const why = [...new Set(skipped.map((s) => s.reason))].join(', ')
-    setMsg({ text: `Added ${added} song${added === 1 ? '' : 's'}${skipped.length ? ` · skipped ${skipped.length}${why ? ` (${why})` : ''}` : ''}`, err: !added && skipped.length > 0 })
-    return added > 0
+    if (!r.ok) return ops.say(r.error, true), false
+    const s = importSummary(r.data)
+    ops.say(s.text, !s.added && s.skipped > 0)
+    return s.added > 0
   }
   if (open)
     return (
