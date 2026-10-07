@@ -492,15 +492,15 @@ function DockButton({ icon, label, title = label, on, onClick }) {
 // The lock has its own look (Settings > Lock screen); the screensaver keeps the plain one.
 // Decorative: the header clock is the accessible one.
 const lockLook = (s) => ({ clock: s.lockClock, date: s.lockDate, overlay: s.lockOverlay, blur: s.lockBlur, weather: s.lockWeather })
-const saverLook = (s) => ({ clock: s.idleShow === 'clock' ? 'big' : 'off', date: true, overlay: s.idleShow === 'clock' ? 'soft' : 'off', blur: 'off', weather: false })
-const BLUR = { soft: 6, strong: 16 } // px. Re-blurs the moving scene every frame: GPU work, so Off by default
+const saverLook = (s) => ({ clock: s.idleShow === 'clock' ? 'big' : 'off', date: true, overlay: s.idleShow === 'clock' ? 'soft' : 'off', blur: 0, weather: false })
+// look.blur: px. Re-blurs the moving scene every frame: GPU work, so 0 (off) by default
 function ClockScreen({ now, clock, look, wx }) {
   const { unit } = useContext(Prefs)
-  const blur = BLUR[look.blur]
+  const blur = look.blur > 0 ? look.blur : 0
   const weather = look.weather && wx?.temp != null
   return (
     <div className="fixed inset-0 z-20 pointer-events-none select-none motion-safe:animate-[fade-in_1.2s_ease-out]" aria-hidden="true">
-      {blur && <div className="absolute inset-0" style={{ backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)` }} />}
+      {blur > 0 && <div className="absolute inset-0" style={{ backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)` }} />}
       {look.overlay !== 'off' && <div className={`absolute inset-0 lock-overlay-${look.overlay}`} />}
       {(look.clock !== 'off' || weather) && (
         <div className="idle-clock relative h-full flex flex-col items-center justify-center px-4 text-center">
@@ -694,12 +694,14 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
         transition: held ? 'none' : 'transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease-out',
       }}
     >
+      {/* the clock screen (z-20: its blur and overlay cover the scene); the 🎨 corner and the bottom (music, unlock
+          slider) sit above it (z-30), so the blur never blurs them */}
       {screen}
       {/* 🎨 top right: comes with the pointer in the corner or a click / tap; its panel opens below it */}
       <div
         onPointerEnter={() => hover('corner', true)}
         onPointerLeave={() => hover('corner', false)}
-        className="absolute z-10 top-0 right-0 pl-20 pb-20 pt-[max(1rem,env(safe-area-inset-top))] pr-4 sm:pt-6 sm:pr-6"
+        className="absolute z-30 top-0 right-0 pl-20 pb-20 pt-[max(1rem,env(safe-area-inset-top))] pr-4 sm:pt-6 sm:pr-6"
       >
         <button
           onClick={() => setLook((v) => !v)}
@@ -734,7 +736,7 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
         )}
       </div>
       {/* bottom center: what's playing, then the breathing hint */}
-      <div className="absolute inset-x-0 bottom-0 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4">
+      <div className="absolute z-30 inset-x-0 bottom-0 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4">
         {children && (
           <div
             onPointerEnter={() => hover('music', true)}

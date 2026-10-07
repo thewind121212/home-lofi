@@ -2,7 +2,7 @@
 
 import { createContext, useEffect, useRef, useState } from 'react'
 import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL } from '../lib/data'
-import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
+import { DEFAULTS, LOCK_BLUR_MAX, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
 import { tavarianPost } from './player'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
@@ -116,9 +116,27 @@ export function LockLook({ set, update, id = 'look' }) {
       {opt('lockClock', 'Clock size', [['big', 'Big'], ['small', 'Small'], ['off', 'Off']])}
       {opt('lockDate', 'Date', [[true, 'Show'], [false, 'Hide']])}
       {opt('lockOverlay', 'Overlay', [['off', 'Off'], ['soft', 'Soft'], ['dark', 'Dark']])}
-      {opt('lockBlur', 'Blur', [['off', 'Off'], ['soft', 'Soft'], ['strong', 'Strong']])}
       {opt('lockMusic', 'Music', [['bright', 'Bright'], ['dim', 'Dim'], ['hide', 'Hide']])}
       {opt('lockWeather', 'Weather', [[true, 'Show'], [false, 'Hide']])}
+      {/* the scene's blur behind the lock: a slider, 0 (off) to LOCK_BLUR_MAX px */}
+      <label className="block sm:col-span-2">
+        <span className="mb-1 flex justify-between text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
+          Blur <span className="text-lofi-text tabular-nums normal-case tracking-normal">{set.lockBlur ? `${set.lockBlur} px` : 'Off'}</span>
+        </span>
+        <input
+          type="range"
+          min="0"
+          max={LOCK_BLUR_MAX}
+          step="1"
+          value={set.lockBlur}
+          onChange={(e) => update({ lockBlur: Number(e.target.value) })}
+          className="w-full h-8 accent-lofi-primary cursor-pointer"
+        />
+        <span className="flex justify-between text-[10px] font-mono text-lofi-muted" aria-hidden="true">
+          <span>sharp scene</span>
+          <span>soft scene</span>
+        </span>
+      </label>
     </div>
   )
 }
