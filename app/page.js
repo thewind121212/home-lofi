@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { AUTH_URL, DAY_SCENES, SCENES, SCENES_CORS, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
@@ -10,6 +10,7 @@ import { SP_LOCK_REST, musicSource, spOn } from '../lib/player'
 import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
+import { WAKE_GUARD_MS, eatNextClick } from '../lib/wake'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
 // a browser with no saved location starts in Đà Lạt
@@ -177,12 +178,8 @@ export default function Home() {
       setIdle(false)
       // the waking key doesn't also act: not on a focused card (Enter), not on our own listeners (Esc would leave Hide)
       if (e.type === 'keydown') e.preventDefault(), e.stopPropagation()
-      if (e.type === 'pointerdown') {
-        // swallow the click that ends this tap/press, so it doesn't land on a card that just reappeared
-        const eat = (ev) => (ev.preventDefault(), ev.stopPropagation())
-        addEventListener('click', eat, { capture: true, once: true })
-        setTimeout(() => removeEventListener('click', eat, true), 800)
-      }
+      // swallow the click that ends this tap/press, so it doesn't land on a card that just reappeared
+      if (e.type === 'pointerdown' || e.type === 'touchstart') eatNextClick(window, { from: e })
     }
     const events = ['pointermove', 'pointerdown', 'keydown', 'touchstart', 'wheel']
     events.forEach((n) => addEventListener(n, wake, { capture: true, passive: n !== 'keydown' }))
@@ -244,13 +241,24 @@ export default function Home() {
   }
   function unlock() {
     // swallow the click that may follow the hold, so it doesn't land on a card that just reappeared
-    const eat = (ev) => (ev.preventDefault(), ev.stopPropagation())
-    addEventListener('click', eat, { capture: true, once: true })
-    setTimeout(() => removeEventListener('click', eat, true), 800)
+    eatNextClick(window)
     idleRef.current = false
     setIdle(false)
     setSoftLock(false)
   }
+  // the dashboard just came back (screensaver, lock, Hide): it ignores the pointer for a moment, so the tap that
+  // brought it back (or a second one right after) can't open a card that's only just appearing
+  const away = focus || idle || softLock
+  const wasAway = useRef(false)
+  const [settling, setSettling] = useState(false)
+  useLayoutEffect(() => {
+    const back = wasAway.current && !away
+    wasAway.current = away
+    setSettling(back)
+    if (!back) return
+    const t = setTimeout(() => setSettling(false), WAKE_GUARD_MS)
+    return () => clearTimeout(t)
+  }, [away])
   useEffect(() => {
     // H toggles Hide, L locks, Space three times quickly locks too (not while typing, not with a dialog open, not while
     // locked; Space also not on a focused button / link / tab / slider, where it presses that control)
@@ -344,7 +352,7 @@ export default function Home() {
       />
 
       <div
-        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''}`}
+        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''} ${settling ? 'pointer-events-none' : ''}`}
       >
         {/* phones: greeting, then clock | scene on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -403,7 +411,7 @@ export default function Home() {
 
       {!focus && !idle && !softLock && (
         // 👁 Hide, 🔒 Lock, ⚙️ Settings and ⧉ Mini window float bottom right on the dashboard (Hide's bar has its own 👁 / 🔒)
-        <div className="fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out]">
+        <div className={`fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out] ${settling ? 'pointer-events-none' : ''}`}>
           <DockButton icon="fa-eye-slash" label="Hide panels (H)" onClick={() => setFocus(true)} />
           <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
           <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
