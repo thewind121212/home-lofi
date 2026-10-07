@@ -408,12 +408,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   useEffect(() => {
     const take = (r) => r.ok && r.data?.state && live.current.tv.takeState(r.data.state)
     media.nexttrack = owner ? () => tavarianPost({ action: 'skip' }).then(take) : undefined
-    media.previoustrack = owner
-      ? () => {
-          const back = live.current.tv.queue?.recent?.[0]
-          if (back?.youtubeId) tavarianPost({ action: 'add', youtubeUrl: videoUrl(back.youtubeId), placement: 'now' })
-        }
-      : undefined
+    media.previoustrack = owner ? () => tavarianPost({ action: 'previous' }).then(take) : undefined
     media.seekto = owner ? (d) => Number.isFinite(d?.seekTime) && tavarianPost({ action: 'seek', seconds: Math.max(0, Math.floor(d.seekTime)) }).then(take) : undefined
     if (mediaSessionOwner() === 'tavarian') claimMediaSession('tavarian', media)
   }, [owner])
@@ -436,7 +431,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
         title: plain(song?.title) || 'Home station',
         artist: 'Tavarian',
         album: 'Home station · wliafdew.dev',
-        artwork: song?.youtubeId ? [{ src: thumbOf(song), sizes: '320x180', type: 'image/jpeg' }] : [],
+        artwork: thumbOf(song) ? [{ src: thumbOf(song), sizes: song.youtubeId ? '320x180' : '640x640', type: 'image/jpeg' }] : [], // (a Spotify cover is square)
       })
     ms.playbackState = 'playing'
   }, [listening, song?.id, song?.title])
@@ -571,17 +566,19 @@ export function useOwnerOps(p) {
       await waitFor((s) => confirms('skip', prev, s), CONFIRM_MS) // the button spins until the station shows it
       return true
     })
-  // ⏮: the last played song plays again now (the current one goes to Recently played, like a skip)
+  // ⏮: the last played song plays again now (the current one goes to Recently played, like a skip). Tavarian's own
+  // Previous, so a song with no YouTube video (played from the Spotify app) comes back too
   const previous = () =>
     run('previous', async () => {
       const back = live.current.queue?.recent?.[0]
-      if (!back?.youtubeId) return say('Nothing played before this one yet', true), false
+      if (!back) return say('Nothing played before this one yet', true), false
       const prev = live.current.state
       const snap = snapshot()
-      const r = await post({ action: 'add', youtubeUrl: videoUrl(back.youtubeId), placement: 'now' })
+      const r = await post({ action: 'previous' })
       if (!r.ok) return fail(r)
+      live.current.takeState(r.data.state)
       setTrans({ from: snap.from, at: Date.now() })
-      offer(`Back to ${plain(back.title)}`, { kind: 'now', ...snap, to: r.data.song, toIndex: null }, true)
+      offer(`Back to ${plain(back.title)}`, { kind: 'now', ...snap, to: r.data.state?.song ?? null, toIndex: null }, true)
       await waitFor((s) => confirms('skip', prev, s), CONFIRM_MS)
       return true
     })
