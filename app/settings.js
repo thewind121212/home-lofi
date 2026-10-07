@@ -3,6 +3,7 @@
 import { createContext, useEffect, useRef, useState } from 'react'
 import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL } from '../lib/data'
 import { DEFAULTS, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
+import { tavarianPost } from './player'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
 export const Prefs = createContext({ ...DEFAULTS, reduced: false })
@@ -52,16 +53,17 @@ const SWATCHES = [
 ]
 const swatchBg = ([a, b, c]) => `linear-gradient(135deg, ${c} 0%, ${a} 50%, ${b} 100%)`
 
-// One setting = a fieldset of native radios (arrow keys, one tab stop, radiogroup semantics for free), drawn as pills
+// One setting = a fieldset of native radios (arrow keys, one tab stop, radiogroup semantics for free), drawn as pills.
+// options: [value, label, disabled?]
 function Choice({ legend, name, value, options, onChange, children }) {
   return (
     <fieldset className="min-w-0">
       <legend className="mb-2 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{legend}</legend>
       <div className="flex flex-wrap gap-1.5">
-        {options.map(([v, label]) => (
+        {options.map(([v, label, off]) => (
           <label key={v} className="relative">
-            <input type="radio" name={name} checked={value === v} onChange={() => onChange(v)} className="peer sr-only" />
-            <span className="h-8 px-3 flex items-center rounded-full border border-white/10 bg-white/5 font-mono text-xs text-lofi-text cursor-pointer transition-colors hover:border-white/25 hover:text-white peer-checked:bg-lofi-primary peer-checked:border-transparent peer-checked:text-lofi-base peer-checked:font-bold peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-lofi-primary">
+            <input type="radio" name={name} checked={value === v} disabled={off} onChange={() => onChange(v)} className="peer sr-only" />
+            <span className="h-8 px-3 flex items-center rounded-full border border-white/10 bg-white/5 font-mono text-xs text-lofi-text cursor-pointer transition-colors hover:border-white/25 hover:text-white peer-disabled:opacity-40 peer-disabled:cursor-not-allowed peer-disabled:hover:border-white/10 peer-disabled:hover:text-lofi-text peer-checked:bg-lofi-primary peer-checked:border-transparent peer-checked:text-lofi-base peer-checked:font-bold peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-lofi-primary">
               {label}
             </span>
           </label>
@@ -286,6 +288,8 @@ export function Settings({ dlg, set, update, reset, sync }) {
           </div>
         </section>
 
+        {synced && <StationBackend dlg={dlg} />}
+
         <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
           {sure ? (
             <div
@@ -329,6 +333,68 @@ export function Settings({ dlg, set, update, reset, sync }) {
         </div>
       </div>
     </dialog>
+  )
+}
+
+// The owner's Home station section: which backend plays the station's songs (Tavarian's setting, for everyone; asked
+// for each time the panel opens). Spotify can be picked once Tavarian has it set up; a change applies from the next
+// song. Hidden when the player isn't set up here.
+function StationBackend({ dlg }) {
+  const [st, setSt] = useState(null) // Tavarian's settings, null while asking
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [off, setOff] = useState(false)
+  useEffect(() => {
+    const d = dlg.current
+    if (!d) return
+    let alive = true
+    const ask = () =>
+      d.open &&
+      tavarianPost({ action: 'settings' }).then((r) => {
+        if (!alive) return
+        if (r.ok) setSt(r.data.settings), setErr(null)
+        else if (r.code === 'tavarian_off') setOff(true)
+        else setErr(r.error)
+      })
+    ask()
+    const seen = new MutationObserver(ask) // the panel opening (its open attribute)
+    seen.observe(d, { attributes: true, attributeFilter: ['open'] })
+    return () => ((alive = false), seen.disconnect())
+  }, [dlg])
+  if (off) return null
+  const pick = async (backend) => {
+    if (busy || backend === st?.backend) return
+    setBusy(true)
+    const r = await tavarianPost({ action: 'backend', backend })
+    setBusy(false)
+    if (r.ok) setSt(r.data.settings), setErr(null)
+    else setErr(r.error)
+  }
+  const hint =
+    err ? <span className="text-red-300">{err}</span>
+    : !st ? 'Asking Tavarian…'
+    : busy ? 'Saving…'
+    : st.backend === 'spotify'
+      ? st.spotifySearch
+        ? 'Spotify, 320 kbps. YouTube songs are looked up on Spotify; one with no sure match is skipped. Applies from the next song.'
+        : "Spotify, 320 kbps. Spotify search isn't set up on Tavarian, so YouTube songs are skipped. Applies from the next song."
+      : st.spotifyAvailable ? 'YouTube. Applies from the next song.'
+      : "YouTube. Spotify isn't set up on Tavarian yet."
+  return (
+    <section className="flex flex-col gap-3 pt-4 border-t border-white/5" aria-labelledby="station-title" aria-busy={busy || !st}>
+      <h3 id="station-title" className="text-sm font-medium text-white flex items-center gap-2">
+        <i className="fa-solid fa-house-signal text-lofi-primary text-xs" aria-hidden="true" /> Home station
+      </h3>
+      <Choice
+        legend="Plays songs from (for everyone)"
+        name="backend"
+        value={st?.backend ?? null}
+        options={[['youtube', 'YouTube', !st || busy], ['spotify', 'Spotify', !st || busy || !st.spotifyAvailable]]}
+        onChange={pick}
+      >
+        <p className="mt-2 text-[11px] text-lofi-muted" aria-live="polite">{hint}</p>
+      </Choice>
+    </section>
   )
 }
 
