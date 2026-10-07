@@ -106,6 +106,19 @@ body {
   outline: 2px solid var(--color-lofi-primary);
   outline-offset: 2px;
 }
+/* text boxes draw their focus ring inside the border, so a scrolling panel can't clip it */
+input:focus-visible,
+textarea:focus-visible {
+  outline-offset: -2px;
+}
+/* phones: 16px text in fields, or iOS zooms the page when one is tapped */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: #1a1a2e; }

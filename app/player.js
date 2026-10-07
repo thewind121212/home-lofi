@@ -7,7 +7,7 @@
 //   while listening) and plays Tavarian's audio straight from Tavarian; a new streamId (song change, seek, resume)
 //   swaps the source; paused / idle / loading on Tavarian lets the element go, and it comes back by itself when the
 //   station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
-// - PlayerPanel (the tab), PlayerSheet (queue, recent, and for the owner: Add — Search · Paste link · Import playlist —,
+// - PlayerPanel (the tab), PlayerSheet (queue, recent, and for the owner: Add — Search or link · Import playlist —,
 //   playlists, the Tavarian link) and PlayerMini (Hide bar and lock screen). Guests listen and watch; the owner's
 //   buttons post to /api/private/settings/tavarian, lock while it's in flight and spin until a state shows the change.
 // - useOwnerOps(): the owner's queue actions (Play now / next, remove, drag reorder, add, import) with Undo for 5 s
@@ -1181,12 +1181,11 @@ function PlaceBtns({ s, p, ops, short }) {
 }
 
 const ADD_VIEWS = [
-  ['search', 'Search', 'fa-magnifying-glass'],
-  ['link', 'Paste link', 'fa-link'],
+  ['search', 'Search or link', 'fa-magnifying-glass'],
   ['import', 'Import', 'fa-list-ul', 'Import playlist'],
 ]
 
-// Queue, recent, and for the owner Add (Search · Paste link · Import playlist), Playlists and the Tavarian link. A
+// Queue, recent, and for the owner Add (Search or link · Import playlist), Playlists and the Tavarian link. A
 // window over the page (a sheet on phones; portalled to <body>, like the station list). Esc / ✕ / outside closes.
 export function PlayerSheet({ p, owner, ops, view, setView, onClose }) {
   const close = useRef(null)
@@ -1272,7 +1271,6 @@ export function PlayerSheet({ p, owner, ops, view, setView, onClose }) {
             </SongList>
           )}
           {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
-          {owner && view === 'link' && <LinkView p={p} ops={ops} seed={seed} go={go} />}
           {owner && view === 'import' && <ImportView ops={ops} seed={seed} go={go} />}
           {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
         </div>
@@ -1387,7 +1385,8 @@ function SearchView({ p, ops, seed, go }) {
   const [searching, setSearching] = useState(false)
   const input = useRef(null)
   const q = text.trim()
-  const link = ['video', 'playlist', 'spotify', 'mix'].includes(classifyLink(q).kind)
+  const k = classifyLink(q)
+  const link = ['video', 'playlist', 'spotify', 'mix', 'unsupported'].includes(k.kind)
   useEffect(() => input.current?.focus({ preventScroll: true }), [])
   useEffect(() => {
     if (link || q.length < 2) return setResults(null), setSearching(false)
@@ -1405,15 +1404,10 @@ function SearchView({ p, ops, seed, go }) {
   return (
     <>
       <form onSubmit={(e) => e.preventDefault()} className="mb-3">
-        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search YouTube" placeholder="Search YouTube: a song, an artist…" />
+        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search YouTube or paste a link" placeholder="Search, or paste a link" paste />
       </form>
       {link ? (
-        <div className="text-center py-4">
-          <p className="text-xs text-lofi-muted">That's a link.</p>
-          <button onClick={() => go('link', q)} className="mt-2 h-8 px-4 rounded-full bg-lofi-primary text-lofi-base text-xs font-bold">
-            Open it in Paste link
-          </button>
-        </div>
+        <LinkBody k={k} p={p} ops={ops} onDone={() => setText('')} />
       ) : searching ? (
         <p className="text-xs text-lofi-muted text-center py-4">
           <i className="fa-solid fa-spinner fa-spin mr-1.5" aria-hidden="true" /> Searching…
@@ -1427,7 +1421,7 @@ function SearchView({ p, ops, seed, go }) {
           ))}
         </SongList>
       ) : (
-        <p className="text-xs text-lofi-muted text-center py-4">Type 2 letters or more to search YouTube.</p>
+        <p className="text-xs text-lofi-muted text-center py-4 text-balance">Type 2 letters or more to search YouTube, or paste a YouTube or Spotify link.</p>
       )}
     </>
   )
@@ -1472,29 +1466,14 @@ function TextBox({ inputRef, value, onChange, icon, label, placeholder, paste })
 const LINK_HINT = 'A YouTube video or playlist link, or a Spotify playlist, album or track link.'
 const spotifyWhat = (k) => `Spotify ${k.what}`
 
-// ---- Add: Paste link (one video: now / next / end; from a playlist: this video or the whole playlist) ----
-function LinkView({ p, ops, seed, go }) {
-  const [text, setText] = useState(seed)
+// ---- Add: a pasted link, shown in the search box (one video: now / next / end; from a playlist: this video or the
+// whole playlist; a playlist or Spotify link: import) ----
+function LinkBody({ k, p, ops, onDone }) {
   const [whole, setWhole] = useState(false)
-  const input = useRef(null)
-  const k = classifyLink(text)
-  useEffect(() => input.current?.focus({ preventScroll: true }), [])
   useEffect(() => setWhole(false), [k.url, k.list])
-  const place = async (pl) => (await ops.add(k.url, pl)) && setText('')
+  const place = async (pl) => (await ops.add(k.url, pl)) && onDone()
   return (
     <>
-      <div className="mb-3">
-        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-link" label="YouTube or Spotify link" placeholder="Paste a YouTube or Spotify link" paste />
-      </div>
-      {k.kind === 'empty' && <Hint>{LINK_HINT}</Hint>}
-      {k.kind === 'text' && (
-        <Hint>
-          That's not a link.{' '}
-          <button onClick={() => go('search', text.trim())} className="text-lofi-primary underline underline-offset-2 hover:text-white">
-            Search for “{text.trim().slice(0, 40)}”
-          </button>
-        </Hint>
-      )}
       {k.kind === 'unsupported' && <Hint err>Only YouTube and Spotify links work here. {LINK_HINT}</Hint>}
       {k.kind === 'mix' && <Hint err>That's a YouTube Mix (an endless auto playlist): it can't be imported. Paste a video from it, or a normal playlist.</Hint>}
       {k.kind === 'video' && (
@@ -1576,8 +1555,8 @@ function ImportView({ ops, seed, go }) {
       {k.kind === 'video' && !k.list && (
         <Hint>
           That's one video.{' '}
-          <button onClick={() => go('link', text.trim())} className="text-lofi-primary underline underline-offset-2 hover:text-white">
-            Add it in Paste link
+          <button onClick={() => go('search', text.trim())} className="text-lofi-primary underline underline-offset-2 hover:text-white">
+            Add it from Search or link
           </button>
         </Hint>
       )}
