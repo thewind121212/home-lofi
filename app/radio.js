@@ -71,7 +71,7 @@ export function useRadioInfo() {
 
 // The Media Session (media keys, headphones, the phone's lock screen) has one set of handlers for the page: the source
 // that last started (the radio, or the Player tab listening) claims it with its own; the other leaves it alone
-const MEDIA_ACTIONS = ['play', 'pause', 'stop', 'nexttrack', 'previoustrack']
+const MEDIA_ACTIONS = ['play', 'pause', 'stop', 'nexttrack', 'previoustrack', 'seekto']
 let mediaOwner = 'radio'
 export const mediaSessionOwner = () => mediaOwner
 export function claimMediaSession(owner, handlers) {
