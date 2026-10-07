@@ -16,7 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
-  placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo,
+  placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
   thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
@@ -633,15 +633,14 @@ export function useOwnerOps(p) {
       setToast({ text, plan, ...(countdown && { until: Date.now() + UNDO_MS }) })
       return true
     })
-  // Clear queue (after the two-step question): every queued song; also what plays, when asked. No Undo
-  const clear = (includeCurrent) =>
+  // Clear queue (after the two-step question): every queued song, never the one playing. No Undo
+  const clear = () =>
     run('clear', async () => {
-      const r = await post({ action: 'clear', ...(includeCurrent && { includeCurrent: true }) })
+      const r = await post({ action: 'clear' })
       if (!r.ok) return fail(r)
       takeQueue(r)
-      if (includeCurrent) live.current.refresh()
       const n = r.data.removed ?? 0
-      say(n ? `Cleared the queue: ${n} song${n === 1 ? '' : 's'} removed${includeCurrent ? ', stopped' : ''}` : 'The queue was already empty')
+      say(n ? `Cleared the queue: ${n} song${n === 1 ? '' : 's'} removed` : 'The queue was already empty')
       return true
     })
   // a new order (drag and drop, or the handle's arrow keys); shown at once, put back if Tavarian refuses
@@ -1195,7 +1194,7 @@ export function PlayerPanel({ p, owner, vol }) {
   const tuning = p.listening && p.phase === 'connecting'
   // (phones: tuning in is just the spinner, here and on Listen; the words stay for screen readers)
   const line = err ?? p.note ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
-  const next = items.slice(0, 2)
+  const list = cardList({ song, items, recent })
   return (
     <>
       {song && <img src={thumbOf(song)} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
@@ -1231,7 +1230,7 @@ export function PlayerPanel({ p, owner, vol }) {
                   disabled={ctl.busy === 'seek'}
                   aria-label="Seek (for everyone)"
                   aria-valuetext={`${mmss(pos)} of ${mmss(dur)}`}
-                  className="radio-volume min-w-0 grow disabled:opacity-50"
+                  className="seek-bar min-w-0 grow disabled:opacity-50"
                   style={{ '--v': `${(pos / dur) * 100}%` }}
                 />
               ) : (
@@ -1271,10 +1270,14 @@ export function PlayerPanel({ p, owner, vol }) {
               step={1}
               value={vol.muted ? 0 : vol.volume}
               onChange={(e) => vol.setLevel(Number(e.target.value))}
-              aria-label="Volume"
-              className={`radio-volume min-w-0 flex-1 ${owner ? 'max-sm:hidden' : ''}`}
+              aria-label="Volume on this device"
+              title="Volume on this device"
+              className={`radio-volume vol-grey min-w-0 flex-1 ${owner ? 'max-sm:hidden' : ''}`}
               style={{ '--v': `${vol.muted ? 0 : vol.volume}%` }}
             />
+            <span className={`w-8 shrink-0 text-right text-[10px] font-mono text-lofi-muted tabular-nums ${owner ? 'max-sm:hidden' : ''}`} aria-hidden="true">
+              {vol.muted ? 0 : vol.volume}%
+            </span>
           </div>
         )}
         {/* the owner's Add: "+ Add" on a phone (it takes the slider's room: mute stays, the phone's own buttons set the
@@ -1293,17 +1296,17 @@ export function PlayerPanel({ p, owner, vol }) {
         )}
       </div>
 
-      {/* Up next (or the last played): the first two; the header opens the whole list */}
+      {/* Up next: the first two (or "the queue is empty"); nothing on: the last played. The header opens the list */}
       <div className="relative mt-2 min-w-0 h-[52px] shrink-0">
         <p className="flex items-center justify-between h-4 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">
-          <span>{next.length ? 'Up next' : recent.length ? 'Last played' : 'Queue'}</span>
-          <button onClick={() => setSheet(next.length || !recent.length ? 'queue' : 'recent')} aria-haspopup="dialog" aria-label={`Queue: ${items.length} song${items.length === 1 ? '' : 's'}`} className="normal-case tracking-normal text-[10px] hover:text-white transition-colors">
-            {next.length || !recent.length ? `Queue · ${items.length}` : `Recent · ${recent.length}`} ›
+          <span>{list.kind === 'last' ? 'Last played' : 'Up next'}</span>
+          <button onClick={() => setSheet(list.kind === 'last' ? 'recent' : 'queue')} aria-haspopup="dialog" aria-label={list.kind === 'last' ? `Recent: ${recent.length} song${recent.length === 1 ? '' : 's'}` : `Queue: ${items.length} song${items.length === 1 ? '' : 's'}`} className="normal-case tracking-normal text-[10px] hover:text-white transition-colors">
+            {list.kind === 'last' ? `Recent · ${recent.length}` : `Queue · ${items.length}`} ›
           </button>
         </p>
-        {next.length > 0 || recent.length > 0 ? (
+        {list.rows.length ? (
           <ul>
-            {(next.length ? next : recent.slice(0, 2)).map((s) => (
+            {list.rows.map((s) => (
               <li key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
                 <img src={thumbOf(s) ?? undefined} alt="" className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
                 <span className="text-white/80 truncate" title={plain(s.title)}>
@@ -1565,7 +1568,7 @@ const H3 = ({ children, className = '' }) => <h3 className={`text-[10px] font-mo
 
 // The queue. The owner can also pick songs (Select: a box on each row, tap the row or the box; Select all / None and
 // the count, with Remove selected (N) in a bar that stays at the bottom) and Clear queue (asks first, like Settings ›
-// Reset all; it can also stop what plays)
+// Reset all; the song playing keeps playing)
 function QueueView({ p, owner, ops, onAdd }) {
   const items = p.queue?.items ?? []
   const ids = items.map((s) => s.id)
@@ -1609,7 +1612,7 @@ function QueueView({ p, owner, ops, onAdd }) {
         </>
       )}
       {asking ? (
-        <ClearQuestion n={items.length} playing={Boolean(song) && p.state?.status !== 'idle'} onCancel={() => setAsking(false)} onClear={(cur) => (setAsking(false), ops.clear(cur))} />
+        <ClearQuestion n={items.length} playing={Boolean(song)} onCancel={() => setAsking(false)} onClear={() => (setAsking(false), ops.clear())} />
       ) : (
         <H3 className="flex items-center gap-2 min-h-6">
           <span className="shrink-0">Up next</span>
@@ -1725,12 +1728,10 @@ function QueueView({ p, owner, ops, onAdd }) {
 }
 
 // Clear queue's question, like Settings › Reset all: Cancel is focused, "Yes, clear" wakes after a moment (so a
-// double tap can't confirm), the question gives up after 8 s (ticking the box gives it 8 s more). Esc backs out of
-// it, not the sheet. No Undo after: this is the guard
+// double tap can't confirm), the question gives up after 8 s. Esc backs out of it, not the sheet. Only Up next goes:
+// the song playing keeps playing. No Undo after: this is the guard
 function ClearQuestion({ n, playing, onCancel, onClear }) {
   const [armed, setArmed] = useState(false)
-  const [cur, setCur] = useState(false) // also stop what plays
-  const [t0, setT0] = useState(0)
   useEffect(() => {
     const a = setTimeout(() => setArmed(true), 800)
     return () => clearTimeout(a)
@@ -1738,7 +1739,7 @@ function ClearQuestion({ n, playing, onCancel, onClear }) {
   useEffect(() => {
     const t = setTimeout(onCancel, 8000)
     return () => clearTimeout(t)
-  }, [t0])
+  }, [])
   return (
     <div
       role="alertdialog"
@@ -1749,15 +1750,10 @@ function ClearQuestion({ n, playing, onCancel, onClear }) {
       <p id="tv-clear-q" className="text-[11px] text-red-200 flex items-center gap-2 min-w-0">
         <i className="fa-solid fa-triangle-exclamation text-red-400" aria-hidden="true" />
         <span>
-          Clear the queue ({n} song{n === 1 ? '' : 's'})? <span className="text-red-200/70">For everyone, and it can't be undone.</span>
+          Clear Up next ({n} song{n === 1 ? '' : 's'})?{' '}
+          <span className="text-red-200/70">For everyone, and it can't be undone.{playing && ' The song playing now keeps playing.'}</span>
         </span>
       </p>
-      {playing && (
-        <label className="basis-full flex items-center gap-2 text-[11px] text-lofi-text cursor-pointer">
-          <input type="checkbox" checked={cur} onChange={(e) => (setCur(e.target.checked), setT0((x) => x + 1))} className="w-4 h-4 accent-red-500" />
-          Also stop the current song
-        </label>
-      )}
       <div className="flex gap-2 shrink-0 ml-auto">
         <button autoFocus onClick={onCancel} className="h-8 px-3 rounded-full border border-white/15 font-mono text-[11px] text-lofi-text hover:text-white hover:border-white/30 transition-colors">
           Cancel
@@ -1765,7 +1761,7 @@ function ClearQuestion({ n, playing, onCancel, onClear }) {
         {/* aria-disabled, not disabled: a click on a disabled button would go to the dialog behind it */}
         <button
           aria-disabled={!armed}
-          onClick={() => armed && onClear(cur)}
+          onClick={() => armed && onClear()}
           className="h-8 px-3 rounded-full bg-red-500/85 text-white font-mono text-[11px] font-bold hover:bg-red-500 aria-disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:hover:bg-red-500/85 transition-[background-color,opacity] duration-300 flex items-center gap-1.5"
         >
           <i className="fa-solid fa-trash-can" aria-hidden="true" /> Yes, clear

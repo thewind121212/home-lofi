@@ -398,3 +398,50 @@ html[data-fade]:not([data-motion='reduce']) {
   border-radius: 9999px;
   background: #fff;
 }
+
+/* player: its volume is grey, so the only orange bar on the card is the song's progress */
+.radio-volume.vol-grey {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.55) var(--v), rgb(255 255 255 / 0.12) var(--v));
+}
+.radio-volume.vol-grey::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.15);
+}
+
+/* player: the song's progress bar (seek, for the owner). Unlike the volume slider it's a plain thin line with no knob,
+   like the guest's bar; the knob only shows while it's pointed at, focused or dragged. The input is taller than the
+   line (an easier target), the line is its background */
+.seek-bar {
+  appearance: none;
+  height: 14px;
+  background: linear-gradient(90deg, var(--color-lofi-primary) var(--v), rgb(255 255 255 / 0.1) var(--v)) center / 100% 4px no-repeat;
+  border-radius: 9999px;
+  cursor: pointer;
+}
+.seek-bar::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: #fff;
+  transform: scale(0);
+  transition: transform 0.15s ease-out;
+}
+.seek-bar::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 0;
+  border-radius: 9999px;
+  background: #fff;
+  transform: scale(0);
+  transition: transform 0.15s ease-out;
+}
+.seek-bar:hover::-webkit-slider-thumb,
+.seek-bar:focus-visible::-webkit-slider-thumb,
+.seek-bar:active::-webkit-slider-thumb {
+  transform: scale(1);
+}
+.seek-bar:hover::-moz-range-thumb,
+.seek-bar:focus-visible::-moz-range-thumb,
+.seek-bar:active::-moz-range-thumb {
+  transform: scale(1);
+}
