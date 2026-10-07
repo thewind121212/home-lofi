@@ -1367,9 +1367,8 @@ const SmallBtn = ({ label, icon, onClick, busy, done, disabled }) => (
   </button>
 )
 // a small pill with an icon and a word (the word hides on phones when `short`). It keeps its size whatever it shows:
-// the icon has a fixed width (a spinner or a speaker is as wide as ▶), and `words` (every word it may show) hold the
-// room of the widest one, so a word that changes ("Add" → "Queued") doesn't push the row
-function Pill({ label, text, words, icon, onClick, busy, disabled, primary, short, className = '' }) {
+// the icon has a fixed width (a spinner, a speaker or a ✓ is as wide as ▶), and the word doesn't change
+function Pill({ label, text, icon, onClick, busy, disabled, primary, short, className = '' }) {
   return (
     <button
       onClick={onClick}
@@ -1378,27 +1377,11 @@ function Pill({ label, text, words, icon, onClick, busy, disabled, primary, shor
       title={label}
       className={`h-7 shrink-0 rounded-full flex items-center justify-center gap-1.5 text-[11px] font-mono border transition-colors disabled:opacity-40 ${short ? 'max-sm:w-7 sm:px-2.5' : 'px-2.5'} ${primary ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold hover:bg-lofi-highlight' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'} ${className}`}
     >
-      {words ? (
-        // one layer per word in the same grid cell (the others invisible): as wide as the widest, the shown one centered
-        <span className="grid justify-items-center">
-          {words.map((w) => (
-            <span key={w} className={`[grid-area:1/1] flex items-center gap-1.5 ${w === text ? '' : 'invisible'}`} aria-hidden={w === text ? undefined : 'true'}>
-              <PillFace word={w} icon={w === text ? icon : null} busy={w === text && busy} short={short} />
-            </span>
-          ))}
-        </span>
-      ) : (
-        <PillFace word={text} icon={icon} busy={busy} short={short} />
-      )}
+      <i className={`fa-solid fa-fw ${busy ? 'fa-spinner fa-spin' : icon} text-[10px]`} aria-hidden="true" />
+      <span className={short ? 'max-sm:hidden' : ''}>{text}</span>
     </button>
   )
 }
-const PillFace = ({ word, icon, busy, short }) => (
-  <>
-    <i className={`fa-solid fa-fw ${busy ? 'fa-spinner fa-spin' : icon ?? ''} text-[10px]`} aria-hidden="true" />
-    <span className={short ? 'max-sm:hidden' : ''}>{word}</span>
-  </>
-)
 const ago = (iso) => {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return ''
@@ -1418,7 +1401,7 @@ function PlaceBtns({ s, p, ops, short }) {
     <>
       <Pill short={short} primary text="Now" icon={current ? 'fa-volume-high' : 'fa-play'} label={current ? `Playing now: ${t}` : `Play now: ${t}`} disabled={lock || current} busy={ops.busy === (queued ? `now:${queued.id}` : `add:${url}:now`)} onClick={() => (queued ? ops.playNow(queued) : ops.add(url, 'now', s.title))} />
       <Pill short={short} text="Next" icon="fa-angles-up" label={`Play next: ${t}`} disabled={lock || current || (queued && p.queue.items[0]?.id === queued.id)} busy={ops.busy === (queued ? `next:${queued.id}` : `add:${url}:next`)} onClick={() => (queued ? ops.playNext(queued) : ops.add(url, 'next', s.title))} />
-      <Pill short={short} text={queued ? 'Queued' : 'Add'} words={['Add', 'Queued']} icon={queued ? 'fa-check' : 'fa-plus'} label={queued ? `In the queue: ${t}` : `Add to the end: ${t}`} disabled={lock || Boolean(queued)} busy={ops.busy === `add:${url}:end`} onClick={() => ops.add(url, 'end', s.title)} />
+      <Pill short={short} text="Add" icon={queued ? 'fa-check' : 'fa-plus'} label={queued ? `In the queue: ${t}` : `Add to the end: ${t}`} disabled={lock || Boolean(queued)} busy={ops.busy === `add:${url}:end`} onClick={() => ops.add(url, 'end', s.title)} />
     </>
   )
 }
