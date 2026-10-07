@@ -390,11 +390,30 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     return () => clearTimeout(t)
   }, [note])
 
-  // media keys / the phone's lock screen: play / pause = listen / stop listening; ⏭ skips, for the owner only
+  // media keys / the phone's lock screen: play / pause = listen / stop listening (everyone); ⏮ ⏭ and dragging the
+  // progress bar change the station for everyone, so the owner only
   useEffect(() => {
-    media.nexttrack = owner ? () => tavarianPost({ action: 'skip' }).then((r) => r.ok && live.current.tv.takeState(r.data.state)) : undefined
+    const take = (r) => r.ok && r.data?.state && live.current.tv.takeState(r.data.state)
+    media.nexttrack = owner ? () => tavarianPost({ action: 'skip' }).then(take) : undefined
+    media.previoustrack = owner
+      ? () => {
+          const back = live.current.tv.queue?.recent?.[0]
+          if (back?.youtubeId) tavarianPost({ action: 'add', youtubeUrl: videoUrl(back.youtubeId), placement: 'now' })
+        }
+      : undefined
+    media.seekto = owner ? (d) => Number.isFinite(d?.seekTime) && tavarianPost({ action: 'seek', seconds: Math.max(0, Math.floor(d.seekTime)) }).then(take) : undefined
     if (mediaSessionOwner() === 'tavarian') claimMediaSession('tavarian', media)
   }, [owner])
+  // the lock screen's progress bar: where the song is (the phone moves it on by itself while it plays)
+  useEffect(() => {
+    const ms = navigator.mediaSession
+    if (!ms?.setPositionState || !listening || mediaSessionOwner() !== 'tavarian') return
+    const dur = st?.song?.durationSeconds
+    try {
+      if (!(dur > 0) || !['playing', 'paused'].includes(st?.status)) return ms.setPositionState()
+      ms.setPositionState({ duration: dur, playbackRate: 1, position: Math.min(dur, Math.max(0, positionAt(st, live.current.tv.offset))) })
+    } catch {}
+  }, [listening, st?.status, st?.song?.id, st?.streamId, st?.positionSeconds])
   const song = st?.song
   useEffect(() => {
     const ms = navigator.mediaSession
@@ -537,6 +556,20 @@ export function useOwnerOps(p) {
       setTrans({ from: snap.from, at: Date.now() })
       offer(next ? `Now playing ${plain(next.title)}` : 'Skipped', { kind: 'now', ...snap, to: next, toIndex: next ? 0 : null }, true)
       await waitFor((s) => confirms('skip', prev, s), CONFIRM_MS) // the button spins until the station shows it
+      return true
+    })
+  // ⏮: the last played song plays again now (the current one goes to Recently played, like a skip)
+  const previous = () =>
+    run('previous', async () => {
+      const back = live.current.queue?.recent?.[0]
+      if (!back?.youtubeId) return say('Nothing played before this one yet', true), false
+      const prev = live.current.state
+      const snap = snapshot()
+      const r = await post({ action: 'add', youtubeUrl: videoUrl(back.youtubeId), placement: 'now' })
+      if (!r.ok) return fail(r)
+      setTrans({ from: snap.from, at: Date.now() })
+      offer(`Back to ${plain(back.title)}`, { kind: 'now', ...snap, to: r.data.song, toIndex: null }, true)
+      await waitFor((s) => confirms('skip', prev, s), CONFIRM_MS)
       return true
     })
   const playNow = (song) =>
@@ -719,7 +752,7 @@ export function useOwnerOps(p) {
     })
   }
 
-  return { busy, toast, trans, tl, importing, imported, progress, say, skip, playNow, playNext, remove, reorder, add, importList, undo }
+  return { busy, toast, trans, tl, importing, imported, progress, say, skip, previous, playNow, playNext, remove, reorder, add, importList, undo }
 }
 
 // what the line under the player (and the sheet's status line) says for the owner's actions, or null
@@ -968,7 +1001,7 @@ export function PlayerPanel({ p, owner, vol }) {
   const titleOf = (id) => [p.state?.song, ...items, ...recent].find((s) => s && s.id === id)?.title
   const err = ctl.err ?? (songError ? songErrorText(songError.reason, titleOf(songError.songId)) : null)
   const mine = owner ? opsLine(ops) : null
-  const line = err ?? p.note ?? (p.listening && p.phase === 'connecting' ? 'Tuning in…' : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : owner ? '⏸ ⏭ change it for everyone listening here' : '')
+  const line = err ?? p.note ?? (p.listening && p.phase === 'connecting' ? 'Tuning in…' : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
   const next = items.slice(0, 2)
   return (
     <>
@@ -1030,7 +1063,8 @@ export function PlayerPanel({ p, owner, vol }) {
         </button>
         {owner && (
           <>
-            <Round label={actLabel} icon={actIcon} onClick={() => ctl.act(act)} busy={['pause', 'resume', 'play'].includes(ctl.busy)} disabled={(act === 'play' && !items.length) || locked} className="ml-1" />
+            <Round label="Previous song for everyone" icon="fa-backward-step" onClick={ops.previous} busy={ops.busy === 'previous'} disabled={!p.queue?.recent?.length || locked} className="ml-1" />
+            <Round label={actLabel} icon={actIcon} onClick={() => ctl.act(act)} busy={['pause', 'resume', 'play'].includes(ctl.busy)} disabled={(act === 'play' && !items.length) || locked} />
             <Round label="Skip for everyone" icon="fa-forward-step" onClick={ops.skip} busy={ops.busy === 'skip'} disabled={!song || locked} />
           </>
         )}
@@ -1277,7 +1311,6 @@ export function PlayerSheet({ p, owner, ops, view, setView, onClose }) {
         {owner && <OpsLine wrap line={line} ops={ops} className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono ${line?.err ? '' : 'text-lofi-primary'}`} />}
         {owner && (
           <div className="shrink-0 mt-1 pt-2 border-t border-white/5 space-y-1.5">
-            <p className="text-[10px] font-mono text-lofi-muted text-center">⏸ ⏭ and the queue change it for everyone listening on the home page.</p>
             <LinkRow p={p} />
           </div>
         )}
