@@ -337,18 +337,27 @@ export function Settings({ dlg, set, update, reset, sync }) {
 }
 
 // The owner's Home station section: which backend plays the station's songs (Tavarian's setting, for everyone; asked
-// for each time the panel opens). Spotify can be picked once Tavarian has it set up; a change applies from the next
-// song. Hidden when the player isn't set up here.
+// for each time the panel opens). Spotify can be picked once Tavarian's Spotify player is logged in: Connect Spotify
+// asks Tavarian for a code to type at spotify.com/pair, then this asks again every few seconds until it's ready. A
+// change applies from the next song. Hidden when the player isn't set up here.
+const SP_LINE = {
+  off: "Spotify isn't connected.",
+  starting: 'The Spotify player is starting…',
+  needs_login: 'Spotify needs a login: connect it below.',
+  ready: 'Spotify is connected.',
+  error: "The Spotify player keeps failing: try Connect Spotify again, or check Tavarian's logs.",
+}
 function StationBackend({ dlg }) {
   const [st, setSt] = useState(null) // Tavarian's settings, null while asking
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(null) // 'backend' | 'pair'
   const [err, setErr] = useState(null)
   const [off, setOff] = useState(false)
+  const ask = useRef(() => {})
   useEffect(() => {
     const d = dlg.current
     if (!d) return
     let alive = true
-    const ask = () =>
+    ask.current = () =>
       d.open &&
       tavarianPost({ action: 'settings' }).then((r) => {
         if (!alive) return
@@ -356,32 +365,41 @@ function StationBackend({ dlg }) {
         else if (r.code === 'tavarian_off') setOff(true)
         else setErr(r.error)
       })
-    ask()
-    const seen = new MutationObserver(ask) // the panel opening (its open attribute)
+    ask.current()
+    const seen = new MutationObserver(() => ask.current()) // the panel opening (its open attribute)
     seen.observe(d, { attributes: true, attributeFilter: ['open'] })
     return () => ((alive = false), seen.disconnect())
   }, [dlg])
+  // a code is shown (or the player is starting): ask again every 3 s until it's logged in
+  const waiting = Boolean(st?.pairing) || st?.spotifyStatus === 'starting'
+  useEffect(() => {
+    if (!waiting) return
+    const t = setInterval(() => ask.current(), 3000)
+    return () => clearInterval(t)
+  }, [waiting])
   if (off) return null
-  const pick = async (backend) => {
-    if (busy || backend === st?.backend) return
-    setBusy(true)
-    const r = await tavarianPost({ action: 'backend', backend })
-    setBusy(false)
+  const run = async (kind, body) => {
+    if (busy) return
+    setBusy(kind)
+    const r = await tavarianPost(body)
+    setBusy(null)
     if (r.ok) setSt(r.data.settings), setErr(null)
     else setErr(r.error)
   }
+  const pick = (backend) => backend !== st?.backend && run('backend', { action: 'backend', backend })
+  const pair = st?.pairing
   const hint =
     err ? <span className="text-red-300">{err}</span>
     : !st ? 'Asking Tavarian…'
-    : busy ? 'Saving…'
+    : busy === 'backend' ? 'Saving…'
     : st.backend === 'spotify'
       ? st.spotifySearch
         ? 'Spotify, 320 kbps. YouTube songs are looked up on Spotify; one with no sure match is skipped. Applies from the next song.'
         : "Spotify, 320 kbps. Spotify search isn't set up on Tavarian, so YouTube songs are skipped. Applies from the next song."
       : st.spotifyAvailable ? 'YouTube. Applies from the next song.'
-      : "YouTube. Spotify isn't set up on Tavarian yet."
+      : `YouTube. ${SP_LINE[st.spotifyStatus] ?? SP_LINE.off}`
   return (
-    <section className="flex flex-col gap-3 pt-4 border-t border-white/5" aria-labelledby="station-title" aria-busy={busy || !st}>
+    <section className="flex flex-col gap-3 pt-4 border-t border-white/5" aria-labelledby="station-title" aria-busy={Boolean(busy) || !st}>
       <h3 id="station-title" className="text-sm font-medium text-white flex items-center gap-2">
         <i className="fa-solid fa-house-signal text-lofi-primary text-xs" aria-hidden="true" /> Home station
       </h3>
@@ -389,11 +407,37 @@ function StationBackend({ dlg }) {
         legend="Plays songs from (for everyone)"
         name="backend"
         value={st?.backend ?? null}
-        options={[['youtube', 'YouTube', !st || busy], ['spotify', 'Spotify', !st || busy || !st.spotifyAvailable]]}
+        options={[['youtube', 'YouTube', !st || Boolean(busy)], ['spotify', 'Spotify', !st || Boolean(busy) || !st.spotifyAvailable]]}
         onChange={pick}
       >
         <p className="mt-2 text-[11px] text-lofi-muted" aria-live="polite">{hint}</p>
       </Choice>
+      {st && !st.spotifyAvailable && (
+        pair ? (
+          <div className="rounded-2xl border border-[#1db954]/40 bg-[#1db954]/10 px-4 py-3 flex flex-col gap-2 motion-safe:animate-[panel-in_0.2s_ease-out]" aria-live="polite">
+            <p className="text-[11px] text-lofi-text">
+              On your phone, open the link and log in with the Spotify account the station should use. If it asks, type this code:
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-mono text-2xl font-bold tracking-[0.2em] text-white select-all">{pair.code}</span>
+              <a href={pair.url} target="_blank" rel="noopener noreferrer" className="h-8 px-3 rounded-full bg-[#1db954] text-black font-mono text-xs font-bold flex items-center gap-2 hover:brightness-110 transition">
+                <i className="fa-brands fa-spotify" aria-hidden="true" /> Open spotify.com/pair
+              </a>
+            </div>
+            <p className="text-[10px] font-mono text-lofi-muted flex items-center gap-2">
+              <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" /> Waiting for Spotify…{pair.expiresAt && ` (the code works until ${new Date(pair.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`}
+            </p>
+          </div>
+        ) : (
+          <button
+            onClick={() => run('pair', { action: 'pair' })}
+            disabled={Boolean(busy) || st.spotifyStatus === 'starting'}
+            className="self-start h-9 px-4 rounded-full border border-[#1db954]/50 text-[#1db954] font-mono text-xs font-bold flex items-center gap-2 hover:bg-[#1db954]/10 transition-colors disabled:opacity-40"
+          >
+            <i className={`fa-${busy === 'pair' ? 'solid fa-spinner fa-spin' : 'brands fa-spotify'}`} aria-hidden="true" /> {busy === 'pair' ? 'Asking Tavarian for a code…' : 'Connect Spotify'}
+          </button>
+        )
+      )}
     </section>
   )
 }
