@@ -6,11 +6,11 @@ import { AUTH_URL, DAY_SCENES, SCENES, SCENES_CORS, SCENES_URL, SERVICES } from 
 import { STATIONS, stationById } from '../lib/stations'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
 import { PlayerMini, PlayerPanel, usePlayer } from './player'
-import { SP_LOCK_REST, musicSource, spOn } from '../lib/player'
+import { SP_LOCK_REST, autoTab, musicSource, spOn } from '../lib/player'
 import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
-import { WAKE_GUARD_MS, eatNextClick } from '../lib/wake'
+import { WAKE_GUARD_MS, eatNextClick, holdScroll } from '../lib/wake'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
 // a browser with no saved location starts in Đà Lạt
@@ -218,7 +218,8 @@ export default function Home() {
     const t = load('audioTab', 'radio')
     if (AUDIO_TABS.some(([id]) => id === t)) setAudioTab(t)
   }, [])
-  const pickAudio = (t) => (setAudioTab(t), save('audioTab', t))
+  const autoPicked = useRef(false) // the page-open pick below is done (or a tab was picked by hand first)
+  const pickAudio = (t) => ((autoPicked.current = true), setAudioTab(t), save('audioTab', t))
   // the Player tab's station (app/player.js); only one source makes sound: Listen pauses the radio (inside the tap),
   // and the radio starting stops listening (Spotify plays elsewhere, so neither touches it)
   const player = usePlayer({ owner, onListen: () => music.current?.pause() })
@@ -226,7 +227,18 @@ export default function Home() {
     if (tune.playing || tune.loading) player.stop()
   }, [tune.playing, tune.loading])
   const tvOn = !player.off && !player.revoked
-  const source = musicSource(audioTab, tune, spotify, { listening: player.listening, song: tvOn ? player.state?.song : null, playing: tvOn && player.state?.status === 'playing' })
+  const tvPlaying = tvOn && Boolean(player.state?.song) && player.state.status === 'playing'
+  const source = musicSource(audioTab, tune, spotify, { listening: player.listening, song: tvOn ? player.state?.song : null, playing: tvPlaying, owner })
+  // the owner's music card opens on what plays: the home station, then Spotify, else the tab picked last (lib autoTab).
+  // Once per page load, when both have answered; not saved, so the last pick by hand stays the default
+  useEffect(() => {
+    if (autoPicked.current || !owner || invite) return // (a shared station link opens the Radio tab)
+    const tvKnown = !tvOn || !player.reachable || player.state != null
+    if (!tvKnown || spotify === undefined) return
+    autoPicked.current = true
+    const t = autoTab({ tvPlaying, spPlaying: spOn(spotify) && Boolean(spotify.playing) })
+    if (t) setAudioTab(t)
+  }, [owner, invite, tvOn, tvPlaying, player.reachable, player.state, spotify])
   const mini = { source, tune, onRadio: () => music.current?.toggle(), sp: spotify, owner, onSpotify: applySpotify, station, info, player }
   const [wasOwner, setWasOwner] = useState(false)
   useEffect(() => {
@@ -247,7 +259,8 @@ export default function Home() {
     setSoftLock(false)
   }
   // the dashboard just came back (screensaver, lock, Hide): it ignores the pointer for a moment, so the tap that
-  // brought it back (or a second one right after) can't open a card that's only just appearing
+  // brought it back (or a second one right after) can't open a card that's only just appearing, and the page doesn't
+  // scroll while it fades back in (holdScroll)
   const away = focus || idle || softLock
   const wasAway = useRef(false)
   const [settling, setSettling] = useState(false)
@@ -257,7 +270,8 @@ export default function Home() {
     setSettling(back)
     if (!back) return
     const t = setTimeout(() => setSettling(false), WAKE_GUARD_MS)
-    return () => clearTimeout(t)
+    const letGo = holdScroll(window)
+    return () => (clearTimeout(t), letGo())
   }, [away])
   useEffect(() => {
     // H toggles Hide, L locks, Space three times quickly locks too (not while typing, not with a dialog open, not while
