@@ -59,9 +59,10 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
     phone locks.
     Signed in as the owner you also get ⏸ / ▶ and ⏭ (for everyone listening; they spin until the station confirms), a
     seekable progress bar and **＋ Add** (labeled on phones, where it takes the volume slider's room; a round ＋ from
-    `sm` up). Add opens a sheet (a bottom sheet on phones) with three tabs: **Search** (2+ letters; each result:
-    *Now* · *Next* · *Add*), **Paste link** (one YouTube video: Play now / Play next / Add to end; a link with `list=`
-    offers *this video* or *the whole playlist*) and **Import playlist** (a YouTube playlist, or a Spotify playlist /
+    `sm` up). Add opens a sheet (a bottom sheet on phones) with two tabs: **Search or link**, one box for both (2+
+    letters searches YouTube, each result: *Now* · *Next* · *Add*; a pasted YouTube video gets Play now / Play next /
+    Add to end, a link with `list=` offers *this video* or *the whole playlist*, a playlist or Spotify link offers the
+    import) and **Import playlist** (a YouTube playlist, or a Spotify playlist /
     album / track: Add to end / Play next / Play now; "Importing… this can take a while", then N added, M skipped with
     the reasons, and "first 100 only" when Tavarian cut it). In the queue every song has *Now*, *Next* and remove, and a
     handle ⋮⋮ to reorder: drag it with the mouse (a line shows where it lands), on a phone hold it ~0.4 s (a small buzz)
