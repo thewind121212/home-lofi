@@ -226,9 +226,12 @@ export default function Home() {
   useEffect(() => {
     if (tune.playing || tune.loading) player.stop()
   }, [tune.playing, tune.loading])
-  const tvOn = !player.off && !player.revoked
+  // the home station (Player tab, Hide bar, lock screen) is the owner's own: visitors don't see it (a visitor's saved
+  // Player tab shows the Radio; not saved, so the owner's pick on this browser stays)
+  const tvOn = owner && !player.off && !player.revoked
   const tvPlaying = tvOn && Boolean(player.state?.song) && player.state.status === 'playing'
-  const source = musicSource(audioTab, tune, spotify, { listening: player.listening, song: tvOn ? player.state?.song : null, playing: tvPlaying, owner })
+  const musicTab = !owner && audioTab === 'player' ? 'radio' : audioTab
+  const source = musicSource(musicTab, tune, spotify, { listening: player.listening, song: tvOn ? player.state?.song : null, playing: tvPlaying, owner })
   // the owner's music card opens on what plays: the home station, then Spotify, else the tab picked last (lib autoTab).
   // Once per page load, when both have answered; not saved, so the last pick by hand stays the default
   useEffect(() => {
@@ -407,7 +410,7 @@ export default function Home() {
         <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={audioTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
@@ -869,7 +872,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
     <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col h-[320px]">
       {/* Radio | Spotify | Player: the picked tab is filled (Spotify in its green); a dot marks a source that's playing */}
       <div role="tablist" aria-label="Audio" className="shrink-0 flex items-center gap-1.5 mb-3 z-20">
-        {AUDIO_TABS.map(([id, label, icon]) => {
+        {AUDIO_TABS.filter(([id]) => owner || id !== 'player').map(([id, label, icon]) => {
           const on = tab === id
           const fill = id === 'spotify' ? 'bg-[#1db954] text-lofi-base font-bold' : 'bg-lofi-primary text-lofi-base font-bold'
           return (
