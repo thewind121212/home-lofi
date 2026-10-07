@@ -16,7 +16,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
-  placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, slowUndo, songErrorText, sourceLabel, statusInfo,
+  placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo,
   thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
@@ -629,8 +629,8 @@ export function useOwnerOps(p) {
       const n = gone.length
       if (!n) return say('Those songs had already gone', true), false
       const plan = undoPlan({ kind: 'bulk', songs: gone, ids: before })
-      const slow = slowUndo(plan)
-      setToast({ text: `Removed ${n} song${n === 1 ? '' : 's'}${slow ? ' · Undo would take a while' : ''}`, plan, until: Date.now() + UNDO_MS })
+      const { text, countdown } = bulkRemovedLine(n, plan)
+      setToast({ text, plan, ...(countdown && { until: Date.now() + UNDO_MS }) })
       return true
     })
   // Clear queue (after the two-step question): every queued song; also what plays, when asked. No Undo
@@ -851,7 +851,7 @@ function opsLine(ops) {
   if (ops.busy === 'remove-bulk') return { text: 'Removing…', spin: true }
   const t = ops.toast
   if (t?.err) return { text: t.text, err: true }
-  // (a slow Undo shows how long it's still offered)
+  // (only a slow Undo, a Remove selected of many songs, shows how long it's still offered)
   if (t) return { text: t.trans && ops.tl ? ops.tl.text : t.text, undo: Boolean(t.plan), until: t.until ?? 0, ticks: Boolean(t.until) }
   if (ops.tl) return { text: ops.tl.text, spin: !ops.tl.done }
   if (ops.importing) return { text: 'Importing a playlist… this can take a while', spin: true }
@@ -1029,31 +1029,76 @@ function useTwoLines(ref, text) {
   return two
 }
 // a row's title: two lines at most, the whole one on hover (title) and, when it's cut, behind a small ⌄ that opens
-// the row (phones have no hover)
+// the row (phones have no hover). Opening and closing slide the row's height (WAAPI, the same in Chrome, Safari and
+// Firefox: the box's height from what it shows to what it will show); the ⌄ turns with it (the same 220 ms ease-out,
+// Tailwind's curve). Reduced motion: at once.
+// `open` is what was asked (the ⌄, aria-expanded); `clamped` is what shows: while closing the whole title stays until
+// the box has shrunk to two lines, then the clamp (and its …) comes back.
+const EXPAND_MS = 220
 function SongTitle({ text }) {
   const ref = useRef(null)
+  const box = useRef(null)
+  const anim = useRef(null)
+  const from = useRef(null) // the height to slide from on the next render (opening)
   const [open, setOpen] = useState(false)
+  const [clamped, setClamped] = useState(true)
   const [cut, setCut] = useState(false)
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el || open) return
+    if (!el || !clamped) return
     return watchSize(el, () => setCut(overflows(el.scrollHeight, el.clientHeight)))
-  }, [text, open])
+  }, [text, clamped])
+  useEffect(() => () => anim.current?.cancel(), [])
+  const slide = (a, b, done) => {
+    anim.current?.cancel()
+    const el = box.current
+    if (!el || a === b || motionOff() || !el.animate) return (anim.current = null), done?.()
+    const run = (anim.current = el.animate([{ height: `${a}px` }, { height: `${b}px` }], { duration: EXPAND_MS, easing: 'cubic-bezier(0, 0, 0.2, 1)', fill: 'forwards' }))
+    run.onfinish = () => anim.current === run && (done ? done() : (run.cancel(), (anim.current = null)))
+  }
+  // opening: the clamp is off now; slide from the two lines to the whole height
+  useLayoutEffect(() => {
+    if (from.current == null || clamped) return
+    const a = from.current
+    from.current = null
+    slide(a, box.current.offsetHeight)
+  }, [clamped])
+  // closing: the clamp is back (this same frame); let the held height go
+  useLayoutEffect(() => {
+    if (clamped && anim.current) anim.current.cancel(), (anim.current = null)
+  }, [clamped])
+  const toggle = (e) => {
+    e.stopPropagation()
+    const el = box.current
+    const now = el?.getBoundingClientRect().height ?? 0 // (mid-slide: where it is now)
+    if (!open) {
+      setOpen(true)
+      if (!clamped) return slide(now, ref.current.scrollHeight) // opened again while it was closing
+      from.current = now
+      setClamped(false)
+    } else {
+      setOpen(false)
+      const lh = parseFloat(getComputedStyle(ref.current).lineHeight) || 16
+      slide(now, Math.min(now, 2 * lh), () => setClamped(true))
+    }
+  }
   return (
     <span className="flex items-start gap-1 min-w-0">
-      <span ref={ref} title={text} className={`min-w-0 flex-1 text-xs font-medium text-white break-words ${open ? 'block' : 'line-clamp-2'}`}>
-        {text}
+      <span ref={box} className="block min-w-0 flex-1 overflow-hidden">
+        <span ref={ref} title={text} className={`text-xs font-medium text-white break-words ${clamped ? 'line-clamp-2' : 'block'}`}>
+          {text}
+        </span>
       </span>
-      {(open || cut) && (
+      {(open || !clamped || cut) && (
         <button
           type="button"
-          onClick={(e) => (e.stopPropagation(), setOpen((o) => !o))}
+          onClick={toggle}
           aria-expanded={open}
           aria-label={open ? 'Show less of the title' : `Show the whole title: ${text}`}
           title={open ? 'Show less' : 'Show the whole title'}
           className="shrink-0 -my-1 -mr-1 w-6 h-6 rounded-full flex items-center justify-center text-lofi-muted hover:text-white hover:bg-white/5 transition-colors"
         >
-          <i className={`fa-solid ${open ? 'fa-chevron-up' : 'fa-chevron-down'} text-[9px]`} aria-hidden="true" />
+          <i className={`fa-solid fa-chevron-down text-[9px] transition-transform duration-[220ms] ease-out ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
       )}
     </span>
@@ -1321,8 +1366,10 @@ const SmallBtn = ({ label, icon, onClick, busy, done, disabled }) => (
     <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : done ? 'fa-check' : icon}`} aria-hidden="true" />
   </button>
 )
-// a small pill with an icon and a word (the word hides on phones when `short`)
-function Pill({ label, text, icon, onClick, busy, disabled, primary, short, className = '' }) {
+// a small pill with an icon and a word (the word hides on phones when `short`). It keeps its size whatever it shows:
+// the icon has a fixed width (a spinner or a speaker is as wide as ▶), and `words` (every word it may show) hold the
+// room of the widest one, so a word that changes ("Add" → "Queued") doesn't push the row
+function Pill({ label, text, words, icon, onClick, busy, disabled, primary, short, className = '' }) {
   return (
     <button
       onClick={onClick}
@@ -1331,11 +1378,27 @@ function Pill({ label, text, icon, onClick, busy, disabled, primary, short, clas
       title={label}
       className={`h-7 shrink-0 rounded-full flex items-center justify-center gap-1.5 text-[11px] font-mono border transition-colors disabled:opacity-40 ${short ? 'max-sm:w-7 sm:px-2.5' : 'px-2.5'} ${primary ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold hover:bg-lofi-highlight' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'} ${className}`}
     >
-      <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : icon} text-[10px]`} aria-hidden="true" />
-      <span className={short ? 'max-sm:hidden' : ''}>{text}</span>
+      {words ? (
+        // one layer per word in the same grid cell (the others invisible): as wide as the widest, the shown one centered
+        <span className="grid justify-items-center">
+          {words.map((w) => (
+            <span key={w} className={`[grid-area:1/1] flex items-center gap-1.5 ${w === text ? '' : 'invisible'}`} aria-hidden={w === text ? undefined : 'true'}>
+              <PillFace word={w} icon={w === text ? icon : null} busy={w === text && busy} short={short} />
+            </span>
+          ))}
+        </span>
+      ) : (
+        <PillFace word={text} icon={icon} busy={busy} short={short} />
+      )}
     </button>
   )
 }
+const PillFace = ({ word, icon, busy, short }) => (
+  <>
+    <i className={`fa-solid fa-fw ${busy ? 'fa-spinner fa-spin' : icon ?? ''} text-[10px]`} aria-hidden="true" />
+    <span className={short ? 'max-sm:hidden' : ''}>{word}</span>
+  </>
+)
 const ago = (iso) => {
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return ''
@@ -1355,7 +1418,7 @@ function PlaceBtns({ s, p, ops, short }) {
     <>
       <Pill short={short} primary text="Now" icon={current ? 'fa-volume-high' : 'fa-play'} label={current ? `Playing now: ${t}` : `Play now: ${t}`} disabled={lock || current} busy={ops.busy === (queued ? `now:${queued.id}` : `add:${url}:now`)} onClick={() => (queued ? ops.playNow(queued) : ops.add(url, 'now', s.title))} />
       <Pill short={short} text="Next" icon="fa-angles-up" label={`Play next: ${t}`} disabled={lock || current || (queued && p.queue.items[0]?.id === queued.id)} busy={ops.busy === (queued ? `next:${queued.id}` : `add:${url}:next`)} onClick={() => (queued ? ops.playNext(queued) : ops.add(url, 'next', s.title))} />
-      <Pill short={short} text={queued ? 'Queued' : 'Add'} icon={queued ? 'fa-check' : 'fa-plus'} label={queued ? `In the queue: ${t}` : `Add to the end: ${t}`} disabled={lock || Boolean(queued)} busy={ops.busy === `add:${url}:end`} onClick={() => ops.add(url, 'end', s.title)} />
+      <Pill short={short} text={queued ? 'Queued' : 'Add'} words={['Add', 'Queued']} icon={queued ? 'fa-check' : 'fa-plus'} label={queued ? `In the queue: ${t}` : `Add to the end: ${t}`} disabled={lock || Boolean(queued)} busy={ops.busy === `add:${url}:end`} onClick={() => ops.add(url, 'end', s.title)} />
     </>
   )
 }
