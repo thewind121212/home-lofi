@@ -58,9 +58,21 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
     phone's lock screen show the song (play / pause = listen / stop). As with the YouTube stations, iOS stops it when the
     phone locks.
     Signed in as the owner you also get ⏸ / ▶ and ⏭ (for everyone listening; they spin until the station confirms), a
-    seekable progress bar, and in the list: **＋ Add** (paste a YouTube link, or search), move up / down and remove,
-    **Playlists** (your Tavarian playlists: queue one song or all), plain messages for refusals (already queued, too
-    long, not allowed outside YouTube…), and *Tavarian link: name · expires · Revoke link* (asks first, like Reset all).
+    seekable progress bar and **＋ Add** (labeled on phones, where it takes the volume slider's room; a round ＋ from
+    `sm` up). Add opens a sheet (a bottom sheet on phones) with three tabs: **Search** (2+ letters; each result:
+    *Now* · *Next* · *Add*), **Paste link** (one YouTube video: Play now / Play next / Add to end; a link with `list=`
+    offers *this video* or *the whole playlist*) and **Import playlist** (a YouTube playlist, or a Spotify playlist /
+    album / track: Add to end / Play next / Play now; "Importing… this can take a while", then N added, M skipped with
+    the reasons, and "first 100 only" when Tavarian cut it). In the queue every song has *Now*, *Next* and remove, and a
+    handle ⋮⋮ to reorder: drag it with the mouse (a line shows where it lands), on a phone hold it ~0.4 s (a small buzz)
+    then drag (a plain swipe still scrolls); ↑ / ↓ on the focused handle move it too. After ⏭ or *Now* the line under
+    the player says what happens (*Skipped A · loading B…*, then *Playing B*). The station plays in several places at
+    once, so mistakes can be undone: **Undo** for 5 s after Play now / ⏭ (A comes back at the second it was at, B back
+    in its place), remove (back in its place), a move, Play next, Add and an import (its songs go again, paced when
+    Tavarian says "too fast"). Each button locks while its request is in flight; a refusal is a plain message (already
+    queued, already played, too long, live stream, not allowed outside YouTube, no YouTube match…) and changes nothing.
+    Also **Playlists** (your Tavarian playlists: queue one song or all) and *Tavarian link: name · expires · Revoke link*
+    (asks first, like Reset all).
   The picked tab is filled; a dot on a tab means that source is playing (Player: the station plays on Tavarian).
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
@@ -301,10 +313,13 @@ Routes:
 | `GET /api/tavarian/events` | public | Server-Sent Events: `status`, `state`, `queue`, `audio-ready`, `song-error`, `revoked`; status, state and queue right away, `: ping` every 20 s. 4 open per IP (429), 503 `tavarian_off` when not set up |
 | `GET /api/tavarian/state` | public | `{ state, queue, live }` for the first paint and as the fallback when the stream can't stay open |
 | `POST /api/tavarian/ticket` | public, same-origin JSON | `{ clientId }` → `{ ticket, expiresAt, streamUrl }`; audio: `streamUrl?streamId=…&clientId=…&ticket=…`. 10 a minute per IP |
-| `POST /api/private/settings/tavarian` | owner | `{ action, … }`: `add`, `remove`, `reorder`, `search`, `play` / `pause` / `resume` / `skip` / `stop`, `seek`, `playlists`, `playlist-songs`, `from-playlist`, `token`, `revoke` |
+| `POST /api/private/settings/tavarian` | owner | `{ action, … }`: `add` (`youtubeUrl`, `placement`: `end` / `next` / `now`), `import` (`url`, `placement`), `play-now` / `next` (`id`), `remove`, `reorder`, `search`, `play` / `pause` / `resume` / `skip` / `stop`, `seek`, `playlists`, `playlist-songs`, `from-playlist`, `token`, `revoke` |
 
 The owner route sits in the owner-only proxy location of [Settings sync](#settings-sync-owner-only), like Spotify's
-controls. The per-IP limits read the first `X-Forwarded-For` entry, so the outermost proxy should set it to
+controls. Every call to Tavarian gives up after 5 s, except `import` (a playlist can take tens of seconds): 2 minutes,
+so give that location `proxy_read_timeout 150s;` (nginx's default 60 s would cut a long import short; the songs still
+arrive, the page just says to check the queue). While this server's own event stream to Tavarian is down (e.g.
+`too_many_streams`) the tab asks `/api/tavarian/state` every 5 s instead, so the queue stays current. The per-IP limits read the first `X-Forwarded-For` entry, so the outermost proxy should set it to
 `$remote_addr` (inner proxies append with `$proxy_add_x_forwarded_for`).
 
 **Proxy for the event stream.** Nginx buffers responses and closes idle ones after 60 s. The app sends
