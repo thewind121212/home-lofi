@@ -1206,6 +1206,11 @@ export function PlayerPanel({ p, owner, vol }) {
             <span className={`px-1.5 py-0.5 rounded-full border ${playing ? 'text-lofi-primary bg-lofi-primary/10 border-lofi-primary/20' : 'border-white/10'}`} role="status">
               {playing ? '●' : info.key === 'paused' ? '❚❚' : '○'} {info.label}
             </span>
+            {song && p.state?.playingVia === 'spotify' && (
+              <span className="px-1.5 py-0.5 rounded-full border border-[#1db954]/30 text-[#1db954] flex items-center gap-1" title="Playing from Spotify (320 kbps)">
+                <i className="fa-brands fa-spotify" aria-hidden="true" /> Spotify
+              </span>
+            )}
             {hearing && <EqBars />}
           </p>
           {/* a long title takes two lines; then the line under it gives up its room (the card keeps its height) */}
