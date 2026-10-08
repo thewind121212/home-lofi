@@ -19,6 +19,8 @@ services:
       POWER_URL: ${POWER_URL:-http://power-meter:8080/power.json}
       # other machines on the Server card: JSON list of {"name","url","token"} from agent/install.sh (README "Other servers")
       HOST_AGENTS: ${HOST_AGENTS:-}
+      # this machine's label on the Server card
+      SERVER_NAME: ${SERVER_NAME:-lenovo}
       # Steam card's library numbers (games owned, total hours); the status works without it
       STEAM_API_KEY: ${STEAM_API_KEY:-}
       # Spotify now-playing pill, see README "Spotify now playing" (off unless all three are set)

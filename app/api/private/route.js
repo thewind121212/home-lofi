@@ -11,5 +11,5 @@ export async function GET(request) {
   // a service with "widget": "<id>" in the JSON gets that widget's live numbers as stats: [[label, value], ...]
   const lives = await liveOf(list)
   const withStats = list.map(({ widget, ...s }, i) => ({ ...s, live: lives[i], ...(widget && widgets[widget] && { stats: widgets[widget] }) }))
-  return Response.json({ user: request.headers.get('remote-user') || null, stats, hosts, services: withStats, widgets }, { headers: HEADERS })
+  return Response.json({ user: request.headers.get('remote-user') || null, name: process.env.SERVER_NAME || 'Server', stats, hosts, services: withStats, widgets }, { headers: HEADERS })
 }
