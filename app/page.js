@@ -13,6 +13,7 @@ import { useCloudSync } from './cloud'
 import { WAKE_GUARD_MS, eatNextClick, holdScroll } from '../lib/wake'
 import { ambientTick, ambientView, ambientWake } from '../lib/ambient'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
+import { SoundsChip, SoundsPanel, useSounds } from './sounds'
 
 // a browser with no saved location starts in Đà Lạt
 const DEFAULT_LOC = { id: 1584071, name: 'Da Lat', region: 'Lam Dong', country: 'Vietnam', lat: 11.94646, lon: 108.44193, tz: 'Asia/Ho_Chi_Minh' }
@@ -97,6 +98,10 @@ export default function Home() {
   const videoRef = useRef(null)
   const setDlg = useRef(null)
   const galDlg = useRef(null)
+  const sndDlg = useRef(null)
+  // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
+  // .current, so this hands it whichever of the two is open
+  const [syncHold] = useState(() => ({ get current() { return [setDlg.current, sndDlg.current].find((d) => d?.open) ?? setDlg.current } }))
   const [wx, setWx] = useState() // the Weather card's /api/weather data: undefined = loading, null = failed
   const [cloudLoc, setCloudLoc] = useState(null) // a weather location picked on another device (cloud sync)
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
@@ -114,7 +119,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, setDlg)
+  }, syncHold)
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -265,7 +270,7 @@ export default function Home() {
   }, [owner])
 
   function lock() {
-    ;[setDlg.current, galDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
+    ;[setDlg.current, galDlg.current, sndDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
     document.activeElement?.blur()
     setSoftLock(true)
   }
@@ -295,13 +300,13 @@ export default function Home() {
   const settling = useSettling(view.dashboard, true)
   const barSettling = useSettling(view.bar === 'shown', false)
   useEffect(() => {
-    // H toggles Ambient, L locks, Space three times quickly locks too (not while typing, not with a dialog open, not while
-    // locked; Space also not on a focused button / link / tab / slider, where it presses that control)
+    // H toggles Ambient, L locks, A opens Sounds, Space three times quickly locks too (not while typing, not with a dialog
+    // open, not while locked; Space also not on a focused button / link / tab / slider, where it presses that control)
     let spaces = [] // times of the last Space presses
     const onKey = (e) => {
       const k = e.key.toLowerCase()
       const space = e.code === 'Space'
-      if (k !== 'h' && k !== 'l' && !space) return
+      if (k !== 'h' && k !== 'l' && k !== 'a' && !space) return
       if (e.ctrlKey || e.metaKey || e.altKey || lockRef.current) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return
       if (space) {
@@ -314,12 +319,17 @@ export default function Home() {
         return lock()
       }
       e.preventDefault()
+      if (k === 'a') return sndDlg.current?.showModal()
       k === 'l' ? lock() : ambRef.current.ambient ? leaveAmbient() : enterAmbient()
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   }, [])
 
+  // Sounds (app/sounds.js): the mix is a setting (saved, synced for the owner); playing or not is this page's only
+  const snd = useSounds(set.sounds)
+  const setMix = (sounds) => update({ sounds })
+  const openSounds = () => sndDlg.current.open || sndDlg.current.showModal()
   function update(patch) {
     const next = { ...set, ...patch }
     setSettings(next)
@@ -445,9 +455,11 @@ export default function Home() {
       </div>
 
       {view.dock && (
-        // ⛰ Ambient, 🔒 Lock, ⚙️ Settings and ⧉ Mini window float bottom right on the dashboard (Ambient's bar has its own 👁 / 🔒)
+        // ⛰ Ambient, 〰 Sounds, 🔒 Lock, ⚙️ Settings and ⧉ Mini window float bottom right on the dashboard (Ambient's bar has
+        // its own 👁 / 🔒, and a Sounds mute chip while they play)
         <div className={`fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out] ${settling ? 'pointer-events-none' : ''}`}>
           <DockButton icon="fa-mountain-sun" label="Ambient (H)" title="Ambient: the scene, with music at hand (H)" onClick={enterAmbient} />
+          <DockButton icon="fa-wave-square" label={snd.on ? 'Sounds (A), playing' : 'Sounds (A)'} title="Sounds: rain, wind, fire… under the music (A)" lit={snd.on && !snd.muted} onClick={openSounds} />
           <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
           <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
           {pipOk && <DockButton icon="fa-clone" label="Mini window (picture-in-picture)" title={pip ? 'Close the mini window' : 'Mini window'} on={pip} onClick={togglePip} />}
@@ -455,7 +467,12 @@ export default function Home() {
       )}
       {softLock && (
         <LockScreen onUnlock={unlock} set={set} update={update} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />}>
-          {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
+          {(set.lockMusic !== 'hide' || snd.on) && (
+            <div className="flex flex-col items-center gap-2">
+              {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
+              {snd.on && <SoundsChip snd={snd} mix={set.sounds} className="glass-panel h-9 px-3.5 rounded-full" />}
+            </div>
+          )}
         </LockScreen>
       )}
       {/* Ambient: the big clock fades in when the bar fades (Settings > When the bar fades = Scene + clock), and out
@@ -468,9 +485,10 @@ export default function Home() {
       {/* the dashboard is hidden in Ambient, so the way back is the bar's eye button (or Esc / H / the bare scene); the
           bar can lock too */}
       {view.bar !== 'none' && (
-        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} onShow={leaveAmbient} onLock={lock} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} onShow={leaveAmbient} onLock={lock} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} />
+      <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </SteamData>
     </Prefs>
@@ -515,15 +533,16 @@ function Clock({ now, clock, tick }) {
   )
 }
 
-// the dashboard's floating 👁 / 🔒 / ⚙️ / ⧉, bottom right. on: a toggle that's on (⧉ while the mini window is open)
-function DockButton({ icon, label, title = label, on, onClick }) {
+// the dashboard's floating ⛰ / 〰 / 🔒 / ⚙️ / ⧉, bottom right. on: a toggle that's on (⧉ while the mini window is open);
+// lit: just the accent color, no toggle (〰 while sounds play)
+function DockButton({ icon, label, title = label, on, lit, onClick }) {
   return (
     <button
       onClick={onClick}
       aria-label={label}
       aria-pressed={on}
       title={title}
-      className={`glass-panel w-11 h-11 rounded-full flex items-center justify-center hover:text-lofi-primary hover:scale-105 transition ${on ? 'text-lofi-primary' : 'text-lofi-text'}`}
+      className={`glass-panel w-11 h-11 rounded-full flex items-center justify-center hover:text-lofi-primary hover:scale-105 transition ${on || lit ? 'text-lofi-primary' : 'text-lofi-text'}`}
     >
       <i className={`fa-solid ${icon} text-sm`} aria-hidden="true" />
     </button>
@@ -815,12 +834,13 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
   )
 }
 
-// Ambient's slim bar: show panels + lock | music (MiniPlayer) | weather | time | server. Segments without data are left out.
+// Ambient's slim bar: show panels + lock | music (MiniPlayer) | sounds (mute chip, while they play) | weather | time |
+// server. Segments without data are left out.
 // Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
 // calm: faded out (and inert: no Tab into an invisible bar), mounted still so it fades back in; settling: just came
 // back, it ignores the pointer for a moment. hover: a ref Home reads, true while the mouse rests on it (it stays then)
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
-function AmbientBar({ now, wx, priv, mini, onShow, onLock, calm, settling, barRef, hover }) {
+function AmbientBar({ now, wx, priv, mini, sounds, onShow, onLock, calm, settling, barRef, hover }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -853,6 +873,8 @@ function AmbientBar({ now, wx, priv, mini, onShow, onLock, calm, settling, barRe
       <div className={SEG}>
         <MiniPlayer {...mini} variant="bar" />
       </div>
+
+      {sounds && <div className={SEG}>{sounds}</div>}
 
       {wx && (
         <div className={SEG} title={wx.desc}>

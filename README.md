@@ -86,6 +86,18 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
     Also **Playlists** (your Tavarian playlists: queue one song or all) and *Tavarian link: name · expires · Revoke link*
     (asks first, like Reset all).
   The picked tab is filled; a dot on a tab means that source is playing (Player: the station plays on Tavarian).
+- **Sounds** (`app/sounds.js`, `lib/sounds.js`, `lib/sound-engine.js`): an ambient-sound mixer for everyone, under
+  whatever music plays (it never pauses the radio, the Player or Spotify, and has its own volume). 〰 (bottom right,
+  under ⛰) or **A** opens it: a tile per sound (tap: on / off, slider: its level), presets (Rainy café, Cozy fireplace,
+  Storm night, Seaside, Deep focus), ▶ / ⏸, volume with mute, a sleep timer (15–90 min, then a slow fade out) and Reset.
+  Rain, Wind, Brown noise, Fireplace and Ocean are **generated in the browser** (Web Audio, no files): noise beds and
+  pre-rendered drop / crackle loops that loop seamlessly, shaped by filters and slow random envelopes (gusts, swells)
+  scheduled on the audio thread, so they cost almost no CPU and keep going in a background tab. Fades are ~1.5 s, and
+  with nothing to hear the audio context sleeps. The mix is a setting (saved per browser, synced for the owner); nothing
+  starts by itself on load, the first tap on a tile, a preset or ▶ does. While sounds play, Ambient's bar and the lock
+  screen show a small 〰 Sounds chip that mutes / unmutes. Recorded loops (Café, Birds, Thunder, City) are in the
+  registry but hidden until their files exist: put `public/sounds/<id>.m4a` in place and set `ready: true` in
+  `lib/sounds.js` (fetched and decoded the first time they're turned on, looped gaplessly past the encoder's padding).
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
@@ -121,6 +133,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Ambient after / When the bar fades | Ambient after 30 s – 5 min without input (Off: only by hand, ⛰ or H); when its bar fades, show the scene only, or the scene + a big clock. The input that brings the bar back never presses anything (its click is swallowed, and the bar ignores the pointer for 0.4 s); the panels ignore the pointer for 0.4 s after they come back from Ambient or the lock, and the page doesn't scroll while they fade in; it never locks |
+| Sounds | in its own panel (〰 / A): the mix (each sound's on / off and level), volume and sleep timer. Synced like the rest; whether sounds play right now isn't |
 | Mini window | Weather Show / Hide · Date Show / Hide (under the ⧉ mini window's clock; changes show in an open one right away) |
 | Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, the Player's listen / stop for anyone and ⏭ for the owner, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
@@ -227,7 +240,7 @@ Optional. Signed in as `OWNER_USER`, your settings, saved scene and weather loca
 
 - **Local-first**: the page always renders from localStorage and never waits for the network. Changes go up ~1 s
   later in the background; changes from your other devices come in on load and when you return to the tab
-  (colors cross-fade). While Settings is open, nothing incoming moves under the cursor.
+  (colors cross-fade). While Settings or Sounds is open, nothing incoming moves under the cursor.
 - **Per-setting merge**: every key carries the time it changed; the newer side wins per key, so edits on two
   devices both survive. Offline edits stay in the browser and sync when it's back.
 - Settings › bottom line shows where they live: *Synced to your devices* / *Saving…* / *Offline* /

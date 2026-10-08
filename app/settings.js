@@ -55,7 +55,7 @@ const swatchBg = ([a, b, c]) => `linear-gradient(135deg, ${c} 0%, ${a} 50%, ${b}
 
 // One setting = a fieldset of native radios (arrow keys, one tab stop, radiogroup semantics for free), drawn as pills.
 // options: [value, label, disabled?]
-function Choice({ legend, name, value, options, onChange, children }) {
+export function Choice({ legend, name, value, options, onChange, children }) {
   return (
     <fieldset className="min-w-0">
       <legend className="mb-2 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{legend}</legend>
