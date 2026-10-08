@@ -3205,7 +3205,8 @@ function Server({ d }) {
 }
 
 // tooltip for the ⚡ badge
-const powerTitle = (p) => `CPU ${p.cpu ?? '--'} W + RAM ${p.ram ?? '--'} W, measured by the CPU (10 s average). The whole PC at the wall uses more.`
+const powerTitle = (p) =>
+  `CPU ${p.cpu ?? '--'} W + RAM ${p.ram ?? '--'} W, measured by the CPU (10 s average)${p.extra ? ` + ${p.extra} W estimated (EXTRA_WATTS)` : ''}. The whole PC at the wall uses more.`
 
 // One machine: uptime / load / ⚡ watts line, then CPU, RAM, temp, disk tiles. offline: its agent didn't answer.
 function HostStats({ name, st, offline, unit }) {

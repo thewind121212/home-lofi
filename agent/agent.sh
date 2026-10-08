@@ -10,6 +10,8 @@ mkdir -p /www && echo "/:home:$AGENT_TOKEN" > /etc/httpd.conf && httpd -p 9101 -
 # the CPU package counter, by name: on some laptops another top-level zone is "psys" (whole platform), which can read nonsense
 R=$(grep -lx package-0 /rapl/intel-rapl/intel-rapl:*/name 2>/dev/null | head -1); R=${R%/name}
 DRAM=$([ -n "$R" ] && grep -lx dram "$R"/intel-rapl:*/name 2>/dev/null | head -1); DRAM=${DRAM%/name}
+# EXTRA_WATTS (.env): a fixed estimate for what RAPL can't see (USB devices, RAM without a dram domain...), added to watts
+EX=$(awk -v w="${EXTRA_WATTS:-0}" 'BEGIN {printf "%d", (w ~ /^[0-9]+(\.[0-9]+)?$/) ? w * 1000 : 0}')
 
 cpu() { awk '/^cpu /{print $5+$6, $2+$3+$4+$5+$6+$7+$8+$9}' /proc/stat; }   # idle total (jiffies)
 uj() { [ -n "$1" ] && cat "$1/energy_uj" 2>/dev/null || echo; }
@@ -49,7 +51,7 @@ while :; do
   power=null; pc=$(mw "$R" "$p0" "$p1" $(( c1 - c0 )))
   if [ -n "$pc" ]; then
     pr=$(mw "$DRAM" "$r0" "$r1" $(( c1 - c0 )))
-    power="{\"watts\":$(w $(( pc + ${pr:-0} ))),\"cpu\":$(w $pc),\"ram\":$([ -n "$pr" ] && w $pr || echo null)}"
+    power="{\"watts\":$(w $(( pc + ${pr:-0} + EX ))),\"cpu\":$(w $pc),\"ram\":$([ -n "$pr" ] && w $pr || echo null),\"extra\":$([ "$EX" -gt 0 ] && w $EX || echo null)}"
   fi
   printf '{"cpu":%s,"mem":%s,"temp":%s,"disk":%s,"uptime":%s,"load":%s,"power":%s,"at":%s}\n' \
     "$busy" "$mem" "$(temp | pick_temp)" "$disk" "$up" "$load" "$power" "$(date +%s)" > /www/.s && mv /www/.s /www/stats.json

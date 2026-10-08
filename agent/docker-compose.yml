@@ -9,6 +9,8 @@ services:
     command: ["/agent.sh"]
     environment:
       AGENT_TOKEN: ${AGENT_TOKEN:?set AGENT_TOKEN in .env}
+      # optional fixed estimate (W) added to the measured watts, e.g. EXTRA_WATTS=7.5 in .env for a USB fan + RAM
+      EXTRA_WATTS: ${EXTRA_WATTS:-0}
     ports:
       - "9101:9101"
     volumes:

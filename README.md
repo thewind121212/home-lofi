@@ -196,6 +196,9 @@ It prints a line like `{"name":"debian","url":"http://10.10.0.50:9101/stats.json
 Put those lines in a JSON list in `HOST_AGENTS` (Coolify > Environment Variables), e.g.
 `[{"name":"debian",...},{"name":"nas",...}]`, and redeploy. A machine whose agent doesn't answer shows
 as offline. To update the agent, run the same command again (the token is kept).
+For what the CPU's counter can't see (a USB fan, RAM on CPUs without a RAM counter...), add a fixed estimate
+in watts to the agent's `.env`, e.g. `echo EXTRA_WATTS=7.5 >> ~/host-agent/.env && cd ~/host-agent && docker compose up -d`;
+it's added to ⚡ and the tooltip shows it as estimated.
 
 ### Live widget stats
 
