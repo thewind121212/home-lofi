@@ -334,6 +334,7 @@ export default function Home() {
   // music: the radio or the Player's Listen plays here, so they keep the phone's lock screen (Spotify plays elsewhere)
   const snd = useSounds(set.sounds, { music: tune.playing || tune.loading || player.listening })
   soundsOn.current = snd.playing
+  useEffect(() => cloud.live(), [snd.playing]) // started from the lock screen with the stream shut: open it again
   const setMix = (sounds) => update({ sounds })
   const openSounds = () => sndDlg.current.open || sndDlg.current.showModal()
   function update(patch) {

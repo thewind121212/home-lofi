@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SETTINGS_KEY, parseSettings } from '../lib/settings'
 import { SYNC_KEYS, cleanDoc, merge } from '../lib/sync'
-import { LIVE_HIDDEN_MS, liveAction, liveRetryMs, liveWanted, newClientId } from '../lib/live'
+import { LIVE_BYE_MS, liveAction, liveRetryMs, liveWanted, newClientId } from '../lib/live'
 import { load, save } from './settings'
 
 // Owner-only cloud sync of settings, saved scene and weather location (rules in lib/sync.js). Local-first: the page
@@ -48,10 +48,12 @@ function writeLocal(doc, keys) {
 
 // apply(keys): the hook already wrote those keys to localStorage; the page re-reads them into state.
 // hold: the Settings dialog; while it's open, incoming changes wait so nothing moves under the cursor.
-// keep: { current: true } while the live stream should stay open with the tab hidden (sounds play: the mix follows)
+// keep: { current: true } while the live stream should stay open with the tab hidden (sounds play: the mix follows);
+// the page calls live() when it changes (a ref says nothing by itself)
 export function useCloudSync(apply, hold, keep) {
   const [status, setStatus] = useState('off')
   const touch = useRef(() => {}) // replaced once the effect runs; a stable function for the page to call
+  const liveRef = useRef(() => {})
   const applyRef = useRef(apply)
   applyRef.current = apply
 
@@ -145,30 +147,27 @@ export function useCloudSync(apply, hold, keep) {
       later(() => request('PUT'), PUSH_DELAY)
     }
 
-    // Live: the event stream (app/api/private/settings/events). Open while synced and the tab shows; a hidden tab lets
-    // it go after a minute unless sounds play on it (lib/live.js liveWanted). It only ever says "pull": the GET and
-    // take() above do the rest, holds included. A drop reconnects with backoff (and pulls once back: saves made
-    // meanwhile said nothing); if it keeps failing it waits for the tab to show again, and sync works as before.
-    let es = null, fails = 0, missed = false, retry = 0, check = 0
-    let hiddenAt = document.visibilityState === 'visible' ? 0 : Date.now()
+    // Live: the event stream (app/api/private/settings/events). Open while synced and the tab shows, or while sounds
+    // play on it (lib/live.js liveWanted). It only ever says "pull": the GET and take() above do the rest, holds
+    // included. A drop reconnects with backoff (and pulls once back: saves made meanwhile said nothing); if it keeps
+    // failing it waits for the tab to show again, and sync works as before. 'bye' (too many streams open): a minute.
+    let es = null, fails = 0, missed = false, retry = 0
     const shut = () => {
       es?.close()
       es = null
     }
     function live() {
       if (!alive || typeof EventSource === 'undefined') return
-      clearTimeout(check)
-      const visible = document.visibilityState === 'visible'
-      const want = liveWanted({ synced: on, visible, hiddenMs: visible ? 0 : Date.now() - hiddenAt, keep: Boolean(keep?.current), fails })
+      const want = liveWanted({ synced: on, visible: document.visibilityState === 'visible', keep: Boolean(keep?.current), fails })
       if (!want) {
         clearTimeout(retry)
         retry = 0
         if (es) missed = false // let go on purpose: the pull when the tab shows again covers the gap
         return shut()
       }
-      if (!visible) check = setTimeout(live, LIVE_HIDDEN_MS) // look again: hidden that long (and no sounds) -> close
       if (!es && !retry) open()
     }
+    liveRef.current = live
     function open() {
       const src = (es = new EventSource(`${URL_}/events?id=${self}`))
       const listen = (kind) =>
@@ -182,9 +181,17 @@ export function useCloudSync(apply, hold, keep) {
           const act = liveAction({ ...data, kind }, { self, synced: on, missed })
           if (kind === 'hello') missed = false
           if (act === 'pull') request(dirty ? 'PUT' : 'GET')
+          if (act === 'wait') {
+            // pushed out by the cap: a minute, or until the tab is shown again (seen() below), not the next one out
+            shut()
+            missed = true
+            clearTimeout(retry)
+            retry = setTimeout(() => ((retry = 0), live()), LIVE_BYE_MS)
+          }
         })
       listen('hello')
       listen('changed')
+      listen('bye')
       // a drop or a refusal: our own backoff, not EventSource's (it would retry a refusal never, a drop every 3 s)
       src.onerror = () => {
         if (es !== src) return
@@ -202,7 +209,7 @@ export function useCloudSync(apply, hold, keep) {
         fails = 0 // a stream that gave up gets another go
         clearTimeout(retry)
         retry = 0
-      } else hiddenAt = Date.now()
+      }
       live()
     }
     document.addEventListener('visibilitychange', wake)
@@ -213,13 +220,13 @@ export function useCloudSync(apply, hold, keep) {
       alive = false
       clearTimeout(timer)
       clearTimeout(retry)
-      clearTimeout(check)
       shut()
+      liveRef.current = () => {}
       document.removeEventListener('visibilitychange', wake)
       document.removeEventListener('visibilitychange', seen)
       removeEventListener('online', wake)
     }
   }, [hold, keep])
 
-  return { status, touch: (keys) => touch.current(keys) }
+  return { status, touch: (keys) => touch.current(keys), live: () => liveRef.current() }
 }

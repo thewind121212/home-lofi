@@ -7,6 +7,7 @@ import { clientId, liveBus } from '../../../../../lib/live.js'
 // 403 = someone else. Guests never get a stream.
 //   GET ?id=<this tab's id>   -> event: hello   (on connect)            data: { at }
 //                                event: changed (another tab saved)     data: { at, from }
+//                                event: bye     (pushed out: too many open streams; then it ends)  data: { at }
 // A ": ping" comment every 20 s keeps proxies from closing it as idle. No settings ever go down this stream.
 export const dynamic = 'force-dynamic'
 
@@ -36,8 +37,9 @@ export async function GET(request) {
           throw new Error('closed')
         }
       }
-      end = () => {
+      end = (reason) => {
         if (done) return
+        if (reason === 'full') quiet(frame('bye', { at: Date.now() })) // the page waits a minute before it tries again
         done = true
         clearInterval(ping)
         unsubscribe()
@@ -51,8 +53,8 @@ export async function GET(request) {
         } catch {}
       }
       quiet(frame('hello', { at: Date.now() }))
-      // end: the bus pushes this stream out when it's full (the oldest goes); the page reconnects with backoff
-      unsubscribe = liveBus().subscribe(who, id, (event) => write(frame('changed', event)), () => end())
+      // end: the bus lets go of this stream (this tab connected again, the cap, the server stopping)
+      unsubscribe = liveBus().subscribe(who, id, (event) => write(frame('changed', event)), end)
       ping = setInterval(() => quiet(': ping\n\n'), PING)
       if (request.signal.aborted) end()
       else request.signal.addEventListener('abort', () => end(), { once: true })
