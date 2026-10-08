@@ -62,17 +62,16 @@ function snapshot(scope, ghosts) {
 }
 
 // a copy of a row that left, fading where it was (under the rows that glide over its place)
-function leaveCopy(scope, src, box, ghosts, key) {
+function leaveCopy(scope, src, box, ghosts, key, s) {
   const g = src.cloneNode(true)
   for (const el of [g, ...g.querySelectorAll('[id],[data-flip-key],[data-row]')]) ['id', 'data-flip-key', 'data-row'].forEach((a) => el.removeAttribute(a))
   g.setAttribute('aria-hidden', 'true')
   g.inert = true
-  const s = scope.getBoundingClientRect()
   Object.assign(g.style, {
     position: 'absolute',
     margin: '0',
-    left: `${box.x - s.left - scope.clientLeft}px`,
-    top: `${box.y - s.top - scope.clientTop}px`,
+    left: `${box.x - s.left}px`,
+    top: `${box.y - s.top}px`,
     width: `${box.w}px`,
     height: `${box.h}px`,
     transform: '',
@@ -108,11 +107,14 @@ function play(scope, snap, ghosts) {
   const scroller = scope.closest('[data-scroll]')?.getBoundingClientRect() ?? null
   const plan = flipPlan(snap.rects, rects, visibleBand(scroller, { h: innerHeight }))
   for (const k of rects.keys()) if (ghosts.has(k)) ghosts.get(k).remove(), ghosts.delete(k) // came back: it glides from the copy
+  // the scope's corner, read once (a read per copy would lay the page out again after each one is added)
+  const sb = plan.leave.length ? scope.getBoundingClientRect() : null
+  const s = sb && { left: sb.left + scope.clientLeft, top: sb.top + scope.clientTop }
   for (const { key, stay } of plan.leave) {
     // gone: the old element (React has let go of it; still whole). Moved out of sight: the live one, copied
     const src = stay ? els.get(key) : snap.els.get(key)
     // (a copy of a row still here is kept apart: it only fades, nothing comes back to it)
-    if (src && (stay || !src.isConnected)) leaveCopy(scope, src, snap.rects.get(key), ghosts, stay ? `${key}\u0000out` : key)
+    if (src && (stay || !src.isConnected)) leaveCopy(scope, src, snap.rects.get(key), ghosts, stay ? `${key}\u0000out` : key, s)
   }
   const e = easing()
   for (const { key, dx, dy, fade } of plan.move) {
@@ -152,4 +154,9 @@ export function useFlip(ref, sig, { paused = false } = {}) {
     dropGhosts(s.ghosts)
   }, [paused])
   useLayoutEffect(() => () => dropGhosts(s.ghosts), [])
+}
+
+// Stop every glide in `scope` now (the rows jump to their real places): the drag measures the rows as they really are
+export function settleFlip(scope) {
+  for (const el of scope?.querySelectorAll('[data-flip-key]') ?? []) for (const a of el.getAnimations()) a.cancel()
 }

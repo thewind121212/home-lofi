@@ -22,7 +22,7 @@ import {
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
 import { closeDialog, motionOff } from './settings'
-import { useFlip } from './flip'
+import { settleFlip, useFlip } from './flip'
 import { flipSig } from '../lib/flip'
 
 const POLL_MS = 5000 // fallback polling of /api/tavarian/state
@@ -931,6 +931,7 @@ function useDragReorder({ ids, disabled, onDrop }) {
     }
     const activate = () => {
       setPressing(null)
+      settleFlip(list.current) // (rows still gliding after an update or a drop would be measured mid-way)
       const rows = [...(list.current?.children ?? [])].filter((el) => el.dataset.row != null)
       if (!rows.length) return end()
       const lt = list.current.getBoundingClientRect().top
@@ -997,8 +998,9 @@ function useDragReorder({ ids, disabled, onDrop }) {
   // the handle's ↑ / ↓ keys move it one place
   function key(e, index) {
     const d = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
-    if (!d || disabled) return
-    e.preventDefault()
+    if (!d) return
+    e.preventDefault() // (also while busy: a quick second ↓ is ignored, not a scroll of the list)
+    if (disabled) return
     const order = moveId(ids, ids[index], d)
     if (order) onDrop(order, ids[index], index + d)
   }
