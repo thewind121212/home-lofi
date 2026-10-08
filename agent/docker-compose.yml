@@ -1,0 +1,18 @@
+# home-lofi host agent: this machine's CPU / RAM / temp / disk / power for home-lofi's Server card.
+# Set AGENT_TOKEN in .env (install.sh does it). home-lofi reads http://<this-ip>:9101/stats.json as home:<token>.
+services:
+  host-agent:
+    image: busybox:stable
+    container_name: host-agent
+    restart: unless-stopped
+    init: true
+    command: ["/agent.sh"]
+    environment:
+      AGENT_TOKEN: ${AGENT_TOKEN:?set AGENT_TOKEN in .env}
+    ports:
+      - "9101:9101"
+    volumes:
+      - ./agent.sh:/agent.sh:ro
+      - /:/host:ro
+      # Intel CPU power (RAPL); Docker hides it otherwise. Remove this line on AMD / ARM if it fails to start.
+      - /sys/devices/virtual/powercap:/rapl:ro
