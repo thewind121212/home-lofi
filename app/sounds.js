@@ -4,20 +4,57 @@
 // plays. The rules and the raw sound live in lib/sounds.js, the Web Audio graph in lib/sound-engine.js; this is the
 // hook that runs it for the page, the panel (the dock's 〰 button / A) and the little mute chip on Ambient's bar and the
 // lock screen. Sounds never touch the radio, the home station or Spotify: their own graph, their own volume.
+// On a phone they play on like music with the screen locked (lib/sounds.js soundsMedia: a playback audio session and a
+// quiet <audio> loop next to the graph), with their own title and ⏯ on the lock screen when no music of the page plays.
 import { useEffect, useRef, useState } from 'react'
 import {
-  LAYERS, PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, minutesLeft, mixGains, presetOf, setLayer, shownLayers, timerEnd,
+  LAYERS, PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, minutesLeft, mixGains, presetOf, quietWav, setLayer, shownLayers,
+  soundsLabel, soundsMedia, timerEnd,
 } from '../lib/sounds'
 import { SLEEP_TAU, TAU, buildVoice, createEngine, loadFile, pump, ramp } from '../lib/sound-engine'
+import { claimMediaSession, mediaSessionOwner } from './radio'
 import { Choice, closeDialog } from './settings'
 
 const PUMP_MS = 20_000 // top up the envelopes (lib/sound-engine.js AHEAD = 90 s: plenty for a throttled hidden tab)
 
-// The engine for the page. mix: the saved mix (settings.sounds). Nothing plays on page load (browsers block it, and
-// it'd be a surprise): the mix is restored, and the first tap on a tile, a preset or ▶ starts it.
+// iOS's audio session for the page (Safari 16.4+; elsewhere there's none and this does nothing): 'playback' while
+// sounds play (on with the screen locked, past the silent switch; like any music player it pauses other apps' audio on
+// the phone, as the radio does), 'auto' again after
+function audioSession(type) {
+  try {
+    const s = navigator.audioSession
+    if (s && s.type !== type) s.type = type
+  } catch {}
+}
+
+// The lock screen's picture for sounds: a wave in the theme's colour on the night sky (drawn once)
+let cover = null
+function soundsCover() {
+  if (cover) return cover
+  const c = document.createElement('canvas')
+  c.width = c.height = 256
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0, 0, 256, 256)
+  grad.addColorStop(0, '#2a2f4a')
+  grad.addColorStop(1, '#10121e')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 256, 256)
+  g.strokeStyle = '#ff8a5c'
+  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-lofi-primary').trim() || '#ff8a5c' // (kept if it can't parse it)
+  g.lineWidth = 14
+  g.lineCap = 'round'
+  g.beginPath()
+  for (let x = 48; x <= 208; x += 2) g[x === 48 ? 'moveTo' : 'lineTo'](x, 128 + Math.sin(((x - 48) / 160) * Math.PI * 3) * 30)
+  g.stroke()
+  return (cover = c.toDataURL('image/png'))
+}
+
+// The engine for the page. mix: the saved mix (settings.sounds); music: the radio or the Player's Listen is playing in
+// this page (they keep the lock screen then). Nothing plays on page load (browsers block it, and it'd be a surprise):
+// the mix is restored, and the first tap on a tile, a preset or ▶ starts it.
 // -> { supported, playing, muted, on (playing with something switched on: the chips show), endsAt (sleep timer, epoch ms),
 //      failed (recorded layers whose file wouldn't load), start, stop, toggleMute }
-export function useSounds(mix) {
+export function useSounds(mix, { music = false } = {}) {
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(false)
   const [endsAt, setEndsAt] = useState(null)
@@ -25,10 +62,59 @@ export function useSounds(mix) {
   const [failed, setFailed] = useState([])
   const [loaded, setLoaded] = useState(0) // bumps when a recorded loop has been decoded, so it joins in
   const en = useRef(null) // the engine (lib/sound-engine.js), made on the first tap
-  const t = useRef({ idle: 0, pump: 0, slow: false, want: false }).current
+  const t = useRef({ idle: 0, pump: 0, slow: false, want: false, tau: TAU }).current
+  // the quiet <audio> loop (lib/sounds.js quietWav): el, its Blob URL, held (this page wants it playing), cut (the
+  // system paused it: a call, Siri, another app taking the audio), release (the timer that lets it go after a stop)
+  const bg = useRef({ el: null, url: null, held: false, cut: false, release: 0 }).current
+  const media = soundsMedia({ playing, audible: audibleLayers(mix).length, music })
 
-  // The AudioContext, made (or woken) inside a tap: iOS only lets a page start sound from one. Not 'playback' for
-  // iOS's audio session: that would stop the Spotify app playing on the same phone, and sounds go along with music.
+  // The quiet loop and the playback session: on (inside a tap the first time: iOS only lets a page start media from
+  // one; later the lock screen's ▶, which counts as one) and off. The sound itself stays on the Web Audio graph
+  // (lib/sound-engine.js, straight to the speakers, as on a desktop): the loop only makes the page a media player.
+  function holdOn() {
+    audioSession('playback')
+    if (!bg.el) {
+      try {
+        bg.url = URL.createObjectURL(new Blob([quietWav()], { type: 'audio/wav' }))
+        bg.el = new Audio(bg.url)
+        bg.el.loop = true
+        bg.el.addEventListener('pause', onCut)
+        bg.el.addEventListener('play', onBack)
+      } catch {
+        bg.el = null
+        return
+      }
+    }
+    clearTimeout(bg.release)
+    bg.held = true
+    bg.cut = false
+    if (bg.el.paused) bg.el.play().catch(() => {})
+  }
+  function holdOff() {
+    clearTimeout(bg.release)
+    bg.held = false
+    bg.el?.pause()
+    audioSession('auto')
+  }
+  // the system paused the loop (nothing else pauses it while it's held): the sounds stop too, as music would, and the
+  // lock screen shows ▶, which (or the panel's) starts them again
+  function onCut() {
+    if (!bg.held || !bg.el.paused) return // (a pause of ours, its event arriving after a new play)
+    bg.held = false
+    bg.cut = true
+    setPlaying(false)
+  }
+  // ...and if the system plays it again by itself once the interruption is over, the sounds come back with it
+  function onBack() {
+    if (bg.held || bg.el.paused) return
+    if (!bg.cut) return bg.el.pause() // not ours to play
+    bg.cut = false
+    bg.held = true
+    wake()
+    setPlaying(true)
+  }
+
+  // The AudioContext, made (or woken) inside a tap: iOS only lets a page start sound from one.
   function wake() {
     if (!en.current) {
       const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext
@@ -43,7 +129,7 @@ export function useSounds(mix) {
     if (ctx.state !== 'running') ctx.resume().catch(() => {})
     return en.current
   }
-  const start = () => wake() && (setMuted(false), setPlaying(true))
+  const start = () => wake() && (holdOn(), setMuted(false), setPlaying(true))
   const stop = () => setPlaying(false)
   const toggleMute = () => (muted && wake(), setMuted(!muted))
 
@@ -53,7 +139,7 @@ export function useSounds(mix) {
     const e = en.current
     if (!e) return
     const g = mixGains(mix, { playing, muted })
-    const tau = t.slow ? SLEEP_TAU : TAU
+    const tau = (t.tau = t.slow ? SLEEP_TAU : TAU)
     t.slow = false
     ramp(e.ctx, e.master.gain, g.master, tau)
     let any = false
@@ -93,6 +179,32 @@ export function useSounds(mix) {
     }
   }, [mix, playing, muted, loaded, failed])
 
+  // the quiet loop and the playback session follow the sounds: on while they play (a no-op when start() already did it
+  // in the tap), let go once a stop's fade is over (any sooner, a locked phone could cut the fade short)
+  useEffect(() => {
+    if (media.hold) return holdOn()
+    if (bg.el) bg.release = setTimeout(holdOff, t.tau * 5000 + 200) // (after a cut too: the session goes back to 'auto')
+    return () => clearTimeout(bg.release)
+  }, [media.hold, playing])
+
+  // The Media Session (the lock screen / notification, media keys): taken while sounds are all that plays in the page,
+  // with "Sounds", the preset or what's on, and ⏯ that stop / start them. Once it's theirs it stays (the lock screen's
+  // ▶ starts them again) until the radio or the Player starts and takes it back.
+  const label = soundsLabel(mix)
+  useEffect(() => {
+    const ms = navigator.mediaSession
+    if (!ms) return
+    if (media.claim && mediaSessionOwner() !== 'sounds') claimMediaSession('sounds', { play: () => start(), pause: stop, stop })
+    if (mediaSessionOwner() !== 'sounds') return
+    if (media.claim && typeof MediaMetadata !== 'undefined') {
+      ms.metadata = new MediaMetadata({ title: 'Sounds', artist: label || 'Ambient sounds', album: 'Sounds · wliafdew.dev', artwork: [{ src: soundsCover(), sizes: '256x256', type: 'image/png' }] })
+      try {
+        ms.setPositionState?.() // no progress bar: a loop has no end (and the Player may have left one)
+      } catch {}
+    }
+    ms.playbackState = media.hold ? 'playing' : 'paused'
+  }, [media.claim, media.hold, label])
+
   // nothing switched on any more (all tiles off, Reset): stopped, so ▶ means something next time
   useEffect(() => {
     if (playing && !audibleLayers(mix).length) setPlaying(false)
@@ -107,20 +219,32 @@ export function useSounds(mix) {
     return () => clearInterval(i)
   }, [endsAt])
 
-  // A context that should be sounding but isn't (iOS suspends it for a call or a locked screen, or a start outside a
-  // tap was refused): the next tap or key anywhere on the page wakes it
+  // A context that should be sounding but isn't (iOS suspends it for a call, or a start outside a tap was refused), or
+  // a quiet loop that should be playing but was refused: the next tap or key anywhere on the page, or coming back to
+  // the page, wakes them
   useEffect(() => {
-    const kick = () => t.want && en.current && en.current.ctx.state !== 'running' && en.current.ctx.resume().catch(() => {})
+    const kick = () => {
+      if (t.want && en.current && en.current.ctx.state !== 'running') en.current.ctx.resume().catch(() => {})
+      if (bg.held && bg.el?.paused) bg.el.play().catch(() => {})
+    }
+    const back = () => document.visibilityState === 'visible' && kick()
     addEventListener('pointerup', kick, true)
     addEventListener('keydown', kick, true)
+    document.addEventListener('visibilitychange', back)
     return () => {
       removeEventListener('pointerup', kick, true)
       removeEventListener('keydown', kick, true)
+      document.removeEventListener('visibilitychange', back)
       clearInterval(t.pump)
       clearTimeout(t.idle)
       t.pump = 0
       en.current?.ctx.close().catch(() => {})
       en.current = null
+      holdOff()
+      if (bg.el) bg.el.removeEventListener('pause', onCut), bg.el.removeEventListener('play', onBack), bg.el.removeAttribute('src'), bg.el.load()
+      if (bg.url) URL.revokeObjectURL(bg.url)
+      bg.el = bg.url = null
+      if (mediaSessionOwner() === 'sounds') claimMediaSession('sounds', null)
     }
   }, [])
 

@@ -95,7 +95,13 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   scheduled on the audio thread, so they cost almost no CPU and keep going in a background tab. Fades are ~1.5 s, and
   with nothing to hear the audio context sleeps. The mix is a setting (saved per browser, synced for the owner); nothing
   starts by itself on load, the first tap on a tile, a preset or ▶ does. While sounds play, Ambient's bar and the lock
-  screen show a small 〰 Sounds chip that mutes / unmutes. Recorded loops (Café, Birds, Thunder, City) are in the
+  screen show a small 〰 Sounds chip that mutes / unmutes. On a phone they **keep playing with the screen locked** and
+  past iOS's silent switch: while they play, the page asks iOS for a `playback` audio session
+  (`navigator.audioSession`, Safari 16.4+) and plays a quiet 6 s `<audio>` loop next to the Web Audio graph (the sound
+  itself stays on the graph, as on a desktop). Like any music player, that pauses other apps' audio on the phone. When
+  no music of the page plays, the lock screen / notification shows *Sounds* with the preset (or the sounds that are on)
+  and ⏯; the radio and the Player take it back when they start. A call or another app pausing them stops the sounds;
+  the lock screen's ▶ (or the panel's) starts them again. Recorded loops (Café, Birds, Thunder, City) are in the
   registry but hidden until their files exist: put `public/sounds/<id>.m4a` in place and set `ready: true` in
   `lib/sounds.js` (fetched and decoded the first time they're turned on, looped gaplessly past the encoder's padding).
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
@@ -299,6 +305,10 @@ The owner's controls (⏮ ⏯ ⏭, and ▶ when nothing plays) post to `/api/pri
 proxy location of [Settings sync](#settings-sync-owner-only), so they show only when settings sync works for you. They need
 Spotify Premium and a device where Spotify is open; otherwise a short message says so. A token from before the controls
 still shows now playing; run the consent again to allow the queue and the buttons.
+Next to them, the owner gets the active device's **volume** (a slider + %, its name after *Now playing*): `GET` on the
+same route reads the device (owner-only, never in the public `/api/spotify`), `POST { action: 'volume', percent: 0-100 }`
+sets it, sent once the slider rests for 300 ms. Devices Spotify won't let anyone else set (an iPhone, some speakers)
+show *Volume on <device>* instead.
 
 ### Tavarian player
 

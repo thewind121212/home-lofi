@@ -326,8 +326,9 @@ export default function Home() {
     return () => removeEventListener('keydown', onKey)
   }, [])
 
-  // Sounds (app/sounds.js): the mix is a setting (saved, synced for the owner); playing or not is this page's only
-  const snd = useSounds(set.sounds)
+  // Sounds (app/sounds.js): the mix is a setting (saved, synced for the owner); playing or not is this page's only.
+  // music: the radio or the Player's Listen plays here, so they keep the phone's lock screen (Spotify plays elsewhere)
+  const snd = useSounds(set.sounds, { music: tune.playing || tune.loading || player.listening })
   const setMix = (sounds) => update({ sounds })
   const openSounds = () => sndDlg.current.open || sndDlg.current.showModal()
   function update(patch) {
@@ -2714,6 +2715,7 @@ const SP_ERR = {
   scope: 'Reconnect Spotify to allow controls',
   spotify: "Spotify didn't answer",
   slow: "Spotify hasn't confirmed it yet",
+  volume: 'This device sets its own volume',
 }
 // The owner's controls (signed in, Premium): POST /api/private/settings/spotify -> the fresh state, shown at once.
 function useSpotifyControl(onState) {
@@ -2748,6 +2750,104 @@ function useSpotifyControl(onState) {
   return { act, busy, err }
 }
 
+// The owner's Spotify volume: the active device's (Premium). The device (name, volume, whether its volume can be set
+// from outside: an iPhone's can't) comes from GET /api/private/settings/spotify, owner-only (the public answer never
+// names a device), every 15 s while the tab shows. A drag moves the slider at once and sends the level once it rests for
+// 300 ms (a few requests per drag, not one per step); if Spotify says no, the slider goes back to Spotify's last level.
+// on: the owner, with a track on the card. -> { dev, level (what the slider shows), set(0-100), toggleMute, err }
+const SP_OWNER = '/api/private/settings/spotify'
+const VOL_REST = 300
+function useSpotifyVolume(on) {
+  const [dev, setDev] = useState(null) // { name, type, volume, supportsVolume } | null
+  const [mine, setMine] = useState(null) // the slider's level while a change is on its way (null: the device's)
+  const [err, setErr] = useState(null)
+  const m = useRef({ timer: 0, seq: 0, sending: false, unmute: 50 }).current
+  useEffect(() => {
+    if (!on) return setDev(null)
+    let alive = true
+    const get = () =>
+      document.visibilityState === 'visible' &&
+      fetch(SP_OWNER, { cache: 'no-store', redirect: 'manual' })
+        .then((r) => (r.ok ? r.json() : r.status === 403 || r.status === 404 ? { device: null } : null))
+        .then((d) => alive && d && !m.timer && !m.sending && setDev(d.device ?? null), () => {}) // (a change on its way wins)
+    const t = setInterval(get, 15_000)
+    document.addEventListener('visibilitychange', get)
+    get()
+    return () => ((alive = false), clearInterval(t), document.removeEventListener('visibilitychange', get))
+  }, [on])
+  useEffect(() => {
+    if (!err) return
+    const t = setTimeout(() => setErr(null), 4000)
+    return () => clearTimeout(t)
+  }, [err])
+  useEffect(() => () => clearTimeout(m.timer), [])
+  function set(v) {
+    setMine(v)
+    setErr(null)
+    clearTimeout(m.timer)
+    m.timer = setTimeout(async () => {
+      m.timer = 0
+      m.sending = true
+      const seq = ++m.seq
+      let r, d
+      try {
+        r = await fetch(SP_OWNER, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'volume', percent: v }),
+          redirect: 'manual',
+          cache: 'no-store',
+        })
+        d = await r.json().catch(() => ({}))
+      } catch {}
+      if (seq !== m.seq) return // a newer level went out after this one: its answer decides
+      m.sending = false
+      if (r?.ok) setDev((p) => d.device ?? (p && { ...p, volume: v }))
+      else {
+        setErr(SP_ERR[d?.error] ?? SP_ERR.spotify)
+        if (d?.error === 'volume') setDev((p) => p && { ...p, supportsVolume: false })
+      }
+      if (!m.timer) setMine(null) // done: the device's level again (the new one, or the old one back on an error)
+    }, VOL_REST)
+  }
+  const level = mine ?? dev?.volume ?? 0
+  const toggleMute = () => (level > 0 ? ((m.unmute = level), set(0)) : set(m.unmute || 50))
+  return { dev, level, set, toggleMute, err }
+}
+// the volume row next to ⏮ ⏯ ⏭: the radio's grey slider + %, or a note where the device keeps its own volume
+function SpVolume({ v }) {
+  const { dev, level } = v
+  if (!dev.supportsVolume)
+    return (
+      <p className="min-w-0 flex-1 flex items-center gap-1.5 text-[10px] font-mono text-lofi-muted" title={`${dev.name} doesn't let Spotify set its volume from here`}>
+        <i className="fa-solid fa-volume-off text-xs w-7 text-center shrink-0" aria-hidden="true" />
+        <span className="truncate">Volume on {dev.name}</span>
+      </p>
+    )
+  return (
+    <div className="flex items-center gap-1 min-w-0 flex-1">
+      <button onClick={v.toggleMute} aria-label={level ? 'Mute Spotify' : 'Unmute Spotify'} title={level ? 'Mute' : 'Unmute'} className="w-7 h-7 shrink-0 flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
+        <i className={`fa-solid ${level === 0 ? 'fa-volume-xmark' : level < 50 ? 'fa-volume-low' : 'fa-volume-high'} text-xs`} aria-hidden="true" />
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={level}
+        onChange={(e) => v.set(Number(e.target.value))}
+        aria-label={`Spotify volume on ${dev.name}`}
+        title={`Volume on ${dev.name}`}
+        className="radio-volume vol-grey min-w-0 flex-1"
+        style={{ '--v': `${level}%` }}
+      />
+      <span className="w-8 shrink-0 text-right text-[10px] font-mono text-lofi-muted tabular-nums" aria-hidden="true">
+        {level}%
+      </span>
+    </div>
+  )
+}
+
 function SpotifyPanel({ sp, owner, wasOwner, onState }) {
   const [, tick] = useState(0) // every second while playing, for the progress (this panel only)
   useEffect(() => {
@@ -2756,12 +2856,14 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
     return () => clearInterval(t)
   }, [sp?.playing])
   const ctl = useSpotifyControl(onState)
+  const vol = useSpotifyVolume(Boolean(owner && sp?.enabled && sp.track))
   const [peek, setPeek] = useState(null) // an Up next track shown in the popup
   if (sp === undefined) return null // first answer on its way
   if (!sp.enabled || !sp.track) return <SpotifyResting owner={owner} ctl={ctl} />
   const artists = sp.artists.join(', ')
   const pos = Math.min(sp.durationMs || 0, sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0))
   const next = (sp.upNext ?? []).slice(0, owner ? 2 : 3)
+  const err = ctl.err ?? vol.err
   return (
     <>
       {/* ambient: the cover, blurred and faint, behind the whole card (static) */}
@@ -2791,7 +2893,10 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
                 ))}
               </span>
             )}
-            {sp.playing ? 'Now playing' : 'Paused'}
+            <span className="truncate">
+              {sp.playing ? 'Now playing' : 'Paused'}
+              {vol.dev && ` · ${vol.dev.name}`}
+            </span>
           </p>
           <a href={sp.url} target="_blank" rel="noopener noreferrer" title={sp.album ?? undefined} className="block text-base font-medium text-white truncate hover:text-[#1db954] transition-colors">
             {sp.track}
@@ -2808,22 +2913,26 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
           <span>{mmss(sp.durationMs)}</span>
         </div>
       )}
+      {/* the owner's ⏮ ⏯ ⏭, centred; with the device known, left-aligned with its volume beside them */}
       {owner && (
-        <div className="mt-2 flex items-center justify-center gap-5">
-          <SpBtn label="Previous" icon="fa-backward-step" onClick={() => ctl.act('previous')} busy={ctl.busy === 'previous'} />
-          <SpBtn
-            big
-            label={sp.playing ? 'Pause' : 'Play'}
-            icon={sp.playing ? 'fa-pause' : 'fa-play ml-0.5'}
-            onClick={() => ctl.act(sp.playing ? 'pause' : 'play')}
-            busy={ctl.busy === 'play' || ctl.busy === 'pause'}
-          />
-          <SpBtn label="Next" icon="fa-forward-step" onClick={() => ctl.act('next')} busy={ctl.busy === 'next'} />
+        <div className={`mt-2 flex items-center ${vol.dev ? 'gap-3' : 'justify-center'}`}>
+          <div className={`flex items-center shrink-0 ${vol.dev ? 'gap-1' : 'gap-5'}`}>
+            <SpBtn label="Previous" icon="fa-backward-step" onClick={() => ctl.act('previous')} busy={ctl.busy === 'previous'} />
+            <SpBtn
+              big
+              label={sp.playing ? 'Pause' : 'Play'}
+              icon={sp.playing ? 'fa-pause' : 'fa-play ml-0.5'}
+              onClick={() => ctl.act(sp.playing ? 'pause' : 'play')}
+              busy={ctl.busy === 'play' || ctl.busy === 'pause'}
+            />
+            <SpBtn label="Next" icon="fa-forward-step" onClick={() => ctl.act('next')} busy={ctl.busy === 'next'} />
+          </div>
+          {vol.dev && <SpVolume v={vol} />}
         </div>
       )}
       {!owner && wasOwner && <SignInToControl />}
-      {ctl.err && <p className="mt-1 text-[10px] font-mono text-red-400 text-center" role="status">{ctl.err}</p>}
-      {next.length > 0 && !ctl.err && (
+      {err && <p className="mt-1 text-[10px] font-mono text-red-400 text-center" role="status">{err}</p>}
+      {next.length > 0 && !err && (
         <div className="mt-auto pt-2 min-w-0">
           <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">Up next</p>
           <ul className="space-y-1">
