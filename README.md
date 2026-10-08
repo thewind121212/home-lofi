@@ -107,6 +107,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Weather**: current conditions, a color-coded US AQI pill, and a location search. The server proxies a weather API, so the browser never calls it directly.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
+  - The card refreshes every 5 minutes. Near Ho Chi Minh City its *now* is Tan Son Nhat airport's latest report (METAR, every 30 min, swapped in by the weather API), marked *Observed at Tan Son Nhat · 14:30*; elsewhere it's Open-Meteo's forecast for the hour.
 - **Steam card** (above the music): avatar with a ring in the status color, name, level, status in Steam's colors
   (Online / Playing · the game / Offline), games owned, total hours, the last 2 weeks and the recently played games;
   the Entertainment tab's Steam link shows the status too. Set `STEAM_ID` in `lib/data.js` to your SteamID64 (public profile); games owned and
