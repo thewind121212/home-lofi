@@ -16,7 +16,7 @@ import { WAKE_GUARD_MS, eatNextClick, holdScroll } from '../lib/wake'
 import { ambientTick, ambientView, ambientWake, dockLift } from '../lib/ambient'
 import { FULLSCREEN_EVENTS, fullscreenApi, isFullscreenKey } from '../lib/fullscreen'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
-import { SoundsChip, SoundsPanel, SoundsRow, useSounds } from './sounds'
+import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 
 // a browser with no saved location starts in Đà Lạt
 const DEFAULT_LOC = { id: 1584071, name: 'Da Lat', region: 'Lam Dong', country: 'Vietnam', lat: 11.94646, lon: 108.44193, tz: 'Asia/Ho_Chi_Minh' }
@@ -456,7 +456,8 @@ export default function Home() {
         <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} sounds={<SoundsRow snd={snd} mix={set.sounds} onOpen={openSounds} />} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
+            <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
@@ -1023,8 +1024,7 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-// sounds: the Sounds row (app/sounds.js SoundsRow) under every tab, one slim line: what plays, ▶ / ⏸, the panel
-function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, info, onStation, invite, player, openQueue, sounds }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, info, onStation, invite, player, openQueue }) {
   const host = useRef(null)
   const [list, setList] = useState(false) // the station list popup
   const r = useRadio({ station, info, onStation, onTune, host })
@@ -1038,7 +1038,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
   useEffect(() => player.setVolume(r.muted ? 0 : r.volume), [r.muted, r.volume])
 
   return (
-    <div className="glass-panel rounded-3xl p-6 pb-4 relative overflow-hidden flex flex-col h-[352px]">
+    <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col h-[320px]">
       {/* Radio | Spotify | Player: the picked tab is filled (Spotify in its green); a dot marks a source that's playing */}
       <div role="tablist" aria-label="Audio" className="shrink-0 flex items-center gap-1.5 mb-3 z-20">
         {AUDIO_TABS.filter(([id]) => owner || id !== 'player').map(([id, label, icon]) => {
@@ -1076,7 +1076,6 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
       </div>
 
       {/* (above the tab's own blurred cover, z-20 like the tabs; under an open Up next / station popup, z-30) */}
-      <div className="shrink-0 mt-2 relative z-20">{sounds}</div>
 
       <div ref={host} className="youtube-hidden" />
     </div>
