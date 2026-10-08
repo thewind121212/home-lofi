@@ -1115,7 +1115,18 @@ function SongTitle({ text }) {
 // A song's picture: thumbOf (its YouTube thumbnail or Spotify cover), else — a Spotify song Tavarian has no cover for
 // (from a Spotify-made playlist) — its cover from Spotify's oEmbed (lib/spotify-cover.js), asked for once the element
 // is on screen (ref; no ref = at once)
-const covers = typeof window === 'undefined' ? null : coverCache()
+const COVERS_KEY = 'home-lofi:spotify-covers'
+const covers =
+  typeof window === 'undefined'
+    ? null
+    : coverCache({
+        store: {
+          load: () => JSON.parse(localStorage.getItem(COVERS_KEY) || '[]'),
+          save: (entries) => localStorage.setItem(COVERS_KEY, JSON.stringify(entries)),
+        },
+      })
+// (covers found just before the tab goes away are saved now, not lost with the pending write)
+if (covers) addEventListener('pagehide', () => covers.flush())
 function useArt(song, ref) {
   const own = thumbOf(song) ?? song?.coverThumbnail ?? null
   const uri = !own ? (song?.spotifyUri ?? null) : null
