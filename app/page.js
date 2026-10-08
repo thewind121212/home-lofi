@@ -105,6 +105,9 @@ export default function Home() {
   const [syncHold] = useState(() => ({ get current() { return [setDlg.current, sndDlg.current].find((d) => d?.open) ?? setDlg.current } }))
   const [wx, setWx] = useState() // the Weather card's /api/weather data: undefined = loading, null = failed
   const [cloudLoc, setCloudLoc] = useState(null) // a weather location picked on another device (cloud sync)
+  // sounds play in this page (set below, once useSounds has run): the live sync stream stays open with the tab hidden
+  // then, so a mix changed on another device reaches a phone playing them with its screen off
+  const soundsOn = useRef(false)
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -120,7 +123,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold)
+  }, syncHold, soundsOn)
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -330,6 +333,8 @@ export default function Home() {
   // Sounds (app/sounds.js): the mix is a setting (saved, synced for the owner); playing or not is this page's only.
   // music: the radio or the Player's Listen plays here, so they keep the phone's lock screen (Spotify plays elsewhere)
   const snd = useSounds(set.sounds, { music: tune.playing || tune.loading || player.listening })
+  soundsOn.current = snd.playing
+  useEffect(() => cloud.live(), [snd.playing]) // started from the lock screen with the stream shut: open it again
   const setMix = (sounds) => update({ sounds })
   const openSounds = () => sndDlg.current.open || sndDlg.current.showModal()
   function update(patch) {
