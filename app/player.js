@@ -1190,7 +1190,8 @@ export function PlayerPanel({ p, owner, vol }) {
   const mine = owner ? opsLine(ops) : null
   const tuning = p.listening && p.phase === 'connecting'
   // (phones: tuning in is just the spinner, here and on Listen; the words stay for screen readers)
-  const line = err ?? p.note ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
+  // (paused because Spotify can't be used: why, in the line under the controls, in the highlight color)
+  const line = err ?? p.note ?? (info.why ? <span className="text-lofi-highlight">{info.why}</span> : null) ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
   const list = cardList({ song, items, recent })
   return (
     <>
