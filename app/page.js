@@ -1012,6 +1012,13 @@ function AmbientBar({ now, wx, priv, mini, sounds, calm, settling, barRef, hover
               {ram}%
             </span>
           )}
+          {st.power && (
+            <span className="whitespace-nowrap" title="Power (CPU + RAM)">
+              <i className="fa-solid fa-bolt text-yellow-300 mr-1.5" aria-hidden="true" />
+              <span className="sr-only">power </span>
+              {st.power.watts} W
+            </span>
+          )}
         </div>
       )}
     </aside>
@@ -3188,7 +3195,7 @@ function Server({ d }) {
 
   return (
     <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">
-      <HostStats name="Server" st={d.stats ?? {}} unit={unit} />
+      <HostStats name={d.name ?? 'Server'} st={d.stats ?? {}} unit={unit} />
       {/* other machines from HOST_AGENTS (agent/ in this repo) */}
       {d.hosts?.map((h) => (
         <HostStats key={h.name} name={h.name} st={h.stats ?? {}} offline={!h.stats} unit={unit} />
@@ -3212,21 +3219,23 @@ function HostStats({ name, st, offline, unit }) {
               up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
             </span>
           )}
-          {st.power && (
-            <span
-              title={`CPU ${st.power.cpu ?? '--'} W + RAM ${st.power.ram ?? '--'} W, measured by the CPU (10 s average). The whole PC at the wall uses more.`}
-            >
-              · <i className="fa-solid fa-bolt text-yellow-300" aria-hidden="true" /> {st.power.watts} W
-            </span>
-          )}
         </p>
       </div>
-      {/* narrow: four across, no icons */}
-      <div className={`grid grid-cols-4 gap-2 @lg:gap-3 ${offline ? 'opacity-40' : ''}`}>
+      {/* narrow: four (five with power) across, no icons */}
+      <div className={`grid ${st.power ? 'grid-cols-5' : 'grid-cols-4'} gap-2 @lg:gap-3 ${offline ? 'opacity-40' : ''}`}>
         <Stat fit icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
         <Stat fit icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
         <Stat fit icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`} pct={st.temp} />
         <Stat fit icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
+        {st.power && (
+          <Stat
+            fit
+            icon="fa-bolt text-yellow-300"
+            label="Power"
+            value={`${st.power.watts} W`}
+            title={`CPU ${st.power.cpu ?? '--'} W + RAM ${st.power.ram ?? '--'} W, measured by the CPU (10 s average). The whole PC at the wall uses more.`}
+          />
+        )}
       </div>
     </div>
   )
