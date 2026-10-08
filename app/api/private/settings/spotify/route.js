@@ -1,5 +1,5 @@
-import { ownerOf, sameOriginJson } from '../../../../../lib/gate'
-import { control, device, isControl, setVolume, spotifyOn, volumeOf } from '../../../../../lib/spotify'
+import { ownerOf, sameOriginJson } from '../../../../../lib/gate.js'
+import { control, device, isControl, setVolume, spotifyOn, volumeOf } from '../../../../../lib/spotify.js'
 
 // The owner's Spotify controls (Premium). Lives in the owner-only zone (lib/gate.js ownerOf): the proxy's
 // /api/private/settings location covers this path too.
