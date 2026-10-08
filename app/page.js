@@ -2822,9 +2822,19 @@ function useSpotifyVolume(on) {
   const toggleMute = () => (level > 0 ? ((m.unmute = level), set(0)) : set(m.unmute || 50))
   return { dev, level, set, toggleMute, err }
 }
-// the volume row next to ⏮ ⏯ ⏭: the radio's grey slider + %, or a note where the device keeps its own volume
+// the volume row next to ⏮ ⏯ ⏭: the radio's grey slider + %, or a note where the device keeps its own volume. The
+// home station's Spotify player (go-librespot on Tavarian) ignores Spotify's volume on purpose: each listener sets
+// their own in the Player tab, so it gets a note instead of a slider that does nothing
+const isStationDevice = (name) => typeof name === 'string' && /tavarian/i.test(name)
 function SpVolume({ v }) {
   const { dev, level } = v
+  if (isStationDevice(dev.name))
+    return (
+      <p className="min-w-0 flex-1 flex items-center gap-1.5 text-[10px] font-mono text-lofi-muted" title="Each listener sets their own volume in the Player tab">
+        <i className="fa-solid fa-house-signal text-xs w-7 text-center shrink-0 text-lofi-primary" aria-hidden="true" />
+        <span className="truncate">On your home station · volume in the Player tab</span>
+      </p>
+    )
   if (!dev.supportsVolume)
     return (
       <p className="min-w-0 flex-1 flex items-center gap-1.5 text-[10px] font-mono text-lofi-muted" title={`${dev.name} doesn't let Spotify set its volume from here`}>
