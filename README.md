@@ -186,7 +186,7 @@ Each machine runs the small agent in [`agent/`](agent/) (a busybox container, ~1
 HTTP basic auth). On that machine (needs Docker):
 
 ```bash
-curl -fsSL https://static.wliafdew.dev/tools/host-agent/install.sh | bash
+curl -fsSL https://static.wliafdew.dev/public/tools/host-agent/install.sh | bash
 ```
 
 It prints a line like `{"name":"debian","url":"http://10.10.0.50:9101/stats.json","token":"..."}`.
