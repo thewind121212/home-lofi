@@ -436,7 +436,10 @@ export function usePlayerAudio(tv, { owner, onListen }) {
         title: plain(song?.title) || 'Home station',
         artist: 'Tavarian',
         album: 'Home station · wliafdew.dev',
-        artwork: thumbOf(song) ? [{ src: thumbOf(song), sizes: thumbOf(song).startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] : [], // (a YouTube thumbnail is 16:9, a Spotify cover square)
+        artwork: (() => {
+          const a = thumbOf(song) ?? covers?.known(song?.spotifyUri) ?? null // (a Spotify song's fetched cover too)
+          return a ? [{ src: a, sizes: a.startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] : [] // (YouTube 16:9, Spotify square)
+        })(),
       })
     ms.playbackState = 'playing'
   }, [listening, song?.id, song?.title])
@@ -1116,20 +1119,22 @@ const covers = typeof window === 'undefined' ? null : coverCache()
 function useArt(song, ref) {
   const own = thumbOf(song) ?? song?.coverThumbnail ?? null
   const uri = !own ? (song?.spotifyUri ?? null) : null
-  const [art, setArt] = useState(() => (uri ? (covers?.known(uri) ?? null) : null))
+  const [art, setArt] = useState(null) // { uri, url }: kept with its song, so another song's cover never shows
   useEffect(() => {
     if (!uri || !covers) return setArt(null)
     const had = covers.known(uri)
-    if (had !== undefined) return setArt(had)
+    if (had !== undefined) return setArt({ uri, url: had })
     let alive = true
-    const ask = () => covers.cover(uri).then((u) => alive && setArt(u))
+    const ask = () => covers.cover(uri).then((url) => alive && setArt({ uri, url }))
     const el = ref?.current
     if (!el || typeof IntersectionObserver === 'undefined') return ask(), () => (alive = false)
     const seen = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && (seen.disconnect(), ask()), { rootMargin: '200px' })
     seen.observe(el)
     return () => ((alive = false), seen.disconnect())
   }, [uri])
-  return own ?? art
+  if (own) return own
+  if (!uri) return null
+  return art?.uri === uri ? art.url : (covers?.known(uri) ?? null)
 }
 
 // a small picture (the card's Up next rows) with the same fallback
@@ -1190,6 +1195,7 @@ export function PlayerPanel({ p, owner, vol }) {
   }, [playing])
 
   const song = p.revoked || p.off ? null : p.state?.song
+  const art = useArt(song) // (the blurred backdrop: also a Spotify song's fetched cover)
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
   const list = cardList({ song, items, recent })
@@ -1235,7 +1241,7 @@ export function PlayerPanel({ p, owner, vol }) {
   const line = err ?? p.note ?? (info.why ? <span className="text-lofi-highlight">{info.why}</span> : null) ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
   return (
     <>
-      {song && <img src={thumbOf(song)} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
+      {song && art && <img src={art} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
 
       <div className="relative flex gap-4 min-w-0">
         <Cover song={song} on={playing} />
