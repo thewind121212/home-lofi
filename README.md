@@ -176,7 +176,23 @@ Change it for your own domain.
 | `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
+| `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
+
+### Other servers
+
+The Server card can show more machines (CPU, RAM, temp, disk, uptime, load, watts), one block each.
+Each machine runs the small agent in [`agent/`](agent/) (a busybox container, ~1 MB RAM, port 9101,
+HTTP basic auth). On that machine (needs Docker):
+
+```bash
+curl -fsSL https://static.wliafdew.dev/tools/host-agent/install.sh | bash
+```
+
+It prints a line like `{"name":"debian","url":"http://10.10.0.50:9101/stats.json","token":"..."}`.
+Put those lines in a JSON list in `HOST_AGENTS` (Coolify > Environment Variables), e.g.
+`[{"name":"debian",...},{"name":"nas",...}]`, and redeploy. A machine whose agent doesn't answer shows
+as offline. To update the agent, run the same command again (the token is kept).
 
 ### Live widget stats
 

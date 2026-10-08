@@ -3186,16 +3186,32 @@ function Server({ d }) {
     )
   }
 
-  const { stats: st = {} } = d
   return (
     <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">
+      <HostStats name="Server" st={d.stats ?? {}} unit={unit} />
+      {/* other machines from HOST_AGENTS (agent/ in this repo) */}
+      {d.hosts?.map((h) => (
+        <HostStats key={h.name} name={h.name} st={h.stats ?? {}} offline={!h.stats} unit={unit} />
+      ))}
+    </section>
+  )
+}
+
+// One machine: uptime / load / watts line, then CPU, RAM, temp, disk tiles. offline: its agent didn't answer.
+function HostStats({ name, st, offline, unit }) {
+  return (
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-[10px] font-mono text-lofi-muted">
         <p className="flex items-center gap-2">
           <i className="fa-solid fa-microchip text-lofi-text/80" aria-hidden="true" />
-          <span className="text-lofi-text/80 uppercase tracking-widest">Server</span>
-          <span>
-            up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
-          </span>
+          <span className="text-lofi-text/80 uppercase tracking-widest">{name}</span>
+          {offline ? (
+            <span className="text-red-400">offline</span>
+          ) : (
+            <span>
+              up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
+            </span>
+          )}
           {st.power && (
             <span
               title={`CPU ${st.power.cpu ?? '--'} W + RAM ${st.power.ram ?? '--'} W, measured by the CPU (10 s average). The whole PC at the wall uses more.`}
@@ -3206,12 +3222,12 @@ function Server({ d }) {
         </p>
       </div>
       {/* narrow: four across, no icons */}
-      <div className="grid grid-cols-4 gap-2 @lg:gap-3">
+      <div className={`grid grid-cols-4 gap-2 @lg:gap-3 ${offline ? 'opacity-40' : ''}`}>
         <Stat fit icon="fa-gauge text-lofi-primary" label="CPU" value={st.cpu == null ? '--' : `${st.cpu}%`} pct={st.cpu} />
         <Stat fit icon="fa-memory text-blue-400" label={`RAM ${pctOf(st.mem) ?? '--'}%`} value={gbUsed(st.mem)} title={gb(st.mem)} pct={pctOf(st.mem)} />
         <Stat fit icon="fa-temperature-half text-lofi-secondary" label="Temp" value={st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`} pct={st.temp} />
         <Stat fit icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
       </div>
-    </section>
+    </div>
   )
 }
