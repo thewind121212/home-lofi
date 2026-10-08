@@ -1125,6 +1125,8 @@ const covers =
           save: (entries) => localStorage.setItem(COVERS_KEY, JSON.stringify(entries)),
         },
       })
+// (covers found just before the tab goes away are saved now, not lost with the pending write)
+if (covers) addEventListener('pagehide', () => covers.flush())
 function useArt(song, ref) {
   const own = thumbOf(song) ?? song?.coverThumbnail ?? null
   const uri = !own ? (song?.spotifyUri ?? null) : null
