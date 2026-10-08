@@ -431,7 +431,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
         title: plain(song?.title) || 'Home station',
         artist: 'Tavarian',
         album: 'Home station · wliafdew.dev',
-        artwork: thumbOf(song) ? [{ src: thumbOf(song), sizes: song.youtubeId ? '320x180' : '640x640', type: 'image/jpeg' }] : [], // (a Spotify cover is square)
+        artwork: thumbOf(song) ? [{ src: thumbOf(song), sizes: thumbOf(song).startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] : [], // (a YouTube thumbnail is 16:9, a Spotify cover square)
       })
     ms.playbackState = 'playing'
   }, [listening, song?.id, song?.title])
@@ -1398,7 +1398,7 @@ const ago = (iso) => {
 function PlaceBtns({ s, p, ops, short }) {
   const url = songLink(s)
   // the same song: by its Spotify track when it has no video (a Spotify search result, a Spotify-only song), else by video
-  const same = (x) => Boolean(x) && (s.youtubeId ? x.youtubeId === s.youtubeId : Boolean(s.spotifyUri) && x.spotifyUri === s.spotifyUri)
+  const same = (x) => Boolean(x) && ((Boolean(s.youtubeId) && x.youtubeId === s.youtubeId) || (Boolean(s.spotifyUri) && x.spotifyUri === s.spotifyUri))
   const queued = (p.queue?.items ?? []).find(same)
   const current = same(p.state?.song) && p.state?.status !== 'idle'
   const t = plain(s.title)
