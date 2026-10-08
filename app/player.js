@@ -33,7 +33,7 @@ const CONFIRM_MS = 15_000 // an owner's button gives up spinning after this
 const TOKEN_DEAD = ['invalid_token', 'token_revoked', 'token_expired', 'owner_gone']
 
 // ---- the owner's route: { action, ...args } -> { ok, data } or { ok: false, error: '<plain message>', code } ----
-export async function tavarianPost(body) {
+export async function tavarianPost(body, { signal } = {}) {
   let r
   try {
     r = await fetch('/api/private/settings/tavarian', {
@@ -42,9 +42,10 @@ export async function tavarianPost(body) {
       body: JSON.stringify(body),
       redirect: 'manual', // a lapsed login redirects to the sign-in page: that's an error here
       cache: 'no-store',
+      signal, // (a request nobody waits for any more is cancelled)
     })
   } catch {
-    return { ok: false, status: 0, error: "Couldn't reach the home server" }
+    return { ok: false, status: 0, error: signal?.aborted ? 'cancelled' : "Couldn't reach the home server" }
   }
   const d = await r.json().catch(() => ({}))
   if (r.ok) return { ok: true, data: d }
@@ -1545,7 +1546,7 @@ export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
           <div key={view} data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain touch-pan-y -mr-1 pr-1">
             {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
             {view === 'recent' && <RecentView p={p} owner={owner} ops={ops} />}
-            {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
+            {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} />}
             {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
           </div>
           {owner && <OpsLine wrap line={line} ops={ops} className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono ${line?.err ? '' : 'text-lofi-primary'}`} />}
@@ -1813,28 +1814,37 @@ function SearchView({ p, ops, seed }) {
   const [want, setWant] = useState(null) // 'youtube' | 'spotify' picked here for searches, else null (the station's)
   const input = useRef(null)
   const q = text.trim()
-  const linky = classifyLink(q).kind !== 'text' // a pasted link: no need to wait for more typing
+  // a link (as Tavarian sees one: a YouTube / Spotify link, or text starting with http(s):// or www.) shows no
+  // YouTube | Spotify switch; a pasted one (the text jumped) is read at once, anything else after a pause, so holding
+  // backspace on a link doesn't send a request per keystroke (and the one in flight is cancelled)
+  const linky = ['video', 'playlist', 'spotify', 'mix'].includes(classifyLink(q).kind) || /^(https?:\/\/|www\.)/i.test(q)
+  const last = useRef(q)
+  const jumped = Math.abs(q.length - last.current.length) > 1
   useEffect(() => input.current?.focus({ preventScroll: true }), [])
   useEffect(() => {
+    last.current = q
     if (q.length < 2) return setRes(null), setErr(null), setBusy(false)
-    let alive = true
+    const stop = new AbortController()
     setBusy(true)
     const t = setTimeout(async () => {
-      const r = await tavarianPost({ action: 'resolve', q, ...(want && { source: want }) })
-      if (!alive) return
+      let r = await tavarianPost({ action: 'resolve', q, ...(want && { source: want }) }, { signal: stop.signal })
+      // a Tavarian that doesn't know resolve yet: words still search
+      if (!r.ok && r.code === 'http_404' && !linky) r = await tavarianPost({ action: 'search', q, ...(want && { source: want }) }, { signal: stop.signal }).then((x) => (x.ok ? { ok: true, data: { resolved: { kind: 'search', source: x.data.source ?? 'youtube', items: x.data.results ?? [] } } } : x))
+      if (stop.signal.aborted) return
       setBusy(false)
-      if (r.ok) setRes(r.data.resolved), setErr(null)
-      else setRes(null), setErr(r.error)
-    }, linky ? 0 : 450)
-    return () => ((alive = false), clearTimeout(t))
+      if (r.ok && r.data.resolved) setRes(r.data.resolved), setErr(null)
+      else setRes(null), setErr(r.ok ? "Tavarian sent an answer this page doesn't understand" : r.error)
+    }, jumped && linky ? 0 : linky ? 300 : 450)
+    return () => (stop.abort(), clearTimeout(t))
   }, [q, want, linky])
   const from = res?.kind === 'search' ? res.source : (want ?? res?.backend ?? null)
+  const switchable = q.length >= 2 && !linky && res?.kind !== 'track' && res?.kind !== 'list'
   return (
     <>
       <form onSubmit={(e) => e.preventDefault()} className="mb-3">
         <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search, or paste a YouTube or Spotify link" placeholder="Search, or paste any link" paste />
       </form>
-      {q.length >= 2 && !linky && (
+      {switchable && (
         <div role="radiogroup" aria-label="Search on" className="mb-3 flex items-center gap-1.5 text-[11px] font-mono">
           {[['youtube', 'YouTube', 'fa-youtube'], ['spotify', 'Spotify', 'fa-spotify']].map(([id, name, icon]) => (
             <button
@@ -1905,6 +1915,7 @@ function ResolvedTrack({ res, p, ops }) {
   )
 }
 
+const ADD_ALL_MAX = 100 // songs an import adds at most (Tavarian's HOME_IMPORT_MAX)
 // a playlist or album from a link: its name, Add all (now / next / end, the import), and every song with its buttons
 function ResolvedList({ res, p, ops }) {
   const name = res.title ?? (res.source === 'spotify' ? `Spotify ${res.listType ?? 'playlist'}` : 'YouTube playlist')
@@ -1915,11 +1926,11 @@ function ResolvedList({ res, p, ops }) {
         <span className="min-w-0">
           <span className="block text-sm text-white font-medium truncate">{plain(name)}</span>
           <span className="block text-[11px] text-lofi-muted truncate">
-            {[res.subtitle, res.total != null ? `${res.total} song${res.total === 1 ? '' : 's'}` : null, res.truncated ? 'the first 100 can be added' : null].filter(Boolean).join(' · ')}
+            {[res.subtitle, res.total != null ? `${res.total} song${res.total === 1 ? '' : 's'}` : null, res.truncated ? `the first ${ADD_ALL_MAX} can be added` : null].filter(Boolean).join(' · ')}
           </span>
         </span>
       </div>
-      {res.importUrl && <ImportBox url={res.importUrl} what={`Add all${res.total ? ` (${Math.min(res.total, 100)})` : ''}`} ops={ops} />}
+      {res.importUrl && <ImportBox url={res.importUrl} what={`Add all${res.total ? ` (${Math.min(res.total, ADD_ALL_MAX)})` : ''}`} ops={ops} />}
       {res.videoUrl && (
         <p className="text-[11px] text-lofi-muted px-1">
           The link points at one song in this playlist too:{' '}
@@ -1976,8 +1987,6 @@ function TextBox({ inputRef, value, onChange, icon, label, placeholder, paste })
     </div>
   )
 }
-const LINK_HINT = 'A YouTube video or playlist link, or a Spotify playlist, album or track link.'
-const spotifyWhat = (k) => `Spotify ${k.what}`
 
 const Hint = ({ err, children }) => <p className={`text-xs text-center py-4 px-2 text-balance ${err ? 'text-red-300' : 'text-lofi-muted'}`}>{children}</p>
 
