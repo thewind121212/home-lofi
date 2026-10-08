@@ -8,7 +8,7 @@
 // quiet <audio> loop next to the graph), with their own title and ⏯ on the lock screen when no music of the page plays.
 import { useEffect, useRef, useState } from 'react'
 import {
-  LAYERS, PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, loopEvent, loopPlan, minutesLeft, mixGains, presetOf, quietWav,
+  PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, loopEvent, loopPlan, minutesLeft, mixPlan, presetOf, quietWav,
   setLayer, shownLayers, soundsLabel, soundsMedia, timerEnd,
 } from '../lib/sounds'
 import { SLEEP_TAU, TAU, buildVoice, createEngine, loadFile, pump, ramp } from '../lib/sound-engine'
@@ -143,34 +143,35 @@ export function useSounds(mix, { music = false } = {}) {
   useEffect(() => {
     const e = en.current
     if (!e) return
-    const g = mixGains(mix, { playing, muted })
+    // (lib/sounds.js mixPlan: a mix from another device glides like a local one, and never starts a page that's paused)
+    const plan = mixPlan(mix, { playing, muted, voices: Object.fromEntries([...e.voices].map(([id, v]) => [id, v.stopT ? 'stopping' : 'on'])) })
     const tau = (t.tau = t.slow ? SLEEP_TAU : TAU)
     t.slow = false
-    ramp(e.ctx, e.master.gain, g.master, tau)
+    ramp(e.ctx, e.master.gain, plan.master, tau)
     let any = false
-    for (const l of LAYERS) {
-      const v = e.voices.get(l.id), want = g.layers[l.id]
-      if (want > 0 && (v || playing)) {
-        let voice = v
-        if (!voice) {
-          if (l.kind === 'file' && !e.files.get(l.id)?.buffer) {
-            // a recorded loop: fetched and decoded the first time it's wanted, then this runs again
-            if (!failed.includes(l.id)) loadFile(e, l).then(() => setLoaded((n) => n + 1), () => setFailed((f) => (f.includes(l.id) ? f : [...f, l.id])))
-            continue
-          }
-          e.voices.set(l.id, (voice = buildVoice(e, l)))
-        }
-        clearTimeout(voice.stopT)
-        voice.stopT = 0
-        ramp(e.ctx, voice.gain.gain, want)
-        any = true
-      } else if (v && !v.stopT) {
+    for (const [id, step] of Object.entries(plan.steps)) {
+      const l = layerById(id), v = e.voices.get(id)
+      if (step.do === 'release') {
         ramp(e.ctx, v.gain.gain, 0)
-        v.stopT = setTimeout(() => (v.stop(), e.voices.get(l.id) === v && e.voices.delete(l.id)), TAU * 5000 + 100)
+        v.stopT = setTimeout(() => (v.stop(), e.voices.get(id) === v && e.voices.delete(id)), TAU * 5000 + 100)
+        continue
       }
+      let voice = v
+      if (step.do === 'start') {
+        if (l.kind === 'file' && !e.files.get(id)?.buffer) {
+          // a recorded loop: fetched and decoded the first time it's wanted, then this runs again
+          if (!failed.includes(id)) loadFile(e, l).then(() => setLoaded((n) => n + 1), () => setFailed((f) => (f.includes(id) ? f : [...f, id])))
+          continue
+        }
+        e.voices.set(id, (voice = buildVoice(e, l)))
+      }
+      clearTimeout(voice.stopT)
+      voice.stopT = 0
+      ramp(e.ctx, voice.gain.gain, step.gain)
+      any = true
     }
     clearTimeout(t.idle)
-    t.want = g.master > 0 && any
+    t.want = plan.master > 0 && any
     if (t.want) {
       if (e.ctx.state !== 'running') e.ctx.resume().catch(() => {})
       e.voices.forEach((v) => pump(e, v))
@@ -219,7 +220,10 @@ export function useSounds(mix, { music = false } = {}) {
   }, [mix, playing])
 
   // Sleep timer: counts from when sounds start (or from a change while they play); at the end everything fades out
-  // slowly (~10 s) and stops
+  // slowly (~10 s) and stops. It watches the timer's value only, so a level or preset changed on another device (cloud
+  // sync) never resets a running count. A new timer value from another device does re-arm it here, as the same tap
+  // would: "stop in 30 min" picked on the PC for the phone playing in the bedroom means that phone, from now (it
+  // arrives a second after the tap). A page that isn't playing just shows the new value; its count starts with ▶.
   useEffect(() => setEndsAt(playing ? timerEnd(Date.now(), mix.timer) : null), [playing, mix.timer])
   useEffect(() => {
     if (!endsAt) return

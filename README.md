@@ -246,8 +246,12 @@ Optional. Signed in as `OWNER_USER`, your settings, saved scene and weather loca
 (volume and the services tab stay per device). Everyone else keeps them in their own browser, as before.
 
 - **Local-first**: the page always renders from localStorage and never waits for the network. Changes go up ~1 s
-  later in the background; changes from your other devices come in on load and when you return to the tab
-  (colors cross-fade). While Settings or Sounds is open, nothing incoming moves under the cursor.
+  later in the background; changes from your other devices come in on load, when you return to the tab, and **live**
+  while the page is open (colors cross-fade). While Settings or Sounds is open, nothing incoming moves under the cursor.
+- **Live**: each open owner tab keeps an event stream (`/api/private/settings/events`) that only says "another device
+  saved"; the tab then pulls. A Sounds mix changed on the PC glides in on the phone that plays them about a second
+  later (it never starts sounds on a device that isn't playing). A hidden tab lets the stream go after a minute,
+  unless sounds play on it. The streams live in the server's memory: fine for the one container the app runs in.
 - **Per-setting merge**: every key carries the time it changed; the newer side wins per key, so edits on two
   devices both survive. Offline edits stay in the browser and sync when it's back.
 - Settings › bottom line shows where they live: *Synced to your devices* / *Saving…* / *Offline* /
@@ -286,7 +290,8 @@ location /api/private/settings {
 ```
 
 A request without a session gets a plain **401** (the page shows *sign in to sync*); Authelia's "remember me" keeps
-the session for a month.
+the session for a month. The same location serves the live stream (`/api/private/settings/events`): it sends
+`X-Accel-Buffering: no` and pings every 20 s, so nginx's defaults (buffering, a 60 s read timeout) are fine.
 
 ### Spotify now playing
 

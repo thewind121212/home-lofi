@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { SETTINGS_KEY, parseSettings } from '../lib/settings'
 import { SYNC_KEYS, cleanDoc, merge } from '../lib/sync'
+import { LIVE_HIDDEN_MS, liveAction, liveRetryMs, liveWanted, newClientId } from '../lib/live'
 import { load, save } from './settings'
 
 // Owner-only cloud sync of settings, saved scene and weather location (rules in lib/sync.js). Local-first: the page
 // always renders from localStorage and never waits for the network; this hook pushes and pulls in the background.
+// Pulls: on load, on coming back to the tab, and live: while synced, an event stream (lib/live.js) says when another
+// device saved, and this pulls a moment later (the Sounds mix changed on the PC follows on the phone that plays them).
 // status: 'off' (guest / sync not set up) | 'signin' (the proxy wants an Authelia login) | 'syncing' | 'synced'
 //         | 'offline' (changes are safe in this browser and go up on the next try)
 const URL_ = '/api/private/settings'
@@ -45,7 +48,8 @@ function writeLocal(doc, keys) {
 
 // apply(keys): the hook already wrote those keys to localStorage; the page re-reads them into state.
 // hold: the Settings dialog; while it's open, incoming changes wait so nothing moves under the cursor.
-export function useCloudSync(apply, hold) {
+// keep: { current: true } while the live stream should stay open with the tab hidden (sounds play: the mix follows)
+export function useCloudSync(apply, hold, keep) {
   const [status, setStatus] = useState('off')
   const touch = useRef(() => {}) // replaced once the effect runs; a stable function for the page to call
   const applyRef = useRef(apply)
@@ -57,6 +61,7 @@ export function useCloudSync(apply, hold) {
     let busy = false, dirty = false, again = false, timer, tries = 0 // again: a pull asked for while busy
     let answered = false
     const early = {} // edits made before the first answer: they count only if that answer says "owner"
+    const self = newClientId() // this tab, for the live stream: its own saves aren't echoed back to it
 
     // remote doc -> take the keys that are newer than ours; true if we still have newer keys to send up.
     // While the Settings dialog is open nothing incoming is written or shown (it would move under the cursor, and the
@@ -96,7 +101,7 @@ export function useCloudSync(apply, hold) {
           method,
           redirect: 'manual', // Authelia's login redirect -> 'signin', not a followed redirect
           cache: 'no-store',
-          ...(method === 'PUT' && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(localDoc()) }),
+          ...(method === 'PUT' && { headers: { 'content-type': 'application/json', 'x-home-client': self }, body: JSON.stringify(localDoc()) }),
         })
         if (!alive) return
         answered = true
@@ -124,6 +129,7 @@ export function useCloudSync(apply, hold) {
         return
       } finally {
         busy = false
+        live() // signed in / out, sync on / off: the stream follows
       }
       if (dirty && alive) later(() => request('PUT'), PUSH_DELAY)
       else if (again && alive) request('GET')
@@ -139,18 +145,81 @@ export function useCloudSync(apply, hold) {
       later(() => request('PUT'), PUSH_DELAY)
     }
 
+    // Live: the event stream (app/api/private/settings/events). Open while synced and the tab shows; a hidden tab lets
+    // it go after a minute unless sounds play on it (lib/live.js liveWanted). It only ever says "pull": the GET and
+    // take() above do the rest, holds included. A drop reconnects with backoff (and pulls once back: saves made
+    // meanwhile said nothing); if it keeps failing it waits for the tab to show again, and sync works as before.
+    let es = null, fails = 0, missed = false, retry = 0, check = 0
+    let hiddenAt = document.visibilityState === 'visible' ? 0 : Date.now()
+    const shut = () => {
+      es?.close()
+      es = null
+    }
+    function live() {
+      if (!alive || typeof EventSource === 'undefined') return
+      clearTimeout(check)
+      const visible = document.visibilityState === 'visible'
+      const want = liveWanted({ synced: on, visible, hiddenMs: visible ? 0 : Date.now() - hiddenAt, keep: Boolean(keep?.current), fails })
+      if (!want) {
+        clearTimeout(retry)
+        retry = 0
+        if (es) missed = false // let go on purpose: the pull when the tab shows again covers the gap
+        return shut()
+      }
+      if (!visible) check = setTimeout(live, LIVE_HIDDEN_MS) // look again: hidden that long (and no sounds) -> close
+      if (!es && !retry) open()
+    }
+    function open() {
+      const src = (es = new EventSource(`${URL_}/events?id=${self}`))
+      const listen = (kind) =>
+        src.addEventListener(kind, (e) => {
+          if (es !== src) return
+          let data = null
+          try {
+            data = JSON.parse(e.data)
+          } catch {}
+          if (kind === 'hello') fails = 0
+          const act = liveAction({ ...data, kind }, { self, synced: on, missed })
+          if (kind === 'hello') missed = false
+          if (act === 'pull') request(dirty ? 'PUT' : 'GET')
+        })
+      listen('hello')
+      listen('changed')
+      // a drop or a refusal: our own backoff, not EventSource's (it would retry a refusal never, a drop every 3 s)
+      src.onerror = () => {
+        if (es !== src) return
+        shut()
+        missed = true
+        const ms = liveRetryMs(fails++)
+        if (ms != null) retry = setTimeout(() => ((retry = 0), live()), ms)
+      }
+    }
+
     // back to this tab / back online: pick up what other devices changed, send what's waiting
     const wake = () => document.visibilityState === 'visible' && on && request(dirty ? 'PUT' : 'GET')
+    const seen = () => {
+      if (document.visibilityState === 'visible') {
+        fails = 0 // a stream that gave up gets another go
+        clearTimeout(retry)
+        retry = 0
+      } else hiddenAt = Date.now()
+      live()
+    }
     document.addEventListener('visibilitychange', wake)
+    document.addEventListener('visibilitychange', seen)
     addEventListener('online', wake)
     request('GET')
     return () => {
       alive = false
       clearTimeout(timer)
+      clearTimeout(retry)
+      clearTimeout(check)
+      shut()
       document.removeEventListener('visibilitychange', wake)
+      document.removeEventListener('visibilitychange', seen)
       removeEventListener('online', wake)
     }
-  }, [hold])
+  }, [hold, keep])
 
   return { status, touch: (keys) => touch.current(keys) }
 }
