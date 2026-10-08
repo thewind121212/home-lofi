@@ -871,8 +871,6 @@ function LockScreen({ onUnlock, set, update, full, screen, children }) {
             title={fb.label}
             data-noswipe
             onPointerDown={(e) => e.stopPropagation()}
-            onPointerMove={(e) => e.stopPropagation()}
-            onPointerUp={(e) => e.stopPropagation()}
             className={`glass-panel w-12 h-12 rounded-full flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-[opacity,translate,color] duration-500 ${tools ? 'opacity-100' : 'opacity-0 -translate-y-2 pointer-events-none'}`}
           >
             <i className={`fa-solid ${fb.icon} text-sm`} aria-hidden="true" />
