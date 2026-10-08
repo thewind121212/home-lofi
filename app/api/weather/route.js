@@ -1,4 +1,4 @@
-import { parseWeatherParams, wmo, uvLabel, aqiBand, sunToday } from '../../../lib/weather'
+import { parseWeatherParams, wmo, uvLabel, aqiBand, sunToday, nowRain } from '../../../lib/weather'
 import { upstream } from '../../../lib/upstream'
 
 export async function GET(request) {
@@ -10,7 +10,7 @@ export async function GET(request) {
     const [w, aq] = await Promise.all([upstream('/weather', p), upstream('/air-quality', p).catch(() => null)])
     const c = w.current
     const hourIdx = w.hourly?.time?.indexOf(`${c.time?.slice(0, 13)}:00`) ?? -1
-    const rainChance = w.hourly?.precipitation_probability?.[hourIdx] ?? w.daily?.precipitation_probability_max?.[0] ?? null
+    const rainChance = nowRain(c, w.hourly?.precipitation_probability?.[hourIdx] ?? w.daily?.precipitation_probability_max?.[0])
     const uvRaw = aq?.current?.uv_index ?? w.daily?.uv_index_max?.[0]
     const uv = uvRaw == null ? null : Math.round(uvRaw)
     const isDay = c.is_day === 1
