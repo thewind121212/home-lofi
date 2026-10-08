@@ -17,7 +17,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
-  placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
+  placedText, placementIcon, placementLabel, plain, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
   songLink, thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
@@ -33,7 +33,7 @@ const CONFIRM_MS = 15_000 // an owner's button gives up spinning after this
 const TOKEN_DEAD = ['invalid_token', 'token_revoked', 'token_expired', 'owner_gone']
 
 // ---- the owner's route: { action, ...args } -> { ok, data } or { ok: false, error: '<plain message>', code } ----
-export async function tavarianPost(body) {
+export async function tavarianPost(body, { signal } = {}) {
   let r
   try {
     r = await fetch('/api/private/settings/tavarian', {
@@ -42,9 +42,10 @@ export async function tavarianPost(body) {
       body: JSON.stringify(body),
       redirect: 'manual', // a lapsed login redirects to the sign-in page: that's an error here
       cache: 'no-store',
+      signal, // (a request nobody waits for any more is cancelled)
     })
   } catch {
-    return { ok: false, status: 0, error: "Couldn't reach the home server" }
+    return { ok: false, status: 0, error: signal?.aborted ? 'cancelled' : "Couldn't reach the home server" }
   }
   const d = await r.json().catch(() => ({}))
   if (r.ok) return { ok: true, data: d }
@@ -1420,10 +1421,8 @@ function PlaceBtns({ s, p, ops, short }) {
   )
 }
 
-const ADD_VIEWS = [
-  ['search', 'Search or link', 'fa-magnifying-glass'],
-  ['import', 'Import', 'fa-list-ul', 'Import playlist'],
-]
+// (one view since the one input: words, a song link or a playlist link all go in the same box)
+const ADD_VIEWS = [['search', 'Search or paste', 'fa-magnifying-glass']]
 
 // The sheet keeps the page still: only its lists ([data-scroll]) scroll. The modal <dialog> makes the page inert, but a
 // wheel or a swipe over the header, the chips, the backdrop, or past a list's end would still scroll the page (iOS
@@ -1520,8 +1519,8 @@ export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
             </button>
           </div>
           <div className="flex gap-1.5 overflow-x-auto overscroll-contain touch-pan-x scrollbar-none mb-3 shrink-0">{views.map(chip)}</div>
-          {owner && adding && (
-            // one column per Add tab, so they always fill the bar
+          {owner && adding && ADD_VIEWS.length > 1 && (
+            // one column per Add tab, so they always fill the bar (no bar while there's only the one input)
             <div role="tablist" aria-label="Add songs" className="grid gap-1 p-1 mb-3 shrink-0 rounded-2xl bg-lofi-base/50 border border-white/5" style={{ gridTemplateColumns: `repeat(${ADD_VIEWS.length}, minmax(0, 1fr))` }}>
               {ADD_VIEWS.map(([id, label, icon, wide]) => (
                 <button
@@ -1547,8 +1546,7 @@ export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
           <div key={view} data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain touch-pan-y -mr-1 pr-1">
             {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
             {view === 'recent' && <RecentView p={p} owner={owner} ops={ops} />}
-            {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
-            {owner && view === 'import' && <ImportView ops={ops} seed={seed} go={go} />}
+            {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} />}
             {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
           </div>
           {owner && <OpsLine wrap line={line} ops={ops} className={`shrink-0 min-h-4 mt-2 text-[11px] font-mono ${line?.err ? '' : 'text-lofi-primary'}`} />}
@@ -1804,39 +1802,49 @@ function ClearQuestion({ n, playing, onCancel, onClear }) {
 }
 
 // ---- Add: Search ----
-// Search: YouTube, or Spotify (real artists, albums and covers; the exact track is added) — by default the station's
-// own (Spotify while it plays from Spotify and Tavarian can search it), switchable here
-function SearchView({ p, ops, seed, go }) {
+// The Add sheet's one input: type anything — words, a song link (YouTube or Spotify), a playlist or album link — and
+// Tavarian works out what it is (GET /home/resolve): a search (Spotify while the station plays from Spotify, else
+// YouTube; the switch picks), one song (a YouTube link in Spotify mode shows its Spotify match), or a list with Add all.
+// Nothing is added until a button says so.
+function SearchView({ p, ops, seed }) {
   const [text, setText] = useState(seed)
-  const [results, setResults] = useState(null)
-  const [searching, setSearching] = useState(false)
-  const [want, setWant] = useState(null) // 'youtube' | 'spotify' picked here, else null (the station's)
-  const [got, setGot] = useState(null) // where the results came from
+  const [res, setRes] = useState(null) // what Tavarian made of the text
+  const [err, setErr] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [want, setWant] = useState(null) // 'youtube' | 'spotify' picked here for searches, else null (the station's)
   const input = useRef(null)
   const q = text.trim()
-  const k = classifyLink(q)
-  const link = ['video', 'playlist', 'spotify', 'mix', 'unsupported'].includes(k.kind)
+  // a link (as Tavarian sees one: a YouTube / Spotify link, or text starting with http(s):// or www.) shows no
+  // YouTube | Spotify switch; a pasted one (the text jumped) is read at once, anything else after a pause, so holding
+  // backspace on a link doesn't send a request per keystroke (and the one in flight is cancelled)
+  const linky = ['video', 'playlist', 'spotify', 'mix'].includes(classifyLink(q).kind) || /^(https?:\/\/|www\.)/i.test(q)
+  const last = useRef(q)
+  const jumped = Math.abs(q.length - last.current.length) > 1
   useEffect(() => input.current?.focus({ preventScroll: true }), [])
   useEffect(() => {
-    if (link || q.length < 2) return setResults(null), setSearching(false)
-    let alive = true
-    setSearching(true)
+    last.current = q
+    if (q.length < 2) return setRes(null), setErr(null), setBusy(false)
+    const stop = new AbortController()
+    setBusy(true)
     const t = setTimeout(async () => {
-      const r = await tavarianPost({ action: 'search', q, ...(want && { source: want }) })
-      if (!alive) return
-      setSearching(false)
-      if (r.ok) setResults(r.data.results ?? []), setGot(r.data.source ?? null)
-      else setResults([]), ops.say(r.error, true)
-    }, 500)
-    return () => ((alive = false), clearTimeout(t))
-  }, [q, link, want])
-  const from = want ?? got
+      let r = await tavarianPost({ action: 'resolve', q, ...(want && { source: want }) }, { signal: stop.signal })
+      // a Tavarian that doesn't know resolve yet: words still search
+      if (!r.ok && r.code === 'http_404' && !linky) r = await tavarianPost({ action: 'search', q, ...(want && { source: want }) }, { signal: stop.signal }).then((x) => (x.ok ? { ok: true, data: { resolved: { kind: 'search', source: x.data.source ?? 'youtube', items: x.data.results ?? [] } } } : x))
+      if (stop.signal.aborted) return
+      setBusy(false)
+      if (r.ok && r.data.resolved) setRes(r.data.resolved), setErr(null)
+      else setRes(null), setErr(r.ok ? "Tavarian sent an answer this page doesn't understand" : r.error)
+    }, jumped && linky ? 0 : linky ? 300 : 450)
+    return () => (stop.abort(), clearTimeout(t))
+  }, [q, want, linky])
+  const from = res?.kind === 'search' ? res.source : (want ?? res?.backend ?? null)
+  const switchable = q.length >= 2 && !linky && res?.kind !== 'track' && res?.kind !== 'list'
   return (
     <>
       <form onSubmit={(e) => e.preventDefault()} className="mb-3">
-        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search YouTube or Spotify, or paste a link" placeholder="Search, or paste a link" paste />
+        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search, or paste a YouTube or Spotify link" placeholder="Search, or paste any link" paste />
       </form>
-      {!link && (
+      {switchable && (
         <div role="radiogroup" aria-label="Search on" className="mb-3 flex items-center gap-1.5 text-[11px] font-mono">
           {[['youtube', 'YouTube', 'fa-youtube'], ['spotify', 'Spotify', 'fa-spotify']].map(([id, name, icon]) => (
             <button
@@ -1851,24 +1859,94 @@ function SearchView({ p, ops, seed, go }) {
           ))}
         </div>
       )}
-      {link ? (
-        <LinkBody k={k} p={p} ops={ops} onDone={() => setText('')} />
-      ) : searching ? (
+      {busy ? (
         <p className="text-xs text-lofi-muted text-center py-4">
-          <i className="fa-solid fa-spinner fa-spin mr-1.5" aria-hidden="true" /> Searching…
+          <i className="fa-solid fa-spinner fa-spin mr-1.5" aria-hidden="true" /> {linky ? 'Reading the link…' : 'Searching…'}
         </p>
-      ) : results ? (
+      ) : err ? (
+        <Hint err>{err}</Hint>
+      ) : res?.kind === 'list' ? (
+        <ResolvedList res={res} p={p} ops={ops} />
+      ) : res?.kind === 'track' ? (
+        <ResolvedTrack res={res} p={p} ops={ops} />
+      ) : res ? (
         <SongList empty="Nothing found">
-          {results.map((s) => (
-            <SongRow key={s.url ?? s.youtubeId} s={s} stack sub={[s.source === 'spotify' ? s.artist : s.channel, s.source === 'spotify' ? s.album : null, s.durationSeconds > 0 ? mmss(s.durationSeconds) : 'live'].filter(Boolean).join(' · ')}>
+          {res.items.map((s) => (
+            <SongRow key={s.url ?? s.youtubeId} s={s} stack sub={resultSub(s)}>
               <PlaceBtns s={s} p={p} ops={ops} />
             </SongRow>
           ))}
         </SongList>
       ) : (
-        <p className="text-xs text-lofi-muted text-center py-4 text-balance">Type 2 letters or more to search {from === 'spotify' ? 'Spotify' : 'YouTube'}, or paste a YouTube or Spotify link.</p>
+        <Hint>Type a song or an artist, or paste a link: a YouTube video or playlist, a Spotify track, album or playlist.</Hint>
       )}
     </>
+  )
+}
+const resultSub = (s) => [s.source === 'spotify' ? s.artist : s.channel, s.source === 'spotify' ? s.album : null, s.durationSeconds > 0 ? mmss(s.durationSeconds) : s.youtubeId ? 'live' : null].filter(Boolean).join(' · ')
+
+// one song from a link: its row with Now / Next / Add; in Spotify mode a YouTube link shows its Spotify match (with
+// "the YouTube video instead"), or says it has none (it would be skipped while the station plays from Spotify)
+function ResolvedTrack({ res, p, ops }) {
+  const s = res.items[0]
+  if (!s) return <Hint err>Nothing found for that link.</Hint>
+  const matched = res.match?.confidence != null && res.match.fromUrl
+  return (
+    <div className="space-y-2">
+      <SongList empty="">
+        <SongRow s={s} stack sub={resultSub(s)}>
+          <PlaceBtns s={s} p={p} ops={ops} />
+        </SongRow>
+      </SongList>
+      {matched && (
+        <p className="text-[11px] text-lofi-muted px-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>
+            <i className="fa-brands fa-spotify text-[#1db954] mr-1" aria-hidden="true" />
+            Found on Spotify ({Math.round(res.match.confidence * 100)}% sure)
+          </span>
+          <button onClick={() => ops.add(res.match.fromUrl, 'end')} disabled={ops.busy != null} className="text-lofi-primary underline underline-offset-2 hover:text-white disabled:opacity-50">
+            add the YouTube video instead
+          </button>
+        </p>
+      )}
+      {res.note === 'no_spotify_match' && <Hint>No sure match on Spotify: added, it would be skipped while the station plays from Spotify.</Hint>}
+      {(res.note === 'spotify_search_off' || res.note === 'spotify_search_unavailable') && <Hint>{reasonText(res.note)}: shown as the YouTube video.</Hint>}
+    </div>
+  )
+}
+
+const ADD_ALL_MAX = 100 // songs an import adds at most (Tavarian's HOME_IMPORT_MAX)
+// a playlist or album from a link: its name, Add all (now / next / end, the import), and every song with its buttons
+function ResolvedList({ res, p, ops }) {
+  const name = res.title ?? (res.source === 'spotify' ? `Spotify ${res.listType ?? 'playlist'}` : 'YouTube playlist')
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3 px-1">
+        {res.thumbnail && <img src={res.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover bg-lofi-surface shrink-0" />}
+        <span className="min-w-0">
+          <span className="block text-sm text-white font-medium truncate">{plain(name)}</span>
+          <span className="block text-[11px] text-lofi-muted truncate">
+            {[res.subtitle, res.total != null ? `${res.total} song${res.total === 1 ? '' : 's'}` : null, res.truncated ? `the first ${ADD_ALL_MAX} can be added` : null].filter(Boolean).join(' · ')}
+          </span>
+        </span>
+      </div>
+      {res.importUrl && <ImportBox url={res.importUrl} what={`Add all${res.total ? ` (${Math.min(res.total, ADD_ALL_MAX)})` : ''}`} ops={ops} />}
+      {res.videoUrl && (
+        <p className="text-[11px] text-lofi-muted px-1">
+          The link points at one song in this playlist too:{' '}
+          <button onClick={() => ops.add(res.videoUrl, 'end')} disabled={ops.busy != null} className="text-lofi-primary underline underline-offset-2 hover:text-white disabled:opacity-50">
+            add just that song
+          </button>
+        </p>
+      )}
+      <SongList empty="This list is empty">
+        {res.items.map((s, i) => (
+          <SongRow key={(s.url ?? s.youtubeId ?? '') + i} s={s} stack sub={resultSub(s)}>
+            <PlaceBtns s={s} p={p} ops={ops} short />
+          </SongRow>
+        ))}
+      </SongList>
+    </div>
   )
 }
 
@@ -1909,108 +1987,8 @@ function TextBox({ inputRef, value, onChange, icon, label, placeholder, paste })
     </div>
   )
 }
-const LINK_HINT = 'A YouTube video or playlist link, or a Spotify playlist, album or track link.'
-const spotifyWhat = (k) => `Spotify ${k.what}`
 
-// ---- Add: a pasted link, shown in the search box (one video: now / next / end; from a playlist: this video or the
-// whole playlist; a playlist or Spotify link: import) ----
-function LinkBody({ k, p, ops, onDone }) {
-  const [whole, setWhole] = useState(false)
-  useEffect(() => setWhole(false), [k.url, k.list])
-  const place = async (pl) => (await ops.add(k.url, pl)) && onDone()
-  return (
-    <>
-      {k.kind === 'unsupported' && <Hint err>Only YouTube and Spotify links work here. {LINK_HINT}</Hint>}
-      {k.kind === 'mix' && <Hint err>That's a YouTube Mix (an endless auto playlist): it can't be imported. Paste a video from it, or a normal playlist.</Hint>}
-      {k.kind === 'video' && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 rounded-2xl p-2 border border-white/5 bg-lofi-base/40">
-            <img src={`https://i.ytimg.com/vi/${k.id}/mqdefault.jpg`} alt="" className="w-24 h-14 rounded-lg object-cover bg-lofi-surface shrink-0" />
-            <span className="min-w-0 text-xs">
-              <span className="block text-white font-medium">YouTube video</span>
-              <span className="block text-lofi-muted font-mono truncate">{k.id}</span>
-              {k.mix && <span className="block text-lofi-muted">from a Mix: only this video can be added</span>}
-            </span>
-          </div>
-          {k.list && (
-            <div role="radiogroup" aria-label="What to add" className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-lofi-base/50 border border-white/5">
-              {[
-                [false, 'This video', 'fa-film'],
-                [true, 'The whole playlist', 'fa-list-ul'],
-              ].map(([w, label, icon]) => (
-                <button key={label} role="radio" aria-checked={whole === w} onClick={() => setWhole(w)} className={`h-9 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors ${whole === w ? 'bg-lofi-surface text-white font-medium shadow' : 'text-lofi-muted hover:text-white'}`}>
-                  <i className={`fa-solid ${icon} text-[11px] ${whole === w ? 'text-lofi-primary' : ''}`} aria-hidden="true" /> {label}
-                </button>
-              ))}
-            </div>
-          )}
-          {whole && k.list ? (
-            <ImportBox url={playlistUrl(k.list)} what="YouTube playlist" ops={ops} />
-          ) : (
-            <PlaceRow ops={ops} busyKey={(pl) => `add:${k.url}:${pl}`} onPlace={place} disabled={ops.busy != null} />
-          )}
-        </div>
-      )}
-      {(k.kind === 'playlist' || k.kind === 'spotify') && <ImportBox url={k.url} what={k.kind === 'spotify' ? spotifyWhat(k) : 'YouTube playlist'} ops={ops} />}
-    </>
-  )
-}
 const Hint = ({ err, children }) => <p className={`text-xs text-center py-4 px-2 text-balance ${err ? 'text-red-300' : 'text-lofi-muted'}`}>{children}</p>
-
-// three big buttons: Play now · Play next · Add to end
-function PlaceRow({ onPlace, busyKey, disabled, ops }) {
-  return (
-    <div className="grid grid-cols-3 gap-2">
-      {['now', 'next', 'end'].map((pl) => {
-        const busy = ops.busy === busyKey(pl)
-        return (
-          <button
-            key={pl}
-            onClick={() => onPlace(pl)}
-            disabled={disabled}
-            className={`h-12 rounded-2xl text-xs flex flex-col items-center justify-center gap-0.5 border transition-colors disabled:opacity-50 ${pl === 'now' ? 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold hover:bg-lofi-highlight' : 'border-white/10 text-lofi-text hover:text-white hover:border-white/30'}`}
-          >
-            <i className={`fa-solid ${busy ? 'fa-spinner fa-spin' : placementIcon(pl)}`} aria-hidden="true" />
-            {placementLabel(pl)}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ---- Add: Import playlist (YouTube playlist, Spotify playlist / album / track) ----
-function ImportView({ ops, seed, go }) {
-  const [text, setText] = useState(seed)
-  const input = useRef(null)
-  const k = classifyLink(text)
-  useEffect(() => input.current?.focus({ preventScroll: true }), [])
-  return (
-    <>
-      <div className="mb-3">
-        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-list-ul" label="Playlist link" placeholder="A YouTube playlist, or a Spotify link" paste />
-      </div>
-      {k.kind === 'empty' && <Hint>A YouTube playlist, or a Spotify playlist, album or track: its songs join the queue (up to 100 at a time).</Hint>}
-      {(k.kind === 'playlist' || k.kind === 'spotify') && <ImportBox url={k.url} what={k.kind === 'spotify' ? spotifyWhat(k) : 'YouTube playlist'} ops={ops} />}
-      {k.kind === 'video' && k.list && (
-        <>
-          <Hint>A video from a playlist: this imports the whole playlist.</Hint>
-          <ImportBox url={playlistUrl(k.list)} what="YouTube playlist" ops={ops} />
-        </>
-      )}
-      {k.kind === 'video' && !k.list && (
-        <Hint>
-          That's one video.{' '}
-          <button onClick={() => go('search', text.trim())} className="text-lofi-primary underline underline-offset-2 hover:text-white">
-            Add it from Search or link
-          </button>
-        </Hint>
-      )}
-      {k.kind === 'mix' && <Hint err>YouTube Mixes (the endless auto playlists) can't be imported: use a normal playlist.</Hint>}
-      {(k.kind === 'text' || k.kind === 'unsupported') && <Hint err>That's not a playlist link. {LINK_HINT}</Hint>}
-    </>
-  )
-}
 
 function ImportBox({ url, what, ops }) {
   const run = ops.importing
@@ -2025,7 +2003,7 @@ function ImportBox({ url, what, ops }) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-lofi-muted px-1 flex items-center gap-1.5 min-w-0">
-        <i className={`${what.startsWith('Spotify') ? 'fa-brands fa-spotify text-[#1db954]' : 'fa-brands fa-youtube text-red-400'}`} aria-hidden="true" />
+        <i className={`${/spotify/i.test(url) ? 'fa-brands fa-spotify text-[#1db954]' : 'fa-brands fa-youtube text-red-400'}`} aria-hidden="true" />
         <span className="text-white whitespace-nowrap">{what}</span>
         <span className="truncate font-mono text-[10px]">{url.replace(/^https:\/\/(www\.|open\.)?/, '')}</span>
       </p>
