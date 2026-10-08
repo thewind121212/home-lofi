@@ -176,6 +176,7 @@ Change it for your own domain.
 | `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
+| `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
 ### Live widget stats
 
