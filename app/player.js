@@ -13,6 +13,7 @@
 // - useOwnerOps(): the owner's queue actions (Play now / next, remove, remove selected, clear, drag reorder, add,
 //   import) with Undo for 5 s
 //   and the "Skipped A · loading B…" line; useDragReorder(): the queue's drag handles (mouse, or hold on a phone).
+// - The lists (the sheet's Now + Up next, Recent, the card's Up next) glide when they change: useFlip() (app/flip.js).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
@@ -21,6 +22,8 @@ import {
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
 import { closeDialog, motionOff } from './settings'
+import { useFlip } from './flip'
+import { flipSig } from '../lib/flip'
 
 const POLL_MS = 5000 // fallback polling of /api/tavarian/state
 const SSE_RETRY_MS = 30_000 // while polling, try the event stream again this often
@@ -1155,6 +1158,10 @@ export function PlayerPanel({ p, owner, vol }) {
   const song = p.revoked || p.off ? null : p.state?.song
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
+  const list = cardList({ song, items, recent })
+  // the two rows glide (a skip: the first leaves, the second moves up, a new one comes in)
+  const cardRows = useRef(null)
+  useFlip(cardRows, flipSig([list.kind, ...list.rows.map((s) => s.id)]))
   const info = statusInfo({ off: p.off, revoked: p.revoked, reachable: p.reachable, state: p.state, queued: items.length, owner })
   const dur = song?.durationSeconds > 0 ? song.durationSeconds : 0
   const pos = drag ?? positionAt(p.state, p.offset)
@@ -1192,7 +1199,6 @@ export function PlayerPanel({ p, owner, vol }) {
   // (phones: tuning in is just the spinner, here and on Listen; the words stay for screen readers)
   // (paused because Spotify can't be used: why, in the line under the controls, in the highlight color)
   const line = err ?? p.note ?? (info.why ? <span className="text-lofi-highlight">{info.why}</span> : null) ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
-  const list = cardList({ song, items, recent })
   return (
     <>
       {song && <img src={thumbOf(song)} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
@@ -1298,7 +1304,7 @@ export function PlayerPanel({ p, owner, vol }) {
       </div>
 
       {/* Up next: the first two (or "the queue is empty"); nothing on: the last played. The header opens the list */}
-      <div className="relative mt-2 min-w-0 h-[52px] shrink-0">
+      <div ref={cardRows} className="relative mt-2 min-w-0 h-[52px] shrink-0">
         <p className="flex items-center justify-between h-4 text-[9px] font-mono uppercase tracking-widest text-lofi-muted">
           <span>{list.kind === 'last' ? 'Last played' : 'Up next'}</span>
           <button onClick={() => setSheet(list.kind === 'last' ? 'recent' : 'queue')} aria-haspopup="dialog" aria-label={list.kind === 'last' ? `Recent: ${recent.length} song${recent.length === 1 ? '' : 's'}` : `Queue: ${items.length} song${items.length === 1 ? '' : 's'}`} className="normal-case tracking-normal text-[10px] hover:text-white transition-colors">
@@ -1308,7 +1314,7 @@ export function PlayerPanel({ p, owner, vol }) {
         {list.rows.length ? (
           <ul>
             {list.rows.map((s) => (
-              <li key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
+              <li key={s.id} data-flip-key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
                 <img src={thumbOf(s) ?? undefined} alt="" className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
                 <span className="text-white/80 truncate" title={plain(s.title)}>
                   {plain(s.title)}
@@ -1318,7 +1324,7 @@ export function PlayerPanel({ p, owner, vol }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-lofi-muted italic pt-1">{owner ? 'The queue is empty: Add puts a song in it.' : 'The queue is empty.'}</p>
+          <p data-flip-key="~empty" className="text-[11px] text-lofi-muted italic pt-1">{owner ? 'The queue is empty: Add puts a song in it.' : 'The queue is empty.'}</p>
         )}
       </div>
       {mine ? (
@@ -1538,15 +1544,7 @@ export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
           )}
           <div key={view} data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain touch-pan-y -mr-1 pr-1">
             {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
-            {view === 'recent' && (
-              <SongList empty="Nothing played yet">
-                {recent.map((s) => (
-                  <SongRow key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${reasonText(s.failReason)}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
-                    {owner && songLink(s) && <PlaceBtns s={s} p={p} ops={ops} short />}
-                  </SongRow>
-                ))}
-              </SongList>
-            )}
+            {view === 'recent' && <RecentView p={p} owner={owner} ops={ops} />}
             {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} go={go} />}
             {owner && view === 'import' && <ImportView ops={ops} seed={seed} go={go} />}
             {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
@@ -1567,11 +1565,34 @@ function SongList({ empty, children }) {
   const has = Array.isArray(children) ? children.some(Boolean) && children.length > 0 : Boolean(children)
   return has ? <ul className="space-y-1.5">{children}</ul> : <p className="text-xs text-lofi-muted text-center py-8">{empty}</p>
 }
-const H3 = ({ children, className = '' }) => <h3 className={`text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1.5 px-1 ${className}`}>{children}</h3>
+const H3 = ({ children, className = '', ...rest }) => (
+  <h3 {...rest} className={`text-[10px] font-mono uppercase tracking-widest text-lofi-muted mb-1.5 px-1 ${className}`}>
+    {children}
+  </h3>
+)
+
+// Recently played (newest first): a song that ends slides in at the top, the others glide down
+function RecentView({ p, owner, ops }) {
+  const recent = p.queue?.recent ?? []
+  const scope = useRef(null)
+  useFlip(scope, flipSig(recent.map((s) => s.id)))
+  return (
+    <div ref={scope} className="relative">
+      <SongList empty="Nothing played yet">
+        {recent.map((s) => (
+          <SongRow key={s.id} data-flip-key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${reasonText(s.failReason)}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
+            {owner && songLink(s) && <PlaceBtns s={s} p={p} ops={ops} short />}
+          </SongRow>
+        ))}
+      </SongList>
+    </div>
+  )
+}
 
 // The queue. The owner can also pick songs (Select: a box on each row, tap the row or the box; Select all / None and
 // the count, with Remove selected (N) in a bar that stays at the bottom) and Clear queue (asks first, like Settings ›
-// Reset all; the song playing keeps playing)
+// Reset all; the song playing keeps playing). Now and Up next glide when they change (one useFlip scope for both: the
+// song that starts playing glides from its row up to the Now slot); not while a row is dragged or held
 function QueueView({ p, owner, ops, onAdd }) {
   const items = p.queue?.items ?? []
   const ids = items.map((s) => s.id)
@@ -1591,6 +1612,8 @@ function QueueView({ p, owner, ops, onAdd }) {
   const dnd = useDragReorder({ ids, disabled: !owner || lock || picking, onDrop: (order, id, to) => ops.reorder(order, items.find((s) => s.id === id), to) })
   const d = dnd.drag
   const showLine = d && d.gap !== d.from && d.gap !== d.from + 1
+  const scope = useRef(null)
+  useFlip(scope, flipSig([song?.id, ...ids]), { paused: Boolean(d) || dnd.pressing != null })
   useEffect(() => {
     if (picking && !items.length) setSel(null) // nothing left to pick
   }, [picking, items.length])
@@ -1600,7 +1623,7 @@ function QueueView({ p, owner, ops, onAdd }) {
   }
   const toolBtn = 'h-6 px-2 shrink-0 whitespace-nowrap rounded-full border text-[10px] font-mono normal-case tracking-normal flex items-center gap-1 transition-colors disabled:opacity-40'
   return (
-    <>
+    <div ref={scope} className="relative">
       {owner && (
         <button onClick={onAdd} className="w-full h-11 mb-3 rounded-2xl border border-dashed border-lofi-primary/50 bg-lofi-primary/10 text-lofi-primary text-sm font-bold flex items-center justify-center gap-2 hover:bg-lofi-primary/20 transition-colors">
           <i className="fa-solid fa-plus" aria-hidden="true" /> Add songs <span className="font-normal text-xs text-lofi-muted max-sm:hidden">search · paste a link · import a playlist</span>
@@ -1608,16 +1631,16 @@ function QueueView({ p, owner, ops, onAdd }) {
       )}
       {song && (
         <>
-          <H3>Now</H3>
+          <H3 data-flip-key="~now">Now</H3>
           <ul className="mb-3">
-            <SongRow s={song} on sub={`${statusInfo({ state: p.state }).label}${song.durationSeconds > 0 ? ` · ${mmss(song.durationSeconds)}` : ''}`} />
+            <SongRow key={song.id} data-flip-key={song.id} s={song} on sub={`${statusInfo({ state: p.state }).label}${song.durationSeconds > 0 ? ` · ${mmss(song.durationSeconds)}` : ''}`} />
           </ul>
         </>
       )}
       {asking ? (
         <ClearQuestion n={items.length} playing={Boolean(song)} onCancel={() => setAsking(false)} onClear={() => (setAsking(false), ops.clear())} />
       ) : (
-        <H3 className="flex items-center gap-2 min-h-6">
+        <H3 data-flip-key="~next" className="flex items-center gap-2 min-h-6">
           <span className="shrink-0">Up next</span>
           <span className="grow min-w-0 truncate text-right normal-case tracking-normal text-[10px]">
             {owner && !picking && items.length > 1 && (
@@ -1652,6 +1675,7 @@ function QueueView({ p, owner, ops, onAdd }) {
                 key={s.id}
                 s={s}
                 data-row={i}
+                data-flip-key={s.id}
                 sub={`${i + 1}${s.durationSeconds > 0 ? ` · ${mmss(s.durationSeconds)}` : ''}`}
                 lifted={moving}
                 picked={on}
@@ -1675,10 +1699,13 @@ function QueueView({ p, owner, ops, onAdd }) {
                         onPointerDown={(e) => dnd.start(e, i)}
                         onKeyDown={(e) => dnd.key(e, i)}
                         onContextMenu={(e) => e.preventDefault()}
-                        disabled={lock || items.length < 2}
+                        // while an action is in flight: aria-disabled, not disabled (the handle ↓ just moved keeps
+                        // the keyboard focus; the drag hook ignores it meanwhile)
+                        disabled={items.length < 2}
+                        aria-disabled={lock || undefined}
                         aria-label={`Move ${t}: drag, or press up / down`}
                         title="Drag to reorder (on a phone: hold, then drag)"
-                        className={`w-6 h-9 -ml-0.5 shrink-0 rounded-lg flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 select-none [-webkit-touch-callout:none] ${moving ? 'cursor-grabbing text-lofi-primary' : 'cursor-grab'} ${dnd.pressing === s.id ? 'bg-lofi-primary/20 text-lofi-primary' : ''}`}
+                        className={`w-6 h-9 -ml-0.5 shrink-0 rounded-lg flex items-center justify-center text-lofi-muted hover:text-white disabled:opacity-30 aria-disabled:opacity-30 select-none [-webkit-touch-callout:none] ${moving ? 'cursor-grabbing text-lofi-primary' : 'cursor-grab'} ${dnd.pressing === s.id ? 'bg-lofi-primary/20 text-lofi-primary' : ''}`}
                       >
                         <i className="fa-solid fa-grip-vertical text-xs" aria-hidden="true" />
                       </button>
@@ -1703,7 +1730,7 @@ function QueueView({ p, owner, ops, onAdd }) {
           )}
         </ol>
       ) : (
-        <p className="text-xs text-lofi-muted text-center py-6">The queue is empty.</p>
+        <p data-flip-key="~empty" className="text-xs text-lofi-muted text-center py-6">The queue is empty.</p>
       )}
       {picking && items.length > 0 && (
         // stays at the bottom of the list while it scrolls
@@ -1726,7 +1753,7 @@ function QueueView({ p, owner, ops, onAdd }) {
           </button>
         </div>
       )}
-    </>
+    </div>
   )
 }
 
