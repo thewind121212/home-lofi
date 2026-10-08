@@ -23,6 +23,7 @@ import {
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
 import { closeDialog, motionOff } from './settings'
 import { settleFlip, useFlip } from './flip'
+import { coverCache } from '../lib/spotify-cover'
 import { flipSig } from '../lib/flip'
 
 const POLL_MS = 5000 // fallback polling of /api/tavarian/state
@@ -435,7 +436,10 @@ export function usePlayerAudio(tv, { owner, onListen }) {
         title: plain(song?.title) || 'Home station',
         artist: 'Tavarian',
         album: 'Home station · wliafdew.dev',
-        artwork: thumbOf(song) ? [{ src: thumbOf(song), sizes: thumbOf(song).startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] : [], // (a YouTube thumbnail is 16:9, a Spotify cover square)
+        artwork: (() => {
+          const a = thumbOf(song) ?? covers?.known(song?.spotifyUri) ?? null // (a Spotify song's fetched cover too)
+          return a ? [{ src: a, sizes: a.startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] : [] // (YouTube 16:9, Spotify square)
+        })(),
       })
     ms.playbackState = 'playing'
   }, [listening, song?.id, song?.title])
@@ -1108,8 +1112,40 @@ function SongTitle({ text }) {
 }
 
 // ---- pieces ----
+// A song's picture: thumbOf (its YouTube thumbnail or Spotify cover), else — a Spotify song Tavarian has no cover for
+// (from a Spotify-made playlist) — its cover from Spotify's oEmbed (lib/spotify-cover.js), asked for once the element
+// is on screen (ref; no ref = at once)
+const covers = typeof window === 'undefined' ? null : coverCache()
+function useArt(song, ref) {
+  const own = thumbOf(song) ?? song?.coverThumbnail ?? null
+  const uri = !own ? (song?.spotifyUri ?? null) : null
+  const [art, setArt] = useState(null) // { uri, url }: kept with its song, so another song's cover never shows
+  useEffect(() => {
+    if (!uri || !covers) return setArt(null)
+    const had = covers.known(uri)
+    if (had !== undefined) return setArt({ uri, url: had })
+    let alive = true
+    const ask = () => covers.cover(uri).then((url) => alive && setArt({ uri, url }))
+    const el = ref?.current
+    if (!el || typeof IntersectionObserver === 'undefined') return ask(), () => (alive = false)
+    const seen = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && (seen.disconnect(), ask()), { rootMargin: '200px' })
+    seen.observe(el)
+    return () => ((alive = false), seen.disconnect())
+  }, [uri])
+  if (own) return own
+  if (!uri) return null
+  return art?.uri === uri ? art.url : (covers?.known(uri) ?? null)
+}
+
+// a small picture (the card's Up next rows) with the same fallback
+function Thumb({ s, className }) {
+  const ref = useRef(null)
+  const art = useArt(s, ref)
+  return <img ref={ref} src={art ?? undefined} alt="" className={className} />
+}
+
 function Cover({ song, size = 'w-24 h-24', on, children }) {
-  const art = thumbOf(song)
+  const art = useArt(song)
   return (
     <span className={`relative shrink-0 ${size} rounded-2xl overflow-hidden border border-white/10 shadow-xl bg-lofi-surface flex items-center justify-center`}>
       {art ? <img src={art} alt="" className={`w-full h-full object-cover ${on ? '' : 'saturate-75 opacity-80'}`} /> : <i className="fa-solid fa-music text-2xl text-lofi-primary/60" aria-hidden="true" />}
@@ -1159,6 +1195,7 @@ export function PlayerPanel({ p, owner, vol }) {
   }, [playing])
 
   const song = p.revoked || p.off ? null : p.state?.song
+  const art = useArt(song) // (the blurred backdrop: also a Spotify song's fetched cover)
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
   const list = cardList({ song, items, recent })
@@ -1204,7 +1241,7 @@ export function PlayerPanel({ p, owner, vol }) {
   const line = err ?? p.note ?? (info.why ? <span className="text-lofi-highlight">{info.why}</span> : null) ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
   return (
     <>
-      {song && <img src={thumbOf(song)} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
+      {song && art && <img src={art} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
 
       <div className="relative flex gap-4 min-w-0">
         <Cover song={song} on={playing} />
@@ -1318,7 +1355,7 @@ export function PlayerPanel({ p, owner, vol }) {
           <ul>
             {list.rows.map((s) => (
               <li key={s.id} data-flip-key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
-                <img src={thumbOf(s) ?? undefined} alt="" className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
+                <Thumb s={s} className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
                 <span className="text-white/80 truncate" title={plain(s.title)}>
                   {plain(s.title)}
                 </span>
@@ -1355,11 +1392,13 @@ function EqBars() {
 // a song in a list: (a drag handle), thumbnail, title, a second line, then the row's buttons. stack: on phones the
 // buttons get a line of their own (search results: room for their words)
 function SongRow({ s, sub, on, picked, lead, stack, lifted, className = '', children, ...rest }) {
+  const img = useRef(null)
+  const art = useArt(s, img)
   const look = lifted ? 'relative z-10 bg-lofi-surface border-lofi-primary/60 shadow-2xl opacity-95' : on ? 'bg-lofi-primary/15 border-lofi-primary/40' : picked ? 'bg-red-500/10 border-red-400/40' : 'border-white/5 bg-lofi-base/40'
   return (
     <li {...rest} className={`flex items-center gap-2 rounded-xl p-1.5 pr-2 border ${stack ? 'max-sm:flex-wrap' : ''} ${look} ${className}`}>
       {lead}
-      <img src={thumbOf(s) ?? s.coverThumbnail ?? undefined} alt="" className="w-12 h-7 sm:w-16 sm:h-9 rounded-md object-cover shrink-0 bg-lofi-surface" />
+      <img ref={img} src={art ?? undefined} alt="" className="w-12 h-7 sm:w-16 sm:h-9 rounded-md object-cover shrink-0 bg-lofi-surface" />
       <span className="min-w-0 flex-1">
         <SongTitle text={fullTitle(s)} />
         {sub && <span className="block text-[10px] text-lofi-muted truncate">{sub}</span>}
