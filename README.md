@@ -11,22 +11,20 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
   the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
   Some scenes have a **day** version that plays from sunrise to sunset at the Weather card's location (see [Scenes](#scenes)).
-- **Mini window**: ⧉ (bottom right, under ⚙️) opens a picture-in-picture window that floats over other apps: the scene
-  as it plays (pixel-sharp, with the dim, theme, Scene weather and day / night as on the page), the clock, the date and
-  the weather (Settings › Mini window). It follows setting changes live and keeps running in a background tab; ⧉ again
-  or the window's ✕ closes it. Chrome, Edge, Safari (no button in Firefox, which has no video picture-in-picture).
-  From a static scene host it needs `SCENES_CORS=1` (see [Scenes](#scenes)), else it shows the clock over a night sky.
+- **Dock** (bottom right): on the dashboard ⛰ Ambient (**H**), 🔒 Lock (**L**) and ⚙️ Settings; in Ambient 👁 Show
+  panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as
+  on a phone).
 - **Ambient, Lock**: two ways to see just the scene, each with one job.
 
   | | when | shows | back with |
   | --- | --- | --- | --- |
-  | **Ambient** (just the scene, music at hand) | ⛰ (bottom right), **H**, or by itself after Settings › Ambient after N s without input | scene + a slim bar (the music that plays: radio, Spotify or the Player, weather, time, server, 👁, 🔒). After 5 s without input the bar fades, leaving the scene, or the scene + a big clock (Settings › When the bar fades); any input brings the bar back, and only that (the tap, key or wheel that wakes it doesn't also press anything) | 👁 in the bar, **Esc**, **H**, or a tap / click on the bare scene while the bar shows |
-  | **Lock** (I'm away, hands off) | 🔒 (bottom right or in the bar), **L** or **Space ×3** quickly (Ambient never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
+  | **Ambient** (just the scene, music at hand) | ⛰ (bottom right), **H**, or by itself after Settings › Ambient after N s without input | scene + a slim bar (the music that plays: radio, Spotify or the Player, sounds, weather, time, server) + the dock (👁, 🔒). After 5 s without input the bar and the dock fade, leaving the scene, or the scene + a big clock (Settings › When the bar fades); any input brings them back, and only that (the tap, key or wheel that wakes them doesn't also press anything) | 👁 on the dock, **Esc**, **H**, or a tap / click on the bare scene while the bar shows |
+  | **Lock** (I'm away, hands off) | 🔒 (on the dock, bottom right), **L** or **Space ×3** quickly (Ambient never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
 
   The lock has its own look (Settings › Lock screen, or 🎨 top right on the lock screen); Ambient's clock keeps the plain one.
   🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere (other keys, like
   Alt+Tab, don't wake it). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake Ambient's bar either, and the
-  bar stays while the mouse rests on it or the keyboard is in it. Ambient never comes on by itself while locked, with a
+  bar and the dock stay while the mouse rests on one of them or the keyboard is in it. Ambient never comes on by itself while locked, with a
   dialog or dropdown open, or with text typed in a field. You always come back to where you were (dashboard or Ambient). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
@@ -87,8 +85,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
     (asks first, like Reset all).
   The picked tab is filled; a dot on a tab means that source is playing (Player: the station plays on Tavarian).
 - **Sounds** (`app/sounds.js`, `lib/sounds.js`, `lib/sound-engine.js`): an ambient-sound mixer for everyone, under
-  whatever music plays (it never pauses the radio, the Player or Spotify, and has its own volume). 〰 (bottom right,
-  under ⛰) or **A** opens it: a tile per sound (tap: on / off, slider: its level), presets (Rainy café, Cozy fireplace,
+  whatever music plays (it never pauses the radio, the Player or Spotify, and has its own volume). A slim **Sounds row**
+  at the bottom of the music card (under every tab) shows what's on (the preset, the sounds that are on, or Off), with
+  ▶ / ⏸ for the sounds and a button that opens the panel; **A** opens it too: a tile per sound (tap: on / off, slider: its level), presets (Rainy café, Cozy fireplace,
   Storm night, Seaside, Deep focus), ▶ / ⏸, volume with mute, a sleep timer (15–90 min, then a slow fade out) and Reset.
   Rain, Wind, Brown noise, Fireplace and Ocean are **generated in the browser** (Web Audio, no files): noise beds and
   pre-rendered drop / crackle loops that loop seamlessly, shaped by filters and slow random envelopes (gusts, swells)
@@ -125,7 +124,7 @@ Sites (the Hub turns compact in the narrow column). A long group like All scroll
 
 ## Settings
 
-⚙️ (bottom right, under ⛰ and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
+⚙️ (on the dock, bottom right, under ⛰ and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
 (`home-lofi:settings`); **Reset all** goes back to the defaults, after a confirm (Cancel is focused, *Yes, reset* wakes after a moment, and the question gives up after 8 s). For visitors nothing is sent to the server.
 The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 
@@ -140,8 +139,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Ambient after / When the bar fades | Ambient after 30 s – 5 min without input (Off: only by hand, ⛰ or H); when its bar fades, show the scene only, or the scene + a big clock. The input that brings the bar back never presses anything (its click is swallowed, and the bar ignores the pointer for 0.4 s); the panels ignore the pointer for 0.4 s after they come back from Ambient or the lock, and the page doesn't scroll while they fade in; it never locks |
-| Sounds | in its own panel (〰 / A): the mix (each sound's on / off and level), volume and sleep timer. Synced like the rest; whether sounds play right now isn't |
-| Mini window | Weather Show / Hide · Date Show / Hide (under the ⧉ mini window's clock; changes show in an open one right away) |
+| Sounds | in its own panel (the music card's Sounds row / A): the mix (each sound's on / off and level), volume and sleep timer. Synced like the rest; whether sounds play right now isn't |
 | Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, the Player's listen / stop for anyone and ⏭ for the owner, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
@@ -172,7 +170,6 @@ Change it for your own domain.
 | --- | --- | --- |
 | `GATE_SECRET` | required, ≥ 16 chars | `/api/private` (see below) |
 | `SCENES_URL` | empty = `/scenes` (`public/scenes`) | where scene videos load from, e.g. a static host; **build-time** (rebuild after changing). The Docker image has no scenes, see [Scenes](#scenes) |
-| `SCENES_CORS` | empty | `1` = the `SCENES_URL` host sends `Access-Control-Allow-Origin`, so the mini window can draw the scene; **build-time**. Don't set it without the header: every scene would fail to load |
 | `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
@@ -447,9 +444,7 @@ The scene videos are not in this repository: they are large, and the art is
 **not** contain scenes (`.dockerignore` skips `public/scenes/`), so images stay small and nothing is copied per deploy.
 Upload to e.g. `https://static.example.com/scenes/` and set `SCENES_URL` to that before `docker compose up -d --build`.
 The server must answer byte-range requests (HTTP 206), which any normal web server does. A long `Cache-Control` on that
-path helps. For the ⧉ mini window to show the scene, the host must also send `Access-Control-Allow-Origin` (e.g. `*`, or
-your dashboard's origin; nginx: `add_header Access-Control-Allow-Origin * always;`) and the build needs `SCENES_CORS=1`:
-the page can't read pixels from another origin without it (scenes served from `/scenes` need nothing).
+path helps.
 
 Optional: to serve them from the app itself instead, leave `SCENES_URL` empty and mount the folder into the container
 with your own compose override (not in the default compose files):

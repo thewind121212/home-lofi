@@ -2,14 +2,14 @@
 
 // Sounds: the ambient-sound mixer (rain, wind, brown noise, a fireplace, the sea) for everyone, under whatever music
 // plays. The rules and the raw sound live in lib/sounds.js, the Web Audio graph in lib/sound-engine.js; this is the
-// hook that runs it for the page, the panel (the dock's 〰 button / A) and the little mute chip on Ambient's bar and the
-// lock screen. Sounds never touch the radio, the home station or Spotify: their own graph, their own volume.
+// hook that runs it for the page, the panel (A, or the music card's Sounds row), that row, and the little mute chip on
+// Ambient's bar and the lock screen. Sounds never touch the radio, the home station or Spotify: their own graph, their own volume.
 // On a phone they play on like music with the screen locked (lib/sounds.js soundsMedia: a playback audio session and a
 // quiet <audio> loop next to the graph), with their own title and ⏯ on the lock screen when no music of the page plays.
 import { useEffect, useRef, useState } from 'react'
 import {
   PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, loopEvent, loopPlan, minutesLeft, mixPlan, presetOf, quietWav,
-  setLayer, shownLayers, soundsLabel, soundsMedia, timerEnd,
+  setLayer, shownLayers, soundsLabel, soundsLine, soundsMedia, timerEnd,
 } from '../lib/sounds'
 import { SLEEP_TAU, TAU, buildVoice, createEngine, loadFile, pump, ramp } from '../lib/sound-engine'
 import { claimMediaSession, mediaSessionOwner } from './radio'
@@ -453,5 +453,37 @@ export function SoundsChip({ snd, mix, className = '' }) {
       <span className="max-sm:hidden text-xs">Sounds</span>
       <i className={`fa-solid ${snd.muted ? 'fa-volume-xmark' : 'fa-volume-high'} text-[10px] text-lofi-muted`} aria-hidden="true" />
     </button>
+  )
+}
+
+// The music card's Sounds row, under every tab: 〰, what's on (the preset, the sounds that are on, or Off), ▶ / ⏸ for the
+// sounds, and the panel. The same useSounds state as the panel and the chips, so they all move together (and a mix
+// changed on another device shows here too). ▶ with nothing switched on opens the panel to pick some.
+export function SoundsRow({ snd, mix, onOpen }) {
+  const { label, state } = soundsLine(mix, snd)
+  const play = () => (snd.playing ? snd.stop() : state === 'off' ? onOpen() : snd.start())
+  const note = { paused: 'paused', muted: 'muted' }[state]
+  const btn = 'w-7 h-7 shrink-0 rounded-full flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  return (
+    <div role="group" aria-label="Sounds" className="h-8 pl-3 pr-0.5 rounded-full bg-lofi-base/40 border border-white/5 flex items-center gap-2 min-w-0 font-mono text-[11px]">
+      <i className={`fa-solid fa-wave-square text-[11px] shrink-0 ${state === 'playing' ? 'text-lofi-primary motion-safe:animate-pulse' : 'text-lofi-muted'}`} aria-hidden="true" />
+      <p className="min-w-0 flex-1 truncate" aria-live="polite" title={note ? `Sounds: ${label} (${note})` : `Sounds: ${label}`}>
+        <span className="text-lofi-muted">Sounds · </span>
+        <span className={state === 'playing' ? 'text-white' : 'text-lofi-text'}>{label}</span>
+        {note && <span className="text-lofi-muted"> · {note}</span>}
+      </p>
+      <button
+        onClick={play}
+        disabled={state === 'unsupported'}
+        aria-label={snd.playing ? 'Pause sounds' : state === 'off' ? 'Play sounds: pick some first' : `Play sounds (${label})`}
+        title={snd.playing ? 'Pause sounds' : state === 'off' ? 'Pick sounds' : 'Play sounds'}
+        className={`${btn} ${snd.playing ? 'bg-lofi-primary text-lofi-base hover:brightness-110' : 'bg-lofi-primary/15 text-lofi-primary hover:bg-lofi-primary/25'}`}
+      >
+        <i className={`fa-solid ${snd.playing ? 'fa-pause' : 'fa-play ml-px'} text-[10px]`} aria-hidden="true" />
+      </button>
+      <button onClick={onOpen} aria-haspopup="dialog" aria-label="Open Sounds (A)" title="Sounds: rain, wind, fire… under the music (A)" className={`${btn} text-lofi-muted hover:text-white hover:bg-white/5`}>
+        <i className="fa-solid fa-sliders text-[11px]" aria-hidden="true" />
+      </button>
+    </div>
   )
 }
