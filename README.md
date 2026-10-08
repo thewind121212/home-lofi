@@ -186,8 +186,10 @@ Each machine runs the small agent in [`agent/`](agent/) (a busybox container, ~1
 HTTP basic auth). On that machine (needs Docker):
 
 ```bash
-curl -fsSL https://static.wliafdew.dev/public/tools/host-agent/install.sh | bash
+curl -fsSL https://static.wliafdew.dev/tools/host-agent/install.sh | bash
 ```
+
+(`/tools/` on static is LAN-only: the internet only reaches `/public/`. Run it from a machine on the home network.)
 
 It prints a line like `{"name":"debian","url":"http://10.10.0.50:9101/stats.json","token":"..."}`.
 Put those lines in a JSON list in `HOST_AGENTS` (Coolify > Environment Variables), e.g.
