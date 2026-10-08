@@ -8,7 +8,7 @@
 //   swaps the source; paused / idle / loading on Tavarian lets the element go, and it comes back by itself when the
 //   station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
 // - PlayerPanel (the tab), PlayerSheet (a <dialog> like Settings: queue, recent, and for the owner: Add — Search or
-//   link · Import playlist —, playlists, the Tavarian link) and PlayerMini (Hide bar and lock screen). Guests listen and watch; the owner's
+//   link · Import playlist —, playlists, the Tavarian link) and PlayerMini (ambient bar and lock screen). Guests listen and watch; the owner's
 //   buttons post to /api/private/settings/tavarian, lock while it's in flight and spin until a state shows the change.
 // - useOwnerOps(): the owner's queue actions (Play now / next, remove, remove selected, clear, drag reorder, add,
 //   import) with Undo for 5 s
@@ -2214,7 +2214,7 @@ function LinkRow({ p }) {
   )
 }
 
-// The Hide bar ("bar") and lock screen ("lock") piece: listen / stop for everyone, the cover and title, ⏭ for the
+// The ambient bar ("bar") and lock screen ("lock") piece: listen / stop for everyone, the cover and title, ⏭ for the
 // owner. eq: the bar's equalizer (from MiniPlayer, so both sources look the same)
 export function PlayerMini({ p, owner, lock, box, eq }) {
   const mounted = useMounted()

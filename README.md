@@ -16,18 +16,18 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   the weather (Settings › Mini window). It follows setting changes live and keeps running in a background tab; ⧉ again
   or the window's ✕ closes it. Chrome, Edge, Safari (no button in Firefox, which has no video picture-in-picture).
   From a static scene host it needs `SCENES_CORS=1` (see [Scenes](#scenes)), else it shows the clock over a night sky.
-- **Hide, Screensaver, Lock**: three ways to see just the scene, each with one job.
+- **Ambient, Lock**: two ways to see just the scene, each with one job.
 
   | | when | shows | back with |
   | --- | --- | --- | --- |
-  | **Hide** (I'm still here) | 👁 (bottom right) or **H** | scene + a mini bar (the music that plays: radio, Spotify or the Player, weather, time, server, 🔒) | 👁 in the bar, **Esc** or **H** |
-  | **Screensaver** (I'm away) | Settings › Screensaver after N s without input | scene (+ big clock), "move to wake" for a moment | any input |
-  | **Lock** (I'm away, hands off) | 🔒 (bottom right), **L** or **Space ×3** quickly (the screensaver never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
+  | **Ambient** (just the scene, music at hand) | ⛰ (bottom right), **H**, or by itself after Settings › Ambient after N s without input | scene + a slim bar (the music that plays: radio, Spotify or the Player, weather, time, server, 👁, 🔒). After 5 s without input the bar fades, leaving the scene, or the scene + a big clock (Settings › When the bar fades); any input brings the bar back, and only that (the tap, key or wheel that wakes it doesn't also press anything) | 👁 in the bar, **Esc**, **H**, or a tap / click on the bare scene while the bar shows |
+  | **Lock** (I'm away, hands off) | 🔒 (bottom right or in the bar), **L** or **Space ×3** quickly (Ambient never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
 
-  The lock has its own look (Settings › Lock screen, or 🎨 top right on the lock screen); the screensaver keeps the plain one.
+  The lock has its own look (Settings › Lock screen, or 🎨 top right on the lock screen); Ambient's clock keeps the plain one.
   🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere (other keys, like
-  Alt+Tab, don't wake it). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake the screensaver either.
-  You always come back to where you were (dashboard or Hide). The lock isn't saved: a reload opens unlocked
+  Alt+Tab, don't wake it). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake Ambient's bar either, and the
+  bar stays while the mouse rests on it or the keyboard is in it. Ambient never comes on by itself while locked, with a
+  dialog or dropdown open, or with text typed in a field. You always come back to where you were (dashboard or Ambient). The lock isn't saved: a reload opens unlocked
   (a screen-saver lock, not security).
 - **Music**: one card, three tabs (it opens on the last one picked in this browser; switching never stops the radio):
   - **Radio** (`app/radio.js`): 30 chill stations in 7 moods (focus, chill, jazz & café, piano & classical, Asia,
@@ -106,7 +106,7 @@ Sites (the Hub turns compact in the narrow column). A long group like All scroll
 
 ## Settings
 
-⚙️ (bottom right, under 👁 and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
+⚙️ (bottom right, under ⛰ and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
 (`home-lofi:settings`); **Reset all** goes back to the defaults, after a confirm (Cancel is focused, *Yes, reset* wakes after a moment, and the question gives up after 8 s). For visitors nothing is sent to the server.
 The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 
@@ -117,10 +117,10 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | On load | Keep the last scene, or a Random one each visit |
 | Scene weather | moved to the scene picker: Signature (default), Live, Clear, Drizzle, Rain, Storm, Snow, Leaves (see [Scenes](#scenes)); a line under it says what Live follows, or when a variant isn't there yet |
 | Dim scene | 0–100: more scene ↔ more readable panels (50 = default) |
-| Clock | 24h / 12h (header and screensaver / lock clock) |
+| Clock | 24h / 12h (header, Ambient and lock clock) |
 | Temperature | °C / °F (converted in the browser) |
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
-| Screensaver after / Show | after 30 s – 5 min without input, fade the panels away and show the scene only, or the scene + a big clock. Any input brings them back (the tap that wakes it never opens a card: its click is swallowed, and the panels ignore the pointer for 0.4 s after they come back from the screensaver, the lock or Hide); it never locks |
+| Ambient after / When the bar fades | Ambient after 30 s – 5 min without input (Off: only by hand, ⛰ or H); when its bar fades, show the scene only, or the scene + a big clock. The input that brings the bar back never presses anything (its click is swallowed, and the bar ignores the pointer for 0.4 s); the panels ignore the pointer for 0.4 s after they come back from Ambient or the lock, and the page doesn't scroll while they fade in; it never locks |
 | Mini window | Weather Show / Hide · Date Show / Hide (under the ⧉ mini window's clock; changes show in an open one right away) |
 | Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, the Player's listen / stop for anyone and ⏭ for the owner, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
