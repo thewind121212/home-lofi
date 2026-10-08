@@ -17,7 +17,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
   placedText, placementIcon, placementLabel, plain, playlistUrl, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
-  thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
+  songLink, thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
 import { closeDialog, motionOff } from './settings'
@@ -1396,9 +1396,11 @@ const ago = (iso) => {
 // Play now / Play next / Add for a YouTube song (a search result, a recent one). One already queued is played /
 // moved from its place instead of added twice.
 function PlaceBtns({ s, p, ops, short }) {
-  const url = s.youtubeUrl ?? videoUrl(s.youtubeId)
-  const queued = (p.queue?.items ?? []).find((x) => x.youtubeId === s.youtubeId)
-  const current = p.state?.song?.youtubeId === s.youtubeId && p.state?.status !== 'idle'
+  const url = songLink(s)
+  // the same song: by its Spotify track when it has no video (a Spotify search result, a Spotify-only song), else by video
+  const same = (x) => Boolean(x) && (s.youtubeId ? x.youtubeId === s.youtubeId : Boolean(s.spotifyUri) && x.spotifyUri === s.spotifyUri)
+  const queued = (p.queue?.items ?? []).find(same)
+  const current = same(p.state?.song) && p.state?.status !== 'idle'
   const t = plain(s.title)
   const lock = ops.busy != null
   return (
@@ -1540,7 +1542,7 @@ export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
               <SongList empty="Nothing played yet">
                 {recent.map((s) => (
                   <SongRow key={s.id} s={s} sub={[s.durationSeconds > 0 && mmss(s.durationSeconds), s.status === 'failed' ? `couldn't play${s.failReason ? `: ${reasonText(s.failReason)}` : ''}` : s.playedAt && ago(s.playedAt)].filter(Boolean).join(' · ')}>
-                    {owner && s.youtubeId && <PlaceBtns s={s} p={p} ops={ops} short />}
+                    {owner && songLink(s) && <PlaceBtns s={s} p={p} ops={ops} short />}
                   </SongRow>
                 ))}
               </SongList>
@@ -1773,10 +1775,14 @@ function ClearQuestion({ n, playing, onCancel, onClear }) {
 }
 
 // ---- Add: Search ----
+// Search: YouTube, or Spotify (real artists, albums and covers; the exact track is added) — by default the station's
+// own (Spotify while it plays from Spotify and Tavarian can search it), switchable here
 function SearchView({ p, ops, seed, go }) {
   const [text, setText] = useState(seed)
   const [results, setResults] = useState(null)
   const [searching, setSearching] = useState(false)
+  const [want, setWant] = useState(null) // 'youtube' | 'spotify' picked here, else null (the station's)
+  const [got, setGot] = useState(null) // where the results came from
   const input = useRef(null)
   const q = text.trim()
   const k = classifyLink(q)
@@ -1787,19 +1793,35 @@ function SearchView({ p, ops, seed, go }) {
     let alive = true
     setSearching(true)
     const t = setTimeout(async () => {
-      const r = await tavarianPost({ action: 'search', q })
+      const r = await tavarianPost({ action: 'search', q, ...(want && { source: want }) })
       if (!alive) return
       setSearching(false)
-      if (r.ok) setResults(r.data.results ?? [])
+      if (r.ok) setResults(r.data.results ?? []), setGot(r.data.source ?? null)
       else setResults([]), ops.say(r.error, true)
     }, 500)
     return () => ((alive = false), clearTimeout(t))
-  }, [q, link])
+  }, [q, link, want])
+  const from = want ?? got
   return (
     <>
       <form onSubmit={(e) => e.preventDefault()} className="mb-3">
-        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search YouTube or paste a link" placeholder="Search, or paste a link" paste />
+        <TextBox inputRef={input} value={text} onChange={setText} icon="fa-magnifying-glass" label="Search YouTube or Spotify, or paste a link" placeholder="Search, or paste a link" paste />
       </form>
+      {!link && (
+        <div role="radiogroup" aria-label="Search on" className="mb-3 flex items-center gap-1.5 text-[11px] font-mono">
+          {[['youtube', 'YouTube', 'fa-youtube'], ['spotify', 'Spotify', 'fa-spotify']].map(([id, name, icon]) => (
+            <button
+              key={id}
+              role="radio"
+              aria-checked={from === id}
+              onClick={() => setWant(id)}
+              className={`h-7 px-2.5 rounded-full border flex items-center gap-1.5 transition-colors ${from === id ? (id === 'spotify' ? 'bg-[#1db954] text-black border-[#1db954] font-bold' : 'bg-lofi-primary text-lofi-base border-lofi-primary font-bold') : 'border-white/10 text-lofi-muted hover:text-white'}`}
+            >
+              <i className={`fa-brands ${icon}`} aria-hidden="true" /> {name}
+            </button>
+          ))}
+        </div>
+      )}
       {link ? (
         <LinkBody k={k} p={p} ops={ops} onDone={() => setText('')} />
       ) : searching ? (
@@ -1809,13 +1831,13 @@ function SearchView({ p, ops, seed, go }) {
       ) : results ? (
         <SongList empty="Nothing found">
           {results.map((s) => (
-            <SongRow key={s.youtubeId} s={s} stack sub={[s.channel, s.durationSeconds > 0 ? mmss(s.durationSeconds) : 'live'].filter(Boolean).join(' · ')}>
+            <SongRow key={s.url ?? s.youtubeId} s={s} stack sub={[s.source === 'spotify' ? s.artist : s.channel, s.source === 'spotify' ? s.album : null, s.durationSeconds > 0 ? mmss(s.durationSeconds) : 'live'].filter(Boolean).join(' · ')}>
               <PlaceBtns s={s} p={p} ops={ops} />
             </SongRow>
           ))}
         </SongList>
       ) : (
-        <p className="text-xs text-lofi-muted text-center py-4 text-balance">Type 2 letters or more to search YouTube, or paste a YouTube or Spotify link.</p>
+        <p className="text-xs text-lofi-muted text-center py-4 text-balance">Type 2 letters or more to search {from === 'spotify' ? 'Spotify' : 'YouTube'}, or paste a YouTube or Spotify link.</p>
       )}
     </>
   )
