@@ -269,7 +269,8 @@ export default function Home() {
   }, [owner, invite, tvOn, tvPlaying, player.reachable, player.state, spotify])
   // the bar's ☰ (owner): back to the dashboard, the Player tab, its queue open (openQueue: when it was asked for)
   const [openQueue, setOpenQueue] = useState(0)
-  const showQueue = () => (leaveAmbient(), pickAudio('player'), setOpenQueue(Date.now()))
+  // (cleared once used, so a later remount of the Player tab doesn't open it unasked)
+  const showQueue = () => (leaveAmbient(), pickAudio('player'), setOpenQueue(Date.now()), setTimeout(() => setOpenQueue(0), 800))
   const mini = { source, tune, onRadio: () => music.current?.toggle(), sp: spotify, owner, onSpotify: applySpotify, station, info, player, onQueue: owner ? showQueue : undefined }
   const [wasOwner, setWasOwner] = useState(false)
   useEffect(() => {
