@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SETTINGS_KEY, parseSettings } from '../lib/settings'
-import { SYNC_KEYS, cleanDoc, merge } from '../lib/sync'
+import { SYNC_KEYS, cleanDoc, merge, takeKeys } from '../lib/sync'
 import { LIVE_BYE_MS, liveAction, liveRetryMs, liveWanted, newClientId } from '../lib/live'
 import { load, save } from './settings'
 
@@ -71,11 +71,7 @@ export function useCloudSync(apply, hold, keep) {
     let held = false
     const take = (remote) => {
       const local = localDoc()
-      // newer in the cloud, or the same stamp with a different value: changed here while signed out (those edits
-      // get no stamp and stay on this device), so signing in brings the cloud copy back
-      const changed = Object.keys(remote.t).filter(
-        (k) => remote.t[k] > (local.t[k] ?? 0) || (remote.t[k] === local.t[k] && JSON.stringify(remote.v[k]) !== JSON.stringify(local.v[k])),
-      )
+      const changed = takeKeys(remote, local) // (lib/sync.js: newer in the cloud, current keys only)
       const dlg = hold.current
       if (changed.length && dlg?.open) {
         if (!held) dlg.addEventListener('close', () => ((held = false), request('GET')), { once: true })

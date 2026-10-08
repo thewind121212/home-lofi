@@ -9,9 +9,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # scene video host, inlined into the client bundle at build time ('' -> /scenes in public/)
 ARG NEXT_PUBLIC_SCENES_URL=
 ENV NEXT_PUBLIC_SCENES_URL=$NEXT_PUBLIC_SCENES_URL
-# 1 = that host sends Access-Control-Allow-Origin, so the mini window can draw the scene (lib/data.js)
-ARG NEXT_PUBLIC_SCENES_CORS=
-ENV NEXT_PUBLIC_SCENES_CORS=$NEXT_PUBLIC_SCENES_CORS
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

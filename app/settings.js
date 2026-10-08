@@ -300,17 +300,6 @@ export function Settings({ dlg, set, update, reset, sync }) {
           <LockLook set={set} update={update} />
         </section>
 
-        <section className="flex flex-col gap-4 pt-4 border-t border-white/5" aria-labelledby="mini-title">
-          <h3 id="mini-title" className="text-sm font-medium text-white flex items-center gap-2">
-            <i className="fa-solid fa-clone text-lofi-primary text-xs" aria-hidden="true" /> Mini window
-          </h3>
-          {/* what the ⧉ picture-in-picture window shows under its clock */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-6">
-            {radio('miniWeather', 'Weather', [[true, 'Show'], [false, 'Hide']])}
-            {radio('miniDate', 'Date', [[true, 'Show'], [false, 'Hide']])}
-          </div>
-        </section>
-
         {synced && <StationBackend dlg={dlg} />}
 
         <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">

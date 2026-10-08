@@ -24,6 +24,7 @@ import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './r
 import { closeDialog, motionOff } from './settings'
 import { settleFlip, useFlip } from './flip'
 import { coverCache } from '../lib/spotify-cover'
+import { lazyWatcher, scrollRoot } from '../lib/lazy'
 import { flipSig } from '../lib/flip'
 
 const POLL_MS = 5000 // fallback polling of /api/tavarian/state
@@ -1114,7 +1115,8 @@ function SongTitle({ text }) {
 // ---- pieces ----
 // A song's picture: thumbOf (its YouTube thumbnail or Spotify cover), else — a Spotify song Tavarian has no cover for
 // (from a Spotify-made playlist) — its cover from Spotify's oEmbed (lib/spotify-cover.js), asked for once the element
-// is on screen (ref; no ref = at once)
+// comes within LAZY_MARGIN of being seen in the box that scrolls it (lib/lazy.js: the Player sheet's list, else the
+// page), so a flick down the queue finds its covers there already (ref; no ref = at once)
 const COVERS_KEY = 'home-lofi:spotify-covers'
 const covers =
   typeof window === 'undefined'
@@ -1127,6 +1129,8 @@ const covers =
       })
 // (covers found just before the tab goes away are saved now, not lost with the pending write)
 if (covers) addEventListener('pagehide', () => covers.flush())
+// one IntersectionObserver per scroll box, shared by its rows
+const nearby = typeof IntersectionObserver === 'undefined' ? null : lazyWatcher({ IO: IntersectionObserver })
 function useArt(song, ref) {
   const own = thumbOf(song) ?? song?.coverThumbnail ?? null
   const uri = !own ? (song?.spotifyUri ?? null) : null
@@ -1138,28 +1142,58 @@ function useArt(song, ref) {
     let alive = true
     const ask = () => covers.cover(uri).then((url) => alive && setArt({ uri, url }))
     const el = ref?.current
-    if (!el || typeof IntersectionObserver === 'undefined') return ask(), () => (alive = false)
-    const seen = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && (seen.disconnect(), ask()), { rootMargin: '200px' })
-    seen.observe(el)
-    return () => ((alive = false), seen.disconnect())
+    if (!el || !nearby) return ask(), () => (alive = false)
+    const stop = nearby(el, scrollRoot(el), ask)
+    return () => ((alive = false), stop())
   }, [uri])
   if (own) return own
   if (!uri) return null
   return art?.uri === uri ? art.url : (covers?.known(uri) ?? null)
 }
 
-// a small picture (the card's Up next rows) with the same fallback
+// A picture that fades in once it has loaded (instead of painting in top to bottom, or popping in), decoded off the
+// main thread. One already loaded (the browser's cache) shows at once; one that fails stays invisible, leaving whatever
+// sits behind it (a placeholder box). lazy: let the browser hold it back until it's near (long lists). Reduced motion:
+// no fade (the global rule in globals.css). The opacity is inline so it wins over the caller's own opacity classes.
+function FadeImg({ src, lazy, className = '', ...rest }) {
+  const el = useRef(null)
+  const [done, setDone] = useState(null) // the src that has loaded
+  useLayoutEffect(() => {
+    const i = el.current
+    if (i?.complete && i.naturalWidth) setDone(src)
+  }, [src])
+  return (
+    <img
+      ref={el}
+      src={src}
+      alt=""
+      decoding="async"
+      loading={lazy ? 'lazy' : undefined}
+      onLoad={() => setDone(src)}
+      style={done === src ? undefined : { opacity: 0 }}
+      className={`${className} ${className.includes('transition') ? '' : 'transition-opacity duration-300 ease-out'}`}
+      {...rest}
+    />
+  )
+}
+
+// a small picture (the card's Up next rows) with the same fallback: the box (a placeholder until the picture is in)
+// is what's watched, the picture fades in inside it
 function Thumb({ s, className }) {
   const ref = useRef(null)
   const art = useArt(s, ref)
-  return <img ref={ref} src={art ?? undefined} alt="" className={className} />
+  return (
+    <span ref={ref} className={`block overflow-hidden ${className}`}>
+      {art && <FadeImg src={art} lazy className="w-full h-full object-cover" />}
+    </span>
+  )
 }
 
 function Cover({ song, size = 'w-24 h-24', on, children }) {
   const art = useArt(song)
   return (
     <span className={`relative shrink-0 ${size} rounded-2xl overflow-hidden border border-white/10 shadow-xl bg-lofi-surface flex items-center justify-center`}>
-      {art ? <img src={art} alt="" className={`w-full h-full object-cover ${on ? '' : 'saturate-75 opacity-80'}`} /> : <i className="fa-solid fa-music text-2xl text-lofi-primary/60" aria-hidden="true" />}
+      {art ? <FadeImg key={art} src={art} className={`w-full h-full object-cover ${on ? '' : 'saturate-75 opacity-80'}`} /> : <i className="fa-solid fa-music text-2xl text-lofi-primary/60" aria-hidden="true" />}
       {children}
     </span>
   )
@@ -1256,7 +1290,7 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
   const line = err ?? p.note ?? (info.why ? <span className="text-lofi-highlight">{info.why}</span> : null) ?? (tuning ? <><span className="sm:hidden" aria-hidden="true"><i className="fa-solid fa-spinner fa-spin" /></span><span className="max-sm:sr-only">Tuning in…</span></> : p.listening && p.phase === 'waiting' ? 'Listening: it plays as soon as the station does' : '')
   return (
     <>
-      {song && art && <img src={art} alt="" aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
+      {song && art && <FadeImg key={art} src={art} aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
 
       <div className="relative flex gap-4 min-w-0">
         <Cover song={song} on={playing} />
@@ -1413,7 +1447,9 @@ function SongRow({ s, sub, on, picked, lead, stack, lifted, className = '', chil
   return (
     <li {...rest} className={`flex items-center gap-2 rounded-xl p-1.5 pr-2 border ${stack ? 'max-sm:flex-wrap' : ''} ${look} ${className}`}>
       {lead}
-      <img ref={img} src={art ?? undefined} alt="" className="w-12 h-7 sm:w-16 sm:h-9 rounded-md object-cover shrink-0 bg-lofi-surface" />
+      <span ref={img} className="block w-12 h-7 sm:w-16 sm:h-9 rounded-md overflow-hidden shrink-0 bg-lofi-surface">
+        {art && <FadeImg src={art} lazy className="w-full h-full object-cover" />}
+      </span>
       <span className="min-w-0 flex-1">
         <SongTitle text={fullTitle(s)} />
         {sub && <span className="block text-[10px] text-lofi-muted truncate">{sub}</span>}
@@ -2316,7 +2352,7 @@ export function PlayerMini({ p, owner, lock, box, eq, onQueue }) {
       >
         <i className={`fa-solid text-xs ${STATION_ACTS.includes(ctl.busy) ? 'fa-spinner fa-spin' : main.icon}`} aria-hidden="true" />
       </button>
-      {mounted && song && art && <img src={art} alt="" className={`${lock ? 'w-11 h-11 rounded-xl' : 'max-sm:hidden w-8 h-8 rounded-lg'} object-cover shrink-0 ${p.state?.status === 'playing' ? '' : 'opacity-70'}`} />}
+      {mounted && song && art && <FadeImg key={art} src={art} className={`${lock ? 'w-11 h-11 rounded-xl' : 'max-sm:hidden w-8 h-8 rounded-lg'} object-cover shrink-0 ${p.state?.status === 'playing' ? '' : 'opacity-70'}`} />}
       <span className={`min-w-0 font-sans ${lock ? 'max-w-52' : 'max-sm:hidden max-w-40'}`}>
         <span className="block text-xs text-white truncate">{plain(song?.title) || 'Home station'}</span>
         <span className="block text-[11px] text-lofi-muted truncate">{p.state?.status === 'playing' ? 'Tavarian · home station' : status}</span>
