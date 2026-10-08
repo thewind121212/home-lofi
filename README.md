@@ -11,9 +11,12 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
   the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
   Some scenes have a **day** version that plays from sunrise to sunset at the Weather card's location (see [Scenes](#scenes)).
-- **Dock** (bottom right): on the dashboard ⛰ Ambient (**H**), 🔒 Lock (**L**) and ⚙️ Settings; in Ambient 👁 Show
-  panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as
-  on a phone).
+- **Dock** (bottom right): on the dashboard ⛰ Ambient (**H**), 🔒 Lock (**L**), ⛶ Full screen (**F**) and ⚙️ Settings;
+  in Ambient 👁 Show panels, 🔒 Lock and ⛶, fading and coming back with Ambient's bar (and raised above the bar where the
+  two would meet, as on a phone).
+- **Full screen**: ⛶ on the dock, beside 🎨 on the lock screen, or **F** anywhere (also locked, where it never counts as
+  an unlock; not while typing or with a dialog open). The whole page through the Fullscreen API (webkit's on iPadOS);
+  no button where the browser has none (iPhone Safari). Going full screen doesn't wake Ambient's bar.
 - **Ambient, Lock**: two ways to see just the scene, each with one job.
 
   | | when | shows | back with |
@@ -22,7 +25,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   | **Lock** (I'm away, hands off) | 🔒 (on the dock, bottom right), **L** or **Space ×3** quickly (Ambient never locks) | scene + clock + weather + a breathing *swipe to unlock*, in its own look, + what's playing (Lock screen › Music) | **swiping up** anywhere (mouse or finger: far enough or a quick flick; a short one springs back), or **holding Space** ~1 s / **↑ five times**: a small bar fills in the hint's place (let go to empty it), and full, the lock slides away like a swipe |
 
   The lock has its own look (Settings › Lock screen, or 🎨 top right on the lock screen); Ambient's clock keeps the plain one.
-  🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere (other keys, like
+  🎨 (and ⛶ beside it) shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere (other keys, like
   Alt+Tab, don't wake it). Switching windows (Alt, Tab, Ctrl, Shift, Meta) doesn't wake Ambient's bar either, and the
   bar and the dock stay while the mouse rests on one of them or the keyboard is in it. Ambient never comes on by itself while locked, with a
   dialog or dropdown open, or with text typed in a field. You always come back to where you were (dashboard or Ambient). The lock isn't saved: a reload opens unlocked

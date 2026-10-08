@@ -14,6 +14,7 @@ import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../l
 import { useCloudSync } from './cloud'
 import { WAKE_GUARD_MS, eatNextClick, holdScroll } from '../lib/wake'
 import { ambientTick, ambientView, ambientWake, dockLift } from '../lib/ambient'
+import { FULLSCREEN_EVENTS, fullscreenApi, isFullscreenKey } from '../lib/fullscreen'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 import { SoundsChip, SoundsPanel, SoundsRow, useSounds } from './sounds'
 
@@ -308,12 +309,16 @@ export default function Home() {
   const barSettling = useSettling(view.bar === 'shown', false)
   // the dock ignores the pointer like what it came back with: the dashboard on the dashboard, the bar in Ambient
   const dockSettling = view.dockSet === 'ambient' ? barSettling : settling
-  const lift = useDockLift(view.dockSet === 'ambient', barRef, dockRef)
+  const [lift, liftMoves] = useDockLift(view.dockSet === 'ambient', barRef, dockRef)
+  const full = useFullscreen()
   useEffect(() => {
     // H toggles Ambient, L locks, A opens Sounds, Space three times quickly locks too (not while typing, not with a dialog
-    // open, not while locked; Space also not on a focused button / link / tab / slider, where it presses that control)
+    // open, not while locked; Space also not on a focused button / link / tab / slider, where it presses that control).
+    // F toggles full screen by the same rules, but on the lock screen too (lib/fullscreen.js: never an unlock)
     let spaces = [] // times of the last Space presses
     const onKey = (e) => {
+      const typing = Boolean(e.target.closest?.('input, textarea, select, [contenteditable="true"]'))
+      if (isFullscreenKey(e, { typing, dialog: Boolean(document.querySelector('dialog[open]')) })) return e.preventDefault(), fullscreenApi(document).toggle()
       const k = e.key.toLowerCase()
       const space = e.code === 'Space'
       if (k !== 'h' && k !== 'l' && k !== 'a' && !space) return
@@ -468,7 +473,7 @@ export default function Home() {
       </div>
 
       {softLock && (
-        <LockScreen onUnlock={unlock} set={set} update={update} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />}>
+        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />}>
           {(set.lockMusic !== 'hide' || snd.on) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
@@ -487,22 +492,24 @@ export default function Home() {
       {view.bar !== 'none' && (
         <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
-      {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⚙️ Settings. In Ambient (the dashboard is hidden,
-          so this is the way back, with Esc / H / the bare scene): 👁 Show panels and 🔒 Lock, fading and coming back
+      {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings. In Ambient (the
+          dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
           with the bar (lib/ambient.js), raised above the bar where the two would meet (a phone). Its own key per set:
           it fades in afresh when the set changes */}
       {view.dock !== 'none' && (
-        <Dock key={view.dockSet} calm={view.dock === 'faded'} settling={dockSettling} lift={lift} dockRef={dockRef} hover={view.dockSet === 'ambient' ? barHover : null}>
+        <Dock key={view.dockSet} calm={view.dock === 'faded'} settling={dockSettling} lift={lift} liftMoves={liftMoves} dockRef={dockRef} hover={view.dockSet === 'ambient' ? barHover : null}>
           {view.dockSet === 'dashboard' ? (
             <>
               <DockButton icon="fa-mountain-sun" label="Ambient (H)" title="Ambient: the scene, with music at hand (H)" onClick={enterAmbient} />
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
+              {full.ok && <DockButton {...fullButton(full)} />}
               <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
             </>
           ) : (
             <>
               <DockButton icon="fa-eye" label="Show panels" title="Show panels (Esc)" onClick={leaveAmbient} />
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
+              {full.ok && <DockButton {...fullButton(full)} />}
             </>
           )}
         </Dock>
@@ -555,9 +562,10 @@ function Clock({ now, clock, tick }) {
 
 // The floating buttons, bottom right (the dashboard's ⛰ / 🔒 / ⚙️, Ambient's 👁 / 🔒). calm: faded out with Ambient's
 // bar (and inert: no Tab into invisible buttons), mounted still so it fades back in; settling: just came back, it ignores
-// the pointer for a moment; lift: px to rise above Ambient's bar (useDockLift). hover: Ambient's "the mouse rests on the
+// the pointer for a moment; lift: px to rise above Ambient's bar (useDockLift), liftMoves: a change of it glides (not
+// the first one: the dock opens where it belongs). hover: Ambient's "the mouse rests on the
 // bar" ref, so resting on the dock keeps both (null on the dashboard, where nothing fades)
-function Dock({ calm, settling, lift, dockRef, hover, children }) {
+function Dock({ calm, settling, lift, liftMoves, dockRef, hover, children }) {
   return (
     <nav
       ref={dockRef}
@@ -566,7 +574,7 @@ function Dock({ calm, settling, lift, dockRef, hover, children }) {
       onPointerEnter={(e) => hover && e.pointerType !== 'touch' && (hover.current = true)}
       onPointerLeave={() => hover && (hover.current = false)}
       style={lift ? { transform: `translateY(-${lift}px)` } : undefined}
-      className={`fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 transition-[opacity,transform] duration-700 ${calm ? 'opacity-0 pointer-events-none' : 'motion-safe:animate-[fade-in_0.4s_ease-out]'} ${settling ? 'pointer-events-none' : ''}`}
+      className={`fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 ${liftMoves ? 'transition-[opacity,transform]' : 'transition-opacity'} duration-700 ${calm ? 'opacity-0 pointer-events-none' : 'motion-safe:animate-[fade-in_0.4s_ease-out]'} ${settling ? 'pointer-events-none' : ''}`}
     >
       {children}
     </nav>
@@ -575,24 +583,51 @@ function Dock({ calm, settling, lift, dockRef, hover, children }) {
 
 // In Ambient (on): how far the dock rises so it doesn't sit on the bar (lib/ambient.js dockLift), measured again when
 // the bar changes size (a title, the sounds chip coming and going) or the window does. 0 on the dashboard.
+// -> [lift, moves]: moves turns on a frame after the first lift is on screen, so only later changes glide (measuring
+// reads the layout, which fixes the dock's style without the lift: a transition on transform would slide it up then)
 // (offset* are the layout boxes, without transforms: the bar's entrance animation and the dock's own rise don't count;
 // both are position: fixed, so they're viewport coordinates)
 const layoutBox = (el) => ({ left: el.offsetLeft, top: el.offsetTop, right: el.offsetLeft + el.offsetWidth, bottom: el.offsetTop + el.offsetHeight })
 function useDockLift(on, barRef, dockRef) {
   const [lift, setLift] = useState(0)
+  const [moves, setMoves] = useState(false)
   useLayoutEffect(() => {
+    setMoves(false)
     if (!on) return setLift(0)
     const bar = barRef.current, dock = dockRef.current
     if (!bar || !dock) return
     const measure = () => setLift(dockLift(layoutBox(bar), layoutBox(dock)))
     measure()
+    const raf = requestAnimationFrame(() => setMoves(true))
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
     ro?.observe(bar)
     addEventListener('resize', measure)
-    return () => (ro?.disconnect(), removeEventListener('resize', measure))
+    return () => (cancelAnimationFrame(raf), ro?.disconnect(), removeEventListener('resize', measure))
   }, [on])
-  return lift
+  return [lift, moves]
 }
+
+// Full screen (lib/fullscreen.js): ok = this browser can (no button otherwise: an iPhone), on = the page is full screen
+// now (followed through the change events, so the browser's own Esc / ✕ shows too), toggle() from a click or F.
+// Going full screen only resizes the page: Ambient's clock counts real input, never a resize (the synthetic pointer moves
+// a layout change makes are ignored), so it doesn't wake a calm bar or keep Ambient from coming on.
+function useFullscreen() {
+  const [st, setSt] = useState({ ok: false, on: false })
+  useEffect(() => {
+    const api = fullscreenApi(document)
+    const sync = () => setSt({ ok: api.supported, on: api.active() })
+    sync()
+    FULLSCREEN_EVENTS.forEach((n) => document.addEventListener(n, sync))
+    return () => FULLSCREEN_EVENTS.forEach((n) => document.removeEventListener(n, sync))
+  }, [])
+  return { ...st, toggle: () => fullscreenApi(document).toggle() }
+}
+// ⛶ / its way back, for a DockButton or the lock screen's corner
+const fullButton = (full) => ({
+  icon: full.on ? 'fa-compress' : 'fa-expand',
+  label: full.on ? 'Exit full screen (F)' : 'Full screen (F)',
+  onClick: full.toggle,
+})
 
 // one of the dock's buttons
 function DockButton({ icon, label, title = label, onClick }) {
@@ -681,11 +716,12 @@ function WakeHint() {
 // Unlock: swipe up anywhere (mouse or finger): the screen follows, and far enough (or a quick flick) it slides away;
 // a short swipe springs back, so a bump, a cat or a stray key can't unlock. Or hold Space ~1 s, or press ↑ five times: a
 // small bar fills in place of the hint (letting go of Space, or 2 s without another ↑, empties it), and full, the
-// screen slides away like a swipe. 🎨 shows while the pointer is in the top right corner and for 3 s after a click / tap anywhere; other
-// keys (Alt+Tab to another window) and moving the mouse elsewhere don't wake anything.
+// screen slides away like a swipe. 🎨 (and ⛶ Full screen beside it, where the browser can) shows while the pointer is in
+// the top right corner and for 3 s after a click / tap anywhere; other keys (Alt+Tab to another window) and moving the
+// mouse elsewhere don't wake anything. full: Home's useFullscreen.
 const REST_MS = 3000
 const SPACE_MS = 1000
-function LockScreen({ onUnlock, set, update, screen, children }) {
+function LockScreen({ onUnlock, set, update, full, screen, children }) {
   const [dy, setDy] = useState(0) // how far the screen is pushed up, px
   const [held, setHeld] = useState(false) // a finger / the mouse or Space is moving it: no spring transition
   const [leaving, setLeaving] = useState(false)
@@ -802,6 +838,7 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
 
   const hover = (k, on) => (setOver((o) => ({ ...o, [k]: on })), on ? setAwake(true) : rest())
   const tools = awake || over.corner || look
+  const fb = full?.ok && fullButton(full)
   const dim = set.lockMusic === 'dim' && !awake && !over.music && !dy
   const p = Math.min(1, dy / goal())
   return (
@@ -820,12 +857,27 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
       {/* the clock screen (z-20: its blur and overlay cover the scene); the 🎨 corner and the bottom (music, unlock
           slider) sit above it (z-30), so the blur never blurs them */}
       {screen}
-      {/* 🎨 top right: comes with the pointer in the corner or a click / tap; its panel opens below it */}
+      {/* ⛶ and 🎨 top right: they come with the pointer in the corner or a click / tap; the look panel opens below them */}
       <div
         onPointerEnter={() => hover('corner', true)}
         onPointerLeave={() => hover('corner', false)}
-        className="absolute z-30 top-0 right-0 pl-20 pb-20 pt-[max(1rem,env(safe-area-inset-top))] pr-4 sm:pt-6 sm:pr-6"
+        className="absolute z-30 top-0 right-0 pl-20 pb-20 pt-[max(1rem,env(safe-area-inset-top))] pr-4 sm:pt-6 sm:pr-6 flex items-start gap-3"
       >
+        {fb && (
+          // never part of a swipe: the page resizing under a press that started here mustn't read as a push up
+          <button
+            onClick={fb.onClick}
+            aria-label={fb.label}
+            title={fb.label}
+            data-noswipe
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            className={`glass-panel w-12 h-12 rounded-full flex items-center justify-center text-lofi-text hover:text-lofi-primary transition-[opacity,translate,color] duration-500 ${tools ? 'opacity-100' : 'opacity-0 -translate-y-2 pointer-events-none'}`}
+          >
+            <i className={`fa-solid ${fb.icon} text-sm`} aria-hidden="true" />
+          </button>
+        )}
         <button
           onClick={() => setLook((v) => !v)}
           aria-label="Lock screen look"
