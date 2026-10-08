@@ -487,3 +487,12 @@ export function SoundsRow({ snd, mix, onOpen }) {
     </div>
   )
 }
+
+// Sounds' own small card, under the music card (its own section, the page's usual spacing): the Sounds row in a card
+export function SoundsCard({ snd, mix, onOpen }) {
+  return (
+    <section aria-label="Sounds" className="glass-panel rounded-3xl p-3">
+      <SoundsRow snd={snd} mix={mix} onOpen={onOpen} />
+    </section>
+  )
+}
