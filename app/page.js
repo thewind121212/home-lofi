@@ -7,7 +7,7 @@ import { STATIONS, stationById } from '../lib/stations'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
 import { PlayerMini, PlayerPanel, usePlayer } from './player'
 import { SP_LOCK_REST, autoTab, musicSource, spOn } from '../lib/player'
-import { pollCounts, volumeAnswer } from '../lib/spotify-volume'
+import { isStationDevice, pollCounts, volumeAnswer } from '../lib/spotify-volume'
 import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
@@ -2825,7 +2825,6 @@ function useSpotifyVolume(on) {
 // the volume row next to ⏮ ⏯ ⏭: the radio's grey slider + %, or a note where the device keeps its own volume. The
 // home station's Spotify player (go-librespot on Tavarian) ignores Spotify's volume on purpose: each listener sets
 // their own in the Player tab, so it gets a note instead of a slider that does nothing
-const isStationDevice = (name) => typeof name === 'string' && /tavarian/i.test(name)
 function SpVolume({ v }) {
   const { dev, level } = v
   if (isStationDevice(dev.name))
