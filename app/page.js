@@ -3197,6 +3197,13 @@ function Server({ d }) {
           <span>
             up {st.uptime == null ? '--' : dur(st.uptime)} · load {st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}
           </span>
+          {st.power && (
+            <span
+              title={`CPU ${st.power.cpu ?? '--'} W + RAM ${st.power.ram ?? '--'} W, measured by the CPU (10 s average). The whole PC at the wall uses more.`}
+            >
+              · <i className="fa-solid fa-bolt text-yellow-300" aria-hidden="true" /> {st.power.watts} W
+            </span>
+          )}
         </p>
       </div>
       {/* narrow: four across, no icons */}
