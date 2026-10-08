@@ -1275,7 +1275,7 @@ export function PlayerPanel({ p, owner, vol }) {
               onChange={(e) => vol.setLevel(Number(e.target.value))}
               aria-label="Volume on this device"
               title="Volume on this device"
-              className={`radio-volume vol-grey min-w-0 flex-1 ${owner ? 'max-sm:hidden' : ''}`}
+              className="radio-volume vol-grey min-w-0 flex-1"
               style={{ '--v': `${vol.muted ? 0 : vol.volume}%` }}
             />
             <span className={`w-8 shrink-0 text-right text-[10px] font-mono text-lofi-muted tabular-nums ${owner ? 'max-sm:hidden' : ''}`} aria-hidden="true">
@@ -1283,18 +1283,16 @@ export function PlayerPanel({ p, owner, vol }) {
             </span>
           </div>
         )}
-        {/* the owner's Add: "+ Add" on a phone (it takes the slider's room: mute stays, the phone's own buttons set the
-            volume); a round + from sm up, next to the slider */}
+        {/* the owner's Add: a round + next to the slider (on a phone too, so the slider keeps its room; the % hides there) */}
         {owner && (
           <button
             onClick={() => setSheet('search')}
             aria-haspopup="dialog"
             aria-label="Add songs (search, paste a link, import a playlist)"
             title="Add songs: search, paste a link, import a playlist"
-            className={`h-10 max-sm:px-3.5 sm:w-10 shrink-0 rounded-full border border-lofi-primary/50 bg-lofi-primary/15 text-lofi-primary font-bold text-sm flex items-center justify-center gap-1.5 hover:bg-lofi-primary hover:text-lofi-base transition-colors ${vol.fixedVolume ? 'ml-auto' : ''}`}
+            className={`h-10 w-10 shrink-0 rounded-full border border-lofi-primary/50 bg-lofi-primary/15 text-lofi-primary font-bold text-sm flex items-center justify-center hover:bg-lofi-primary hover:text-lofi-base transition-colors ${vol.fixedVolume ? 'ml-auto' : ''}`}
           >
             <i className={`fa-solid ${ops.importing ? 'fa-spinner fa-spin' : 'fa-plus'} text-sm`} aria-hidden="true" />
-            <span className="sm:hidden">Add</span>
           </button>
         )}
       </div>
