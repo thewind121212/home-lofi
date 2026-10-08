@@ -98,7 +98,7 @@ export function silentWav() {
   return `data:audio/wav;base64,${btoa(String.fromCharCode(...b))}`
 }
 
-// The player. `station` is the picked one (kept by the page, so the Hide bar and the lock screen show it too);
+// The player. `station` is the picked one (kept by the page, so the ambient bar and the lock screen show it too);
 // select(id) is called straight from a tap, so the first play happens inside that gesture (iOS needs it).
 export function useRadio({ station, info, onStation, onTune, host }) {
   const [status, setStatus] = useState('idle') // idle | loading | playing

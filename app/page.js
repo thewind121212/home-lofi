@@ -11,6 +11,7 @@ import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, pa
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
 import { WAKE_GUARD_MS, eatNextClick, holdScroll } from '../lib/wake'
+import { ambientTick, ambientView, ambientWake } from '../lib/ambient'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 
 // a browser with no saved location starts in Đà Lạt
@@ -43,8 +44,9 @@ function dimOverlay(dim) {
 }
 
 
-// keys that only switch windows or modify others: they never wake the screensaver
+// keys that only switch windows or modify others: they never count as someone being here (Ambient's timers)
 const QUIET_KEYS = new Set(['Alt', 'AltGraph', 'Control', 'Meta', 'OS', 'Shift', 'Tab', 'CapsLock'])
+const AMB_OFF = { ambient: false, calm: false }
 
 export default function Home() {
   const [now, setNow] = useState(null)
@@ -53,9 +55,19 @@ export default function Home() {
   const [sysReduced, setSysReduced] = useState(false)
   const set = settings ?? DEFAULTS
   const reduced = set.motion === 'reduce' || sysReduced
-  const [focus, setFocus] = useState(false)
-  const [idle, setIdle] = useState(false)
-  const idleRef = useRef(false)
+  // Ambient (lib/ambient.js): { ambient: false | 'hand' | 'auto', calm: the bar has faded }. The ref is for the input
+  // listeners and the 1 s timer below, which read it between renders; setAmb skips a re-render when nothing changed
+  const [amb, setAmbState] = useState(AMB_OFF)
+  const ambRef = useRef(AMB_OFF)
+  const setAmb = (next) => {
+    const a = ambRef.current
+    if (next.ambient === a.ambient && next.calm === a.calm) return
+    ambRef.current = next
+    setAmbState(next)
+  }
+  const lastInput = useRef(0) // when someone last moved, pressed, typed or scrolled (Date.now())
+  const barRef = useRef(null) // the ambient bar, and whether the mouse rests on it (it doesn't fade then)
+  const barHover = useRef(false)
   // Soft lock: the clock screen stays until the swipe to unlock is dragged across. In memory only, so a reload opens unlocked.
   const [softLock, setSoftLock] = useState(false)
   const lockRef = useRef(false)
@@ -103,8 +115,8 @@ export default function Home() {
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
   }, setDlg)
-  const music = useRef(null) // Music's { toggle, pause }, so the focus bar can drive the same player
-  const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the focus bar
+  const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
+  const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
   // A variant that failed to load falls back to the signature files for that scene.
   // ponytail: failures are remembered until reload, so variants uploaded later show up after a refresh
@@ -142,7 +154,7 @@ export default function Home() {
     document.documentElement.dataset.motion = st.motion === 'reduce' || mq.matches ? 'reduce' : ''
     setNow(new Date())
     const t = setInterval(() => setNow(new Date()), 1000)
-    const onKey = (e) => e.key === 'Escape' && !lockRef.current && setFocus(false)
+    const onKey = (e) => e.key === 'Escape' && !lockRef.current && leaveAmbient()
     addEventListener('keydown', onKey)
     return () => {
       clearInterval(t)
@@ -159,42 +171,45 @@ export default function Home() {
     if (v) reduced ? v.pause() : v.play().catch(() => {})
   }, [settings, reduced])
 
-  // Screensaver (Settings > Screensaver after): after N s without input the dashboard fades + blurs away (like Hide);
-  // any input brings it back. It never locks: only the 🔒 button / L do (the soft lock below).
-  // Never while a dialog or the location dropdown is open, or with text typed in a field.
+  // Ambient's clock (lib/ambient.js). Every input counts as someone being here; every second ambientTick() decides
+  // whether Ambient comes on by itself (Settings > Ambient after: never while locked, a dialog or the location dropdown
+  // is open, or text is typed in a field) and whether the bar fades (not while the mouse rests on it or the keyboard is
+  // in it). It never locks: only the 🔒 button / L do (the soft lock below).
+  // An input while calm only brings the bar back (ambientWake): it's swallowed, so it doesn't also act.
+  const afterRef = useRef(0)
+  afterRef.current = set.idle
   useEffect(() => {
-    if (!set.idle) return
-    let last = Date.now()
+    lastInput.current = Date.now()
     const busy = () => {
       const a = document.activeElement
-      return document.querySelector('dialog[open], [role="combobox"][aria-expanded="true"]') || (a?.matches('input[type="text"], input[type="search"], textarea') && a.value)
+      return Boolean(document.querySelector('dialog[open], [role="combobox"][aria-expanded="true"]') || (a?.matches('input[type="text"], input[type="search"], textarea') && a.value))
     }
-    const wake = (e) => {
+    const input = (e) => {
       if (e.type === 'pointermove' && !e.movementX && !e.movementY) return // synthetic moves from layout changes
-      if (e.type === 'keydown' && QUIET_KEYS.has(e.key)) return // Alt+Tab & co. to another window don't wake it
-      last = Date.now()
-      if (!idleRef.current) return
-      idleRef.current = false
-      setIdle(false)
-      // the waking key doesn't also act: not on a focused card (Enter), not on our own listeners (Esc would leave Hide)
+      if (e.type === 'keydown' && QUIET_KEYS.has(e.key)) return // Alt+Tab & co. to another window don't count
+      lastInput.current = Date.now()
+      const next = ambientWake({ ...ambRef.current, locked: lockRef.current })
+      if (!next) return
+      setAmb(next)
+      // the waking key doesn't also act: not on our own listeners (Esc / H would leave Ambient, L would lock)
       if (e.type === 'keydown') e.preventDefault(), e.stopPropagation()
-      // swallow the click that ends this tap/press, so it doesn't land on a card that just reappeared
+      // swallow the click that ends this tap/press, so it doesn't land on the bar that just came back, or on the bare
+      // scene (which would leave Ambient)
       if (e.type === 'pointerdown' || e.type === 'touchstart') eatNextClick(window, { from: e })
     }
     const events = ['pointermove', 'pointerdown', 'keydown', 'touchstart', 'wheel']
-    events.forEach((n) => addEventListener(n, wake, { capture: true, passive: n !== 'keydown' }))
+    events.forEach((n) => addEventListener(n, input, { capture: true, passive: n !== 'keydown' }))
     const t = setInterval(() => {
-      if (idleRef.current) return
-      if (lockRef.current) return void (last = Date.now())
-      if (busy()) last = Date.now()
-      else if (Date.now() - last >= set.idle * 1000) setIdle((idleRef.current = true))
+      if (lockRef.current) lastInput.current = Date.now() // locked time isn't time away: the lock has its own screen
+      const a = document.activeElement
+      const held = barHover.current || Boolean(barRef.current?.contains(a) && a.matches(':focus-visible'))
+      setAmb(ambientTick({ ...ambRef.current, locked: lockRef.current, busy: busy(), held, since: Date.now() - lastInput.current, after: afterRef.current }))
     }, 1000)
     return () => {
       clearInterval(t)
-      events.forEach((n) => removeEventListener(n, wake, { capture: true }))
-      setIdle((idleRef.current = false))
+      events.forEach((n) => removeEventListener(n, input, { capture: true }))
     }
-  }, [set.idle])
+  }, [])
 
   // theme = the three @theme color variables, overridden on <html>
   useEffect(() => {
@@ -226,7 +241,7 @@ export default function Home() {
   useEffect(() => {
     if (tune.playing || tune.loading) player.stop()
   }, [tune.playing, tune.loading])
-  // the home station (Player tab, Hide bar, lock screen) is the owner's own: visitors don't see it (a visitor's saved
+  // the home station (Player tab, ambient bar, lock screen) is the owner's own: visitors don't see it (a visitor's saved
   // Player tab shows the Radio; not saved, so the owner's pick on this browser stays)
   const tvOn = owner && !player.off && !player.revoked
   const tvPlaying = tvOn && Boolean(player.state?.song) && player.state.status === 'playing'
@@ -255,29 +270,32 @@ export default function Home() {
     setSoftLock(true)
   }
   function unlock() {
-    // swallow the click that may follow the hold, so it doesn't land on a card that just reappeared
+    // swallow the click that may follow the hold, so it doesn't land on a card (or the bar) that just reappeared
     eatNextClick(window)
-    idleRef.current = false
-    setIdle(false)
+    lastInput.current = Date.now()
+    barHover.current = false // (the bar went away under the mouse when 🔒 locked: no pointerleave came)
+    if (ambRef.current.ambient) setAmb({ ambient: 'hand', calm: false }) // back to Ambient, bar showing, as before
     setSoftLock(false)
   }
-  // the dashboard just came back (screensaver, lock, Hide): it ignores the pointer for a moment, so the tap that
+  // Ambient by hand: the dock's button or H. Left by the bar's Show panels, Esc, H or a tap on the bare scene
+  function enterAmbient() {
+    lastInput.current = Date.now()
+    barHover.current = false
+    setAmb({ ambient: 'hand', calm: false })
+  }
+  function leaveAmbient() {
+    barHover.current = false
+    setAmb(AMB_OFF)
+  }
+  // what's on screen: the dashboard, or Ambient's bar / clock / hint, and the lock over everything (lib/ambient.js)
+  const view = ambientView({ ...amb, locked: softLock, idleShow: set.idleShow })
+  // the dashboard just came back (from Ambient or the lock): it ignores the pointer for a moment, so the tap that
   // brought it back (or a second one right after) can't open a card that's only just appearing, and the page doesn't
-  // scroll while it fades back in (holdScroll)
-  const away = focus || idle || softLock
-  const wasAway = useRef(false)
-  const [settling, setSettling] = useState(false)
-  useLayoutEffect(() => {
-    const back = wasAway.current && !away
-    wasAway.current = away
-    setSettling(back)
-    if (!back) return
-    const t = setTimeout(() => setSettling(false), WAKE_GUARD_MS)
-    const letGo = holdScroll(window)
-    return () => (clearTimeout(t), letGo())
-  }, [away])
+  // scroll while it fades back in (holdScroll). The bar the same when it comes back (woken, unlocked)
+  const settling = useSettling(view.dashboard, true)
+  const barSettling = useSettling(view.bar === 'shown', false)
   useEffect(() => {
-    // H toggles Hide, L locks, Space three times quickly locks too (not while typing, not with a dialog open, not while
+    // H toggles Ambient, L locks, Space three times quickly locks too (not while typing, not with a dialog open, not while
     // locked; Space also not on a focused button / link / tab / slider, where it presses that control)
     let spaces = [] // times of the last Space presses
     const onKey = (e) => {
@@ -296,7 +314,7 @@ export default function Home() {
         return lock()
       }
       e.preventDefault()
-      k === 'l' ? lock() : setFocus((f) => !f)
+      k === 'l' ? lock() : ambRef.current.ambient ? leaveAmbient() : enterAmbient()
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
@@ -364,12 +382,12 @@ export default function Home() {
         <SceneCanvas key={scene} base={base} mode={variant} videoRef={videoRef} reduced={reduced} onFail={onSceneFail} />
       )}
       <div
-        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${focus || idle || softLock ? 'opacity-0' : ''}`}
+        className={`fixed top-0 left-0 w-full h-lvh pointer-events-none transition-opacity duration-500 ${view.dim ? '' : 'opacity-0'}`}
         style={{ background: dimOverlay(set.dim) }}
       />
 
       <div
-        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${focus || idle || softLock ? 'opacity-0 invisible' : ''} ${idle || softLock ? 'blur-md' : ''} ${settling ? 'pointer-events-none' : ''}`}
+        className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${view.dashboard ? '' : 'opacity-0 invisible'} ${view.blur ? 'blur-md' : ''} ${settling ? 'pointer-events-none' : ''}`}
       >
         {/* phones: greeting, then clock | scene on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
@@ -426,25 +444,32 @@ export default function Home() {
         </main>
       </div>
 
-      {!focus && !idle && !softLock && (
-        // 👁 Hide, 🔒 Lock, ⚙️ Settings and ⧉ Mini window float bottom right on the dashboard (Hide's bar has its own 👁 / 🔒)
+      {view.dock && (
+        // ⛰ Ambient, 🔒 Lock, ⚙️ Settings and ⧉ Mini window float bottom right on the dashboard (Ambient's bar has its own 👁 / 🔒)
         <div className={`fixed z-20 right-4 sm:right-6 bottom-[max(1rem,env(safe-area-inset-bottom))] flex flex-col gap-2 motion-safe:animate-[fade-in_0.4s_ease-out] ${settling ? 'pointer-events-none' : ''}`}>
-          <DockButton icon="fa-eye-slash" label="Hide panels (H)" onClick={() => setFocus(true)} />
+          <DockButton icon="fa-mountain-sun" label="Ambient (H)" title="Ambient: the scene, with music at hand (H)" onClick={enterAmbient} />
           <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
           <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
           {pipOk && <DockButton icon="fa-clone" label="Mini window (picture-in-picture)" title={pip ? 'Close the mini window' : 'Mini window'} on={pip} onClick={togglePip} />}
         </div>
       )}
-      {softLock ? (
+      {softLock && (
         <LockScreen onUnlock={unlock} set={set} update={update} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />}>
           {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
         </LockScreen>
-      ) : (
-        idle && <ClockScreen now={now} clock={set.clock} look={saverLook(set)} />
       )}
-      {idle && !softLock && <WakeHint />}
-      {/* Header is hidden in Hide, so the way back is the bar's eye button (or Esc / H); the bar can lock too */}
-      {focus && !idle && !softLock && <FocusBar now={now} wx={wx} priv={priv} mini={mini} onShow={() => setFocus(false)} onLock={lock} />}
+      {/* Ambient: the big clock fades in when the bar fades (Settings > When the bar fades = Scene + clock), and out
+          when it comes back; "move to wake" once when Ambient came on by itself */}
+      {view.clock !== 'none' && <ClockScreen now={now} clock={set.clock} look={AMBIENT_LOOK} shown={view.clock === 'shown'} />}
+      {view.hint && <WakeHint />}
+      {/* a tap on the bare scene (under the bar, not on it) goes back to the dashboard, only while the bar shows: the
+          tap that brings the bar back is swallowed (and the bar's guard holds a quick second one) */}
+      {view.catcher && <div className={`fixed inset-0 z-[15] ${barSettling ? 'pointer-events-none' : ''}`} onClick={leaveAmbient} aria-hidden="true" />}
+      {/* the dashboard is hidden in Ambient, so the way back is the bar's eye button (or Esc / H / the bare scene); the
+          bar can lock too */}
+      {view.bar !== 'none' && (
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} onShow={leaveAmbient} onLock={lock} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+      )}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
     </SteamData>
@@ -452,7 +477,24 @@ export default function Home() {
   )
 }
 
-// '21:05', or '9:05' + a small 'PM'. tick: the colon breathes (the big clock on the lock screen / screensaver)
+// true for WAKE_GUARD_MS after `shown` turns on (the dashboard or Ambient's bar coming back), so the tap that brought it
+// back, or a quick second one, can't press what's only just appearing. hold: no scrolling while it fades in either
+function useSettling(shown, hold) {
+  const was = useRef(shown)
+  const [settling, setSettling] = useState(false)
+  useLayoutEffect(() => {
+    const back = !was.current && shown
+    was.current = shown
+    setSettling(back)
+    if (!back) return
+    const t = setTimeout(() => setSettling(false), WAKE_GUARD_MS)
+    const letGo = hold ? holdScroll(window) : null
+    return () => (clearTimeout(t), letGo?.())
+  }, [shown])
+  return settling
+}
+
+// '21:05', or '9:05' + a small 'PM'. tick: the colon breathes (the big clock on the lock screen / in Ambient)
 function Clock({ now, clock, tick }) {
   if (!now) return '--:--'
   const { time, ampm } = clockParts(now, clock)
@@ -488,18 +530,20 @@ function DockButton({ icon, label, title = label, on, onClick }) {
   )
 }
 
-// The clock screen behind Lock and Screensaver: blur, then overlay over the scene, then the clock and the date.
-// The lock has its own look (Settings > Lock screen); the screensaver keeps the plain one.
+// The clock screen behind Lock and Ambient: blur, then overlay over the scene, then the clock and the date.
+// The lock has its own look (Settings > Lock screen); Ambient's calm clock keeps the plain one (big, date, soft shade).
 // Decorative: the header clock is the accessible one.
 const lockLook = (s) => ({ clock: s.lockClock, date: s.lockDate, overlay: s.lockOverlay, blur: s.lockBlur, weather: s.lockWeather })
-const saverLook = (s) => ({ clock: s.idleShow === 'clock' ? 'big' : 'off', date: true, overlay: s.idleShow === 'clock' ? 'soft' : 'off', blur: 0, weather: false })
-// look.blur: px. Re-blurs the moving scene every frame: GPU work, so 0 (off) by default
-function ClockScreen({ now, clock, look, wx }) {
+const AMBIENT_LOOK = { clock: 'big', date: true, overlay: 'soft', blur: 0, weather: false }
+// look.blur: px. Re-blurs the moving scene every frame: GPU work, so 0 (off) by default.
+// shown: Ambient keeps it mounted while the bar is there, faded out, so it can fade out and back in (mounting, or
+// shown again, it fades in: the animation; hidden, it fades out: the transition)
+function ClockScreen({ now, clock, look, wx, shown = true }) {
   const { unit } = useContext(Prefs)
   const blur = look.blur > 0 ? look.blur : 0
   const weather = look.weather && wx?.temp != null
   return (
-    <div className="fixed inset-0 z-20 pointer-events-none select-none motion-safe:animate-[fade-in_1.2s_ease-out]" aria-hidden="true">
+    <div className={`fixed inset-0 z-20 pointer-events-none select-none transition-opacity duration-700 ${shown ? 'motion-safe:animate-[fade-in_1.2s_ease-out]' : 'opacity-0'}`} aria-hidden="true">
       {blur > 0 && <div className="absolute inset-0" style={{ backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)` }} />}
       {look.overlay !== 'off' && <div className={`absolute inset-0 lock-overlay-${look.overlay}`} />}
       {(look.clock !== 'off' || weather) && (
@@ -541,7 +585,8 @@ function ClockScreen({ now, clock, look, wx }) {
   )
 }
 
-// Screensaver: a faint hint in the lock controls' spot, gone after a few seconds (so the two are easy to tell apart)
+// Ambient that came on by itself: a faint hint in the lock controls' spot, gone after a few seconds (so the two are easy
+// to tell apart)
 function WakeHint() {
   return (
     <p
@@ -770,17 +815,23 @@ function LockScreen({ onUnlock, set, update, screen, children }) {
   )
 }
 
-// Hide's mini bar: show panels + lock | music (MiniPlayer) | weather | time | server. Segments without data are left out.
+// Ambient's slim bar: show panels + lock | music (MiniPlayer) | weather | time | server. Segments without data are left out.
 // Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
+// calm: faded out (and inert: no Tab into an invisible bar), mounted still so it fades back in; settling: just came
+// back, it ignores the pointer for a moment. hover: a ref Home reads, true while the mouse rests on it (it stays then)
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
-function FocusBar({ now, wx, priv, mini, onShow, onLock }) {
+function AmbientBar({ now, wx, priv, mini, onShow, onLock, calm, settling, barRef, hover }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
   return (
     <aside
-      aria-label="Focus bar"
-      className="glass-panel fixed z-20 inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] mx-auto w-fit max-w-[calc(100%-2rem)] rounded-3xl sm:rounded-full p-1.5 flex flex-wrap items-center justify-center gap-y-1.5 font-mono text-sm text-white motion-safe:animate-[panel-in_0.45s_cubic-bezier(0.2,0.8,0.2,1)]"
+      ref={barRef}
+      inert={calm}
+      aria-label="Ambient bar"
+      onPointerEnter={(e) => e.pointerType !== 'touch' && (hover.current = true)}
+      onPointerLeave={() => (hover.current = false)}
+      className={`glass-panel fixed z-20 inset-x-4 bottom-[max(1rem,env(safe-area-inset-bottom))] mx-auto w-fit max-w-[calc(100%-2rem)] rounded-3xl sm:rounded-full p-1.5 flex flex-wrap items-center justify-center gap-y-1.5 font-mono text-sm text-white transition-opacity duration-700 ${calm ? 'opacity-0 pointer-events-none' : 'motion-safe:animate-[panel-in_0.45s_cubic-bezier(0.2,0.8,0.2,1)]'} ${settling ? 'pointer-events-none' : ''}`}
     >
       <button
         onClick={onShow}
@@ -862,7 +913,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
   const [list, setList] = useState(false) // the station list popup
   const r = useRadio({ station, info, onStation, onTune, host })
   const live = { radio: r.status === 'playing', spotify: Boolean(spotify?.enabled && spotify.track && spotify.playing), player: !player.off && !player.revoked && player.state?.status === 'playing' }
-  // the Hide bar's / lock screen's play button calls this same toggle() straight from its click (iOS gesture rule);
+  // the ambient bar's / lock screen's play button calls this same toggle() straight from its click (iOS gesture rule);
   // pause(): Listen on the Player tab stops the radio
   useEffect(() => {
     ctl.current = { toggle: r.toggle, pause: r.pause }
@@ -2839,9 +2890,9 @@ function SignInToControl() {
   )
 }
 
-// Which music the Hide bar and the lock screen show: musicSource() in lib/player.js (whatever is playing wins).
+// Which music the ambient bar and the lock screen show: musicSource() in lib/player.js (whatever is playing wins).
 
-// What's playing, small: in the Hide bar (variant "bar") and on the lock screen ("lock"). Radio: play / pause for
+// What's playing, small: in the ambient bar (variant "bar") and on the lock screen ("lock"). Radio: play / pause for
 // everyone. Spotify: cover, track, artists; the owner also gets play / pause and next (the button spins until Spotify
 // confirms the change). The lock shows only music that plays: nothing at all when nothing does, and a paused Spotify
 // for a minute (then it goes, unless it plays again or the track changes). Player (Tavarian's home station): Listen /

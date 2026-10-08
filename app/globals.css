@@ -31,12 +31,12 @@
   @keyframes record-spin {
     to { transform: rotate(360deg); }
   }
-  /* focus bar equalizer bars (staggered via negative animation-delay) */
+  /* ambient bar equalizer bars (staggered via negative animation-delay) */
   @keyframes eq {
     0%, 100% { transform: scaleY(0.3); }
     50% { transform: scaleY(1); }
   }
-  /* screensaver: "move to wake" shows for a moment, then leaves only the scene */
+  /* Ambient that came on by itself: "move to wake" shows for a moment, then leaves only the scene */
   @keyframes hint {
     0%, 100% { opacity: 0; }
     15%, 70% { opacity: 1; }
@@ -46,7 +46,7 @@
     0%, 100% { opacity: 0.3; }
     50% { opacity: 0.85; }
   }
-  /* lock screen / screensaver clock: the colon breathes, one breath every 2 s */
+  /* lock screen / Ambient clock: the colon breathes, one breath every 2 s */
   @keyframes colon {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.2; }
@@ -184,8 +184,8 @@ textarea:focus-visible {
     text-shadow: 0 0 10px color-mix(in oklab, var(--color-lofi-primary) 50%, transparent), 0 0 20px color-mix(in oklab, var(--color-lofi-primary) 30%, transparent);
   }
 
-  /* idle mode's big clock: theme glow, plus a soft shade so it reads over a bright scene */
-  /* clock screen (Lock + Screensaver) overlays: soft = the original glow-friendly vignette, dark = that + a wash */
+  /* the big clock (lock screen, Ambient): theme glow, plus a soft shade so it reads over a bright scene */
+  /* clock screen (Lock + Ambient) overlays: soft = the original glow-friendly vignette, dark = that + a wash */
   .lock-overlay-soft {
     background: radial-gradient(ellipse 60% 40% at center, rgb(26 26 46 / 0.55), transparent 70%);
   }

@@ -105,7 +105,7 @@ function dayHint({ id, base, wantDay, day, from }) {
   return `${day ? '☀️ Daytime' : '🌙 Night'} · ${from ? `follows the sun in ${from}` : 'follows your clock'}`
 }
 
-// The lock screen's look (the screensaver keeps the plain one). In the Settings dialog, and alone on the lock
+// The lock screen's look (Ambient's clock keeps the plain one). In the Settings dialog, and alone on the lock
 // screen's own panel: the only settings that can change while locked.
 export function LockLook({ set, update, id = 'look' }) {
   const opt = (key, legend, options) => (
@@ -283,9 +283,13 @@ export function Settings({ dlg, set, update, reset, sync }) {
           {radio('motion', 'Motion', [['system', 'System'], ['reduce', 'Reduced']])}
         </div>
 
+        {/* Ambient (lib/ambient.js): the scene with a slim bar, by hand (the dock's ⛰ / H) or after N s without input;
+            the bar fades after a few seconds, leaving the scene, or the scene + the big clock */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
-          {radio('idle', 'Screensaver after', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']])}
-          {radio('idleShow', 'Show', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
+          {radio('idle', 'Ambient after', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']],
+            <p className="mt-2 text-[11px] text-lofi-muted">The scene with a slim bar (music, weather, clock). By hand: the <i className="fa-solid fa-mountain-sun" aria-hidden="true" /> Ambient button or H (Off: only by hand).</p>
+          )}
+          {radio('idleShow', 'When the bar fades', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
         </div>
 
         <section className="flex flex-col gap-4 pt-4 border-t border-white/5" aria-labelledby="look-title">
