@@ -7,6 +7,7 @@ import { STATIONS, stationById } from '../lib/stations'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
 import { PlayerMini, PlayerPanel, usePlayer } from './player'
 import { SP_LOCK_REST, autoTab, musicSource, spOn } from '../lib/player'
+import { pollCounts, volumeAnswer } from '../lib/spotify-volume'
 import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, miniText, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
 import { useCloudSync } from './cloud'
@@ -2754,22 +2755,28 @@ function useSpotifyControl(onState) {
 // from outside: an iPhone's can't) comes from GET /api/private/settings/spotify, owner-only (the public answer never
 // names a device), every 15 s while the tab shows. A drag moves the slider at once and sends the level once it rests for
 // 300 ms (a few requests per drag, not one per step); if Spotify says no, the slider goes back to Spotify's last level.
-// on: the owner, with a track on the card. -> { dev, level (what the slider shows), set(0-100), toggleMute, err }
+// Answers that cross each other follow lib/spotify-volume.js (pollCounts, volumeAnswer): an old poll or an old answer
+// never puts an old level back. on: the owner, with a track on the card. -> { dev, level (what the slider shows), set(0-100), toggleMute, err }
 const SP_OWNER = '/api/private/settings/spotify'
 const VOL_REST = 300
 function useSpotifyVolume(on) {
   const [dev, setDev] = useState(null) // { name, type, volume, supportsVolume } | null
   const [mine, setMine] = useState(null) // the slider's level while a change is on its way (null: the device's)
   const [err, setErr] = useState(null)
-  const m = useRef({ timer: 0, seq: 0, sending: false, unmute: 50 }).current
+  // timer: a level waiting to go out; latest: the newest change sent; applied: the newest whose OK answer was taken;
+  // answered: the newest change answered (latest, once it's back); changed: when the slider last moved
+  const m = useRef({ timer: 0, latest: 0, applied: 0, answered: 0, changed: 0, unmute: 50 }).current
+  const busy = () => Boolean(m.timer) || m.answered !== m.latest
   useEffect(() => {
     if (!on) return setDev(null)
     let alive = true
-    const get = () =>
-      document.visibilityState === 'visible' &&
+    const get = () => {
+      if (document.visibilityState !== 'visible') return
+      const sent = Date.now()
       fetch(SP_OWNER, { cache: 'no-store', redirect: 'manual' })
         .then((r) => (r.ok ? r.json() : r.status === 403 || r.status === 404 ? { device: null } : null))
-        .then((d) => alive && d && !m.timer && !m.sending && setDev(d.device ?? null), () => {}) // (a change on its way wins)
+        .then((d) => alive && d && pollCounts(sent, { changed: m.changed, busy: busy() }) && setDev(d.device ?? null), () => {})
+    }
     const t = setInterval(get, 15_000)
     document.addEventListener('visibilitychange', get)
     get()
@@ -2784,11 +2791,11 @@ function useSpotifyVolume(on) {
   function set(v) {
     setMine(v)
     setErr(null)
+    m.changed = Date.now()
     clearTimeout(m.timer)
     m.timer = setTimeout(async () => {
       m.timer = 0
-      m.sending = true
-      const seq = ++m.seq
+      const seq = ++m.latest
       let r, d
       try {
         r = await fetch(SP_OWNER, {
@@ -2800,14 +2807,15 @@ function useSpotifyVolume(on) {
         })
         d = await r.json().catch(() => ({}))
       } catch {}
-      if (seq !== m.seq) return // a newer level went out after this one: its answer decides
-      m.sending = false
-      if (r?.ok) setDev((p) => d.device ?? (p && { ...p, volume: v }))
-      else {
+      const a = volumeAnswer(m, seq, r?.ok)
+      if (a.device) (m.applied = seq), setDev((p) => d.device ?? (p && { ...p, volume: v })) // Spotify's level, even from an older change
+      if (!a.settle) return // a newer level went out after this one: its answer decides the rest
+      m.answered = seq
+      if (!r?.ok) {
         setErr(SP_ERR[d?.error] ?? SP_ERR.spotify)
         if (d?.error === 'volume') setDev((p) => p && { ...p, supportsVolume: false })
       }
-      if (!m.timer) setMine(null) // done: the device's level again (the new one, or the old one back on an error)
+      if (!m.timer) setMine(null) // done: the device's level again (the new one, or the last accepted one on an error)
     }, VOL_REST)
   }
   const level = mine ?? dev?.volume ?? 0

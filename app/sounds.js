@@ -8,8 +8,8 @@
 // quiet <audio> loop next to the graph), with their own title and ⏯ on the lock screen when no music of the page plays.
 import { useEffect, useRef, useState } from 'react'
 import {
-  LAYERS, PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, minutesLeft, mixGains, presetOf, quietWav, setLayer, shownLayers,
-  soundsLabel, soundsMedia, timerEnd,
+  LAYERS, PRESETS, SOUND_TIMERS, SOUNDS_DEFAULT, applyPreset, audibleLayers, layerById, loopEvent, loopPlan, minutesLeft, mixGains, presetOf, quietWav,
+  setLayer, shownLayers, soundsLabel, soundsMedia, timerEnd,
 } from '../lib/sounds'
 import { SLEEP_TAU, TAU, buildVoice, createEngine, loadFile, pump, ramp } from '../lib/sound-engine'
 import { claimMediaSession, mediaSessionOwner } from './radio'
@@ -67,12 +67,14 @@ export function useSounds(mix, { music = false } = {}) {
   // system paused it: a call, Siri, another app taking the audio), release (the timer that lets it go after a stop)
   const bg = useRef({ el: null, url: null, held: false, cut: false, release: 0 }).current
   const media = soundsMedia({ playing, audible: audibleLayers(mix).length, music })
+  const mixRef = useRef(mix)
+  mixRef.current = mix
 
   // The quiet loop and the playback session: on (inside a tap the first time: iOS only lets a page start media from
   // one; later the lock screen's ▶, which counts as one) and off. The sound itself stays on the Web Audio graph
   // (lib/sound-engine.js, straight to the speakers, as on a desktop): the loop only makes the page a media player.
+  // (the session only once the loop exists: with no loop, nothing would ever let it go, and it'd go on pausing other apps)
   function holdOn() {
-    audioSession('playback')
     if (!bg.el) {
       try {
         bg.url = URL.createObjectURL(new Blob([quietWav()], { type: 'audio/wav' }))
@@ -81,10 +83,12 @@ export function useSounds(mix, { music = false } = {}) {
         bg.el.addEventListener('pause', onCut)
         bg.el.addEventListener('play', onBack)
       } catch {
-        bg.el = null
+        if (bg.url) URL.revokeObjectURL(bg.url)
+        bg.el = bg.url = null
         return
       }
     }
+    audioSession('playback')
     clearTimeout(bg.release)
     bg.held = true
     bg.cut = false
@@ -96,18 +100,19 @@ export function useSounds(mix, { music = false } = {}) {
     bg.el?.pause()
     audioSession('auto')
   }
-  // the system paused the loop (nothing else pauses it while it's held): the sounds stop too, as music would, and the
-  // lock screen shows ▶, which (or the panel's) starts them again
+  // the loop's own pause / play events (lib/sounds.js loopEvent): the system pausing it stops the sounds (the lock
+  // screen's ▶, or the panel's, starts them again); the system playing it again after that brings them back
+  const loopState = () => ({ held: bg.held, paused: bg.el.paused, cut: bg.cut })
   function onCut() {
-    if (!bg.held || !bg.el.paused) return // (a pause of ours, its event arriving after a new play)
+    if (loopEvent('pause', loopState()) !== 'cut') return
     bg.held = false
     bg.cut = true
     setPlaying(false)
   }
-  // ...and if the system plays it again by itself once the interruption is over, the sounds come back with it
   function onBack() {
-    if (bg.held || bg.el.paused) return
-    if (!bg.cut) return bg.el.pause() // not ours to play
+    const what = loopEvent('play', loopState())
+    if (what === 'refuse') return bg.el.pause() // not ours to play
+    if (what !== 'resume') return
     bg.cut = false
     bg.held = true
     wake()
@@ -182,19 +187,22 @@ export function useSounds(mix, { music = false } = {}) {
   // the quiet loop and the playback session follow the sounds: on while they play (a no-op when start() already did it
   // in the tap), let go once a stop's fade is over (any sooner, a locked phone could cut the fade short)
   useEffect(() => {
-    if (media.hold) return holdOn()
-    if (bg.el) bg.release = setTimeout(holdOff, t.tau * 5000 + 200) // (after a cut too: the session goes back to 'auto')
+    const plan = loopPlan({ hold: media.hold, made: Boolean(bg.el), tau: t.tau })
+    if (plan.hold) return holdOn()
+    if (plan.release) bg.release = setTimeout(holdOff, plan.release)
     return () => clearTimeout(bg.release)
   }, [media.hold, playing])
 
   // The Media Session (the lock screen / notification, media keys): taken while sounds are all that plays in the page,
   // with "Sounds", the preset or what's on, and ⏯ that stop / start them. Once it's theirs it stays (the lock screen's
   // ▶ starts them again) until the radio or the Player starts and takes it back.
+  // (▶ with every sound switched off meanwhile does nothing: it would only take the playback session for a moment)
   const label = soundsLabel(mix)
+  const play = () => audibleLayers(mixRef.current).length > 0 && start()
   useEffect(() => {
     const ms = navigator.mediaSession
     if (!ms) return
-    if (media.claim && mediaSessionOwner() !== 'sounds') claimMediaSession('sounds', { play: () => start(), pause: stop, stop })
+    if (media.claim && mediaSessionOwner() !== 'sounds') claimMediaSession('sounds', { play, pause: stop, stop })
     if (mediaSessionOwner() !== 'sounds') return
     if (media.claim && typeof MediaMetadata !== 'undefined') {
       ms.metadata = new MediaMetadata({ title: 'Sounds', artist: label || 'Ambient sounds', album: 'Sounds · wliafdew.dev', artwork: [{ src: soundsCover(), sizes: '256x256', type: 'image/png' }] })
