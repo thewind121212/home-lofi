@@ -417,7 +417,7 @@ export default function Home() {
               className="order-2 sm:order-none ml-auto sm:ml-0"
               set={set}
               update={update}
-              scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, wantDay, day: variant?.startsWith('day/') }}
+              scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
@@ -1035,7 +1035,7 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
       }
     }
     get()
-    const t = setInterval(get, 10 * 60 * 1000)
+    const t = setInterval(get, 5 * 60 * 1000)
     return () => {
       alive = false
       clearInterval(t)
@@ -1219,6 +1219,11 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
           {w?.desc ?? (status === 'error' ? 'Weather unavailable' : 'Loading...')}
           {w && <span className="text-lofi-muted font-normal"> · feels like {toUnit(w.feelsLike, unit)}°</span>}
         </div>
+        {w?.station && (
+          <div className="font-mono text-[10px] uppercase tracking-wider text-lofi-muted mt-1">
+            Observed at {w.station.name} · {new Date(w.station.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5">
           {w?.aqi != null ? <AqiPill aqi={w.aqi} className="grow basis-48" /> : <span />}
           <button

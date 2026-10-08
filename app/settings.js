@@ -2,7 +2,7 @@
 
 import { createContext, useEffect, useRef, useState } from 'react'
 import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL } from '../lib/data'
-import { DEFAULTS, LOCK_BLUR_MAX, SCENE_WEATHER, THEMES, customTheme, sceneName } from '../lib/settings'
+import { DEFAULTS, LOCK_BLUR_MAX, SCENE_WEATHER, THEMES, customTheme, liveText, sceneName } from '../lib/settings'
 import { tavarianPost } from './player'
 
 // settings + `reduced` (Motion: Reduced, or the OS asks for it), provided by Home
@@ -88,12 +88,13 @@ export const SCENE_WX = {
 // 'Storm', or for Live the weather it follows: 'Live · Rain' ('Live' while it waits)
 export const wxName = (weather, want) => (weather === 'live' && want ? `Live · ${SCENE_WX[want][0]}` : SCENE_WX[weather][0])
 
-// scene = { want, mode, from }: the variant asked for (null while Live waits for the weather), the one shown, Live's city
-function weatherHint(set, { want, mode, from }) {
+// scene = { want, mode, from, desc }: the variant asked for (null while Live waits for the weather), the one shown,
+// Live's city and its weather ('Overcast')
+function weatherHint(set, { want, mode, from, desc }) {
   const live = set.weather === 'live'
   if (live && !want) return 'Live: waiting for the weather…'
   if (live && want === 'signature') return `Live: ${from ? `no variant for the weather in ${from}` : 'weather unavailable'}, showing Signature`
-  const t = live ? `Live now: ${SCENE_WX[want][0]}${from ? ` in ${from}` : ''}` : ''
+  const t = live ? liveText(SCENE_WX[want][0], desc, from) : ''
   const miss = want !== mode ? `${SCENE_WX[want][0]} isn't available for this scene yet, showing Signature` : ''
   return [t, miss].filter(Boolean).join(' · ')
 }

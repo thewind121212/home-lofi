@@ -30,6 +30,8 @@ export async function GET(request) {
       uvLabel: uv == null ? null : uvLabel(uv),
       aqi,
       aqiLabel: aqiBand(aqi)?.label ?? null,
+      // near Ho Chi Minh City the weather API uses Tan Son Nhat airport's report (METAR) for current, not the model
+      station: c.source?.name ? { name: c.source.name, at: c.source.observed } : null,
     })
   } catch {
     // ponytail: never forward upstream bodies/stack to the public page
