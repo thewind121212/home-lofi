@@ -1181,10 +1181,14 @@ const mainOf = (p, owner) => mainAction({ owner, listening: p.listening, phase: 
 const STATION_ACTS = ['pause', 'resume', 'play']
 
 // The Player tab
-export function PlayerPanel({ p, owner, vol }) {
+export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
   const ctl = useTavarianControl(p)
   const ops = useOwnerOps(p)
   const [sheet, setSheet] = useState(null) // the sheet's open view: queue | recent | search | import | playlists
+  // the bar's ☰ asked for the queue (just now: also right after this tab mounted for it)
+  useEffect(() => {
+    if (owner && openQueue && Date.now() - openQueue < 3000) setSheet('queue')
+  }, [openQueue, owner])
   const dlg = useRef(null)
   // a view set: the <dialog> opens (showModal, like Settings) and Add's box or ✕ takes the focus; it closes through
   // closeDialog (the exit animation), and only its close event lets go of the view
@@ -2293,10 +2297,11 @@ function LinkRow({ p }) {
 
 // The ambient bar ("bar") and lock screen ("lock") piece: listen / stop for everyone, the cover and title, ⏭ for the
 // owner. eq: the bar's equalizer (from MiniPlayer, so both sources look the same)
-export function PlayerMini({ p, owner, lock, box, eq }) {
+export function PlayerMini({ p, owner, lock, box, eq, onQueue }) {
   const mounted = useMounted()
   const ctl = useTavarianControl(p)
   const song = p.state?.song
+  const art = useArt(song) // (a Spotify song's fetched cover too)
   const status = statusInfo({ state: p.state, reachable: p.reachable }).label
   const main = mainOf(p, owner)
   return (
@@ -2311,7 +2316,7 @@ export function PlayerMini({ p, owner, lock, box, eq }) {
       >
         <i className={`fa-solid text-xs ${STATION_ACTS.includes(ctl.busy) ? 'fa-spinner fa-spin' : main.icon}`} aria-hidden="true" />
       </button>
-      {mounted && song && <img src={thumbOf(song) ?? undefined} alt="" className={`${lock ? 'w-11 h-11 rounded-xl' : 'max-sm:hidden w-8 h-8 rounded-lg'} object-cover shrink-0 ${p.state?.status === 'playing' ? '' : 'opacity-70'}`} />}
+      {mounted && song && art && <img src={art} alt="" className={`${lock ? 'w-11 h-11 rounded-xl' : 'max-sm:hidden w-8 h-8 rounded-lg'} object-cover shrink-0 ${p.state?.status === 'playing' ? '' : 'opacity-70'}`} />}
       <span className={`min-w-0 font-sans ${lock ? 'max-w-52' : 'max-sm:hidden max-w-40'}`}>
         <span className="block text-xs text-white truncate">{plain(song?.title) || 'Home station'}</span>
         <span className="block text-[11px] text-lofi-muted truncate">{p.state?.status === 'playing' ? 'Tavarian · home station' : status}</span>
@@ -2320,6 +2325,11 @@ export function PlayerMini({ p, owner, lock, box, eq }) {
       {owner && song && (
         <button onClick={() => ctl.act('skip')} aria-label="Skip for everyone" title="Skip for everyone" className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
           <i className={`fa-solid text-xs ${ctl.busy === 'skip' ? 'fa-spinner fa-spin' : 'fa-forward-step'}`} aria-hidden="true" />
+        </button>
+      )}
+      {onQueue && (
+        <button onClick={onQueue} aria-label="Open the queue" title="Open the queue" className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
+          <i className="fa-solid fa-list-ul text-xs" aria-hidden="true" />
         </button>
       )}
       {ctl.err && <span className="text-[10px] text-red-400 whitespace-nowrap" role="status">{ctl.err}</span>}
