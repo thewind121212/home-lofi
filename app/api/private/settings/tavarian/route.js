@@ -20,6 +20,8 @@ export async function POST(request) {
   const r = await ACTIONS[action](body)
   if (!r.ok) {
     const f = failure(r)
+    // the server log (docker logs): which command failed and Tavarian's code, never a token or a request body
+    console.warn(`[tavarian] ${action} failed: ${f.body.code} (Tavarian ${r.status || 'no answer'}, sent ${f.status})`)
     return json(f.body, f.status, f.retryAfter != null ? { 'retry-after': String(f.retryAfter) } : undefined)
   }
   if (!READS.has(action)) forget() // the next /api/tavarian/state asks Tavarian again
