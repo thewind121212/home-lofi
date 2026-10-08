@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState
 import { flushSync } from 'react-dom'
 import { AUTH_URL, DAY_SCENES, SCENES, SCENES_CORS, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
+import { privateAnswer, retryIn } from '../lib/private-poll'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
 import { PlayerMini, PlayerPanel, usePlayer } from './player'
 import { SP_LOCK_REST, autoTab, musicSource, spOn } from '../lib/player'
@@ -3183,31 +3184,36 @@ function SpotifyResting({ owner, ctl }) {
   )
 }
 
-// /api/private data, or null when locked. The proxy + Authelia decide who gets a 200.
+// /api/private data, or null when locked. The proxy + Authelia decide who gets a 200. Only a real "no" locks it (a
+// login redirect, 401 / 403, or 404: not through the proxy's location); a passing failure — the app restarting for a
+// deploy (502 / 503), a rate limit, a timeout, no network — keeps the last stats and asks again, waiting longer each time
 function usePrivate() {
   const [d, setD] = useState(undefined) // undefined = loading, null = locked
 
   useEffect(() => {
-    let alive = true, ok = false
+    let alive = true, t = 0, fails = 0
+    const next = (ms) => (clearTimeout(t), (t = setTimeout(tick, ms)))
+    const tick = () => (document.visibilityState === 'visible' ? get() : next(5000))
     const get = async () => {
-      let r
+      let r = null
       try {
         r = await fetch('/api/private', { redirect: 'manual', cache: 'no-store' })
-        if (r.status !== 200) throw new Error(r.status)
-        const data = await r.json()
-        ok = true
-        if (alive) setD(data)
-      } catch {
-        if (ok && !r) return // network blip mid-session: keep last stats, try again next tick
-        clearInterval(t) // stop polling after any non-200 (e.g. login expired -> redirect)
-        if (alive) setD(null)
+      } catch {}
+      if (!alive) return
+      const answer = privateAnswer(r?.status ?? 0, r?.type)
+      if (answer === 'ok') {
+        const data = await r.json().catch(() => null)
+        if (!alive) return
+        if (data) return (fails = 0), setD(data), next(5000)
       }
+      if (answer === 'locked') return setD(null) // logged out / not allowed: stop (a reload after signing in starts again)
+      fails++
+      next(retryIn(fails)) // (the last stats stay on screen meanwhile)
     }
-    const t = setInterval(() => document.visibilityState === 'visible' && get(), 5000)
     get()
     return () => {
       alive = false
-      clearInterval(t)
+      clearTimeout(t)
     }
   }, [])
 
