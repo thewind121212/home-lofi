@@ -483,21 +483,32 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     } catch {}
   }, [listening, st?.status, st?.song?.id, st?.streamId, st?.positionSeconds])
   const song = st?.song
+  // the lock screen's picture: asked for here too (no ref: at once), since with the phone locked no card is on screen
+  // to ask for a Spotify song's cover; it is set again when the cover arrives. No cover (yet): the station's own
+  // picture, never an empty list (iOS then shows its blank disc and may keep the last song's picture)
+  const art = useArt(listening ? song : null)
+  const who = (Array.isArray(song?.artists) && song.artists.length ? song.artists.join(', ') : plain(song?.artist)) || 'Home station'
   useEffect(() => {
     const ms = navigator.mediaSession
     if (!ms || !listening || mediaSessionOwner() !== 'tavarian') return
-    if (typeof MediaMetadata !== 'undefined')
-      ms.metadata = new MediaMetadata({
-        title: plain(song?.title) || 'Home station',
-        artist: 'Tavarian',
-        album: 'Home station · wliafdew.dev',
-        artwork: (() => {
-          const a = thumbOf(song) ?? covers?.known(song?.spotifyUri) ?? null // (a Spotify song's fetched cover too)
-          return a ? [{ src: a, sizes: a.startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] : [] // (YouTube 16:9, Spotify square)
-        })(),
-      })
-    ms.playbackState = 'playing'
-  }, [listening, song?.id, song?.title])
+    const put = () => {
+      if (typeof MediaMetadata !== 'undefined')
+        ms.metadata = new MediaMetadata({
+          title: plain(song?.title) || 'Home station',
+          artist: who,
+          album: plain(song?.album) || 'Home station · wliafdew.dev',
+          artwork: art
+            ? [{ src: art, sizes: art.startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] // (YouTube 16:9, Spotify square)
+            : [{ src: stationCover(), sizes: '256x256', type: 'image/png' }],
+        })
+      ms.playbackState = st?.status === 'paused' ? 'paused' : 'playing'
+    }
+    put()
+    // back from the lock screen / another app: say it again (a song change while iOS held the page back may be lost)
+    const back = () => document.visibilityState === 'visible' && mediaSessionOwner() === 'tavarian' && put()
+    document.addEventListener('visibilitychange', back)
+    return () => document.removeEventListener('visibilitychange', back)
+  }, [listening, song?.id, song?.title, who, song?.album, art, st?.status])
   useEffect(() => {
     if (!listening && mediaSessionOwner() === 'tavarian' && navigator.mediaSession) navigator.mediaSession.playbackState = 'paused'
   }, [listening])
@@ -1183,6 +1194,29 @@ const covers =
       })
 // (covers found just before the tab goes away are saved now, not lost with the pending write)
 if (covers) addEventListener('pagehide', () => covers.flush())
+// the lock screen's picture while a song has none yet: the station's mark on the night colours (drawn once, a PNG,
+// since iOS shows no SVG there)
+let stationArt = null
+function stationCover() {
+  if (stationArt) return stationArt
+  const c = document.createElement('canvas')
+  c.width = c.height = 256
+  const g = c.getContext('2d')
+  const grad = g.createLinearGradient(0, 0, 256, 256)
+  grad.addColorStop(0, '#2a2a4a')
+  grad.addColorStop(1, '#1a1a2e')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 256, 256)
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-lofi-primary').trim() || '#ff8a5b'
+  for (const [r, f] of [[80, '#2a2a4a'], [40, accent], [12, '#1a1a2e']]) {
+    g.beginPath()
+    g.arc(128, 128, r, 0, Math.PI * 2)
+    g.fillStyle = f
+    g.fill()
+  }
+  return (stationArt = c.toDataURL('image/png'))
+}
+
 // one IntersectionObserver per scroll box, shared by its rows
 const nearby = typeof IntersectionObserver === 'undefined' ? null : lazyWatcher({ IO: IntersectionObserver })
 function useArt(song, ref) {
