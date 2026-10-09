@@ -270,7 +270,9 @@ export default function Home() {
   // a song change or a short pause isn't a start). Not saved either
   const seenPlay = useRef({})
   const tvActive = tvOn && Boolean(player.state?.song) && ['playing', 'loading'].includes(player.state.status)
-  const spPlaying = spOn(spotify) && Boolean(spotify.playing)
+  // an error answer from /api/spotify says nothing about playing: keep the last known value through it
+  const spLast = useRef(false)
+  const spPlaying = spotify?.error ? spLast.current : (spLast.current = spOn(spotify) && Boolean(spotify.playing))
   useEffect(() => {
     const t = startedTab(seenPlay.current, { tvPlaying: tvActive, spPlaying, radioHere: tune.playing || tune.loading })
     if (t && owner && !invite && autoPicked.current) setAudioTab(t)
