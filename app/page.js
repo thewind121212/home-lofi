@@ -3195,7 +3195,7 @@ function Server({ d }) {
 
   // this server, then the other machines from HOST_AGENTS (agent/ in this repo)
   const all = [{ name: d.name ?? 'Server', st: d.stats ?? {} }, ...(d.hosts ?? []).map((h) => ({ name: h.name, st: h.stats ?? {}, offline: !h.stats }))]
-  const tiles = all.map((h) => <HostStats key={h.name} name={h.name} st={h.st} offline={h.offline} unit={unit} />)
+  const tiles = all.map((h, i) => <HostStats key={`${i}:${h.name}`} name={h.name} st={h.st} offline={h.offline} unit={unit} />)
   if (all.length === 1) return <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">{tiles}</section>
   // 2+ machines: a compact table while the Hub is narrow (the 2xl side column), so Weather still fits below it on a
   // 1080p screen; the tiles once it is wide
@@ -3212,9 +3212,14 @@ const gbNum = (x) => (x ? (x.used / GB).toFixed(1) : '--')
 
 // One row per machine: name (uptime / load in its title, ⚡ watts under it), then CPU, RAM, temp, disk with thin bars
 function HostTable({ hosts, unit }) {
-  const cell = (value, pct, title) => (
+  // label / more: read by screen readers only (the header row is hidden from them)
+  const cell = (value, pct, title, label, more = '') => (
     <div className="min-w-0" title={title}>
-      <div className="text-sm text-white font-medium truncate">{value}</div>
+      <div className="text-sm text-white font-medium truncate">
+        <span className="sr-only">{label} </span>
+        {value}
+        {more && <span className="sr-only">{more}</span>}
+      </div>
       {pct != null && (
         <div className="h-1 mt-1 rounded-full bg-lofi-base/60 overflow-hidden" aria-hidden="true">
           <div className={`h-full rounded-full transition-all duration-500 ${pct > 85 ? 'bg-red-400' : 'bg-lofi-primary'}`} style={{ width: `${Math.min(100, pct)}%` }} />
@@ -3225,16 +3230,16 @@ function HostTable({ hosts, unit }) {
   return (
     <div className="@lg:hidden grid grid-cols-[auto_repeat(4,minmax(0,1fr))] items-center gap-x-3 gap-y-2.5 font-mono">
       {['', 'CPU', 'RAM GB', 'Temp', 'Disk GB'].map((l) => (
-        <div key={l} className="text-[10px] text-lofi-muted uppercase tracking-wider">{l}</div>
+        <div key={l} aria-hidden="true" className="text-[10px] text-lofi-muted uppercase tracking-wider">{l}</div>
       ))}
-      {hosts.map(({ name, st, offline }) => (
-        <Fragment key={name}>
+      {hosts.map(({ name, st, offline }, i) => (
+        <Fragment key={`${i}:${name}`}>
           <div
             className="min-w-0 text-[10px] text-lofi-muted"
             title={offline ? `${name}: its agent did not answer` : `up ${st.uptime == null ? '--' : dur(st.uptime)} · load ${st.load ? st.load.map((n) => n.toFixed(2)).join(' ') : '--'}`}
           >
-            <p className="flex items-center gap-1.5 text-lofi-text/80 uppercase tracking-widest">
-              <i className="fa-solid fa-microchip" aria-hidden="true" /> {name}
+            <p className="flex items-center gap-1.5 text-lofi-text/80 uppercase tracking-widest max-w-28">
+              <i className="fa-solid fa-microchip" aria-hidden="true" /> <span className="truncate">{name}</span>
             </p>
             {offline ? (
               <p className="text-red-400">offline</p>
@@ -3248,10 +3253,10 @@ function HostTable({ hosts, unit }) {
             )}
           </div>
           <div className={`contents ${offline ? '[&>*]:opacity-40' : ''}`}>
-            {cell(st.cpu == null ? '--' : `${st.cpu}%`, st.cpu, 'CPU')}
-            {cell(gbNum(st.mem), pctOf(st.mem), `RAM ${pctOf(st.mem) ?? '--'}% · ${gb(st.mem)}`)}
-            {cell(st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`, st.temp, 'Temp')}
-            {cell(gbNum(st.disk), pctOf(st.disk), `Disk ${pctOf(st.disk) ?? '--'}% · ${gb(st.disk)}`)}
+            {cell(st.cpu == null ? '--' : `${st.cpu}%`, st.cpu, 'CPU', 'CPU')}
+            {cell(gbNum(st.mem), pctOf(st.mem), `RAM ${pctOf(st.mem) ?? '--'}% · ${gb(st.mem)}`, 'RAM', ` GB, ${pctOf(st.mem) ?? '--'}%`)}
+            {cell(st.temp == null ? 'n/a' : `${toUnit(st.temp, unit)}°${unit}`, st.temp, 'Temp', 'Temp')}
+            {cell(gbNum(st.disk), pctOf(st.disk), `Disk ${pctOf(st.disk) ?? '--'}% · ${gb(st.disk)}`, 'Disk', ` GB, ${pctOf(st.disk) ?? '--'}%`)}
           </div>
         </Fragment>
       ))}
