@@ -13,10 +13,11 @@
 // - useOwnerOps(): the owner's queue actions (Play now / next, remove, remove selected, clear, drag reorder, add,
 //   import) with Undo for 5 s
 //   and the "Skipped A · loading B…" line; useDragReorder(): the queue's drag handles (mouse, or hold on a phone).
+// - useAutoplayPicks(): while Spotify autoplay runs, the owner's card and queue also show Spotify's next picks.
 // - The lists (the sheet's Now + Up next, Recent, the card's Up next) glide when they change: useFlip() (app/flip.js).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  allPicked, audioUrl, autoplayText, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
+  allPicked, audioUrl, autoplayPicks, autoplayText, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
   placedText, placementIcon, placementLabel, plain, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
   songLink, thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
@@ -57,6 +58,59 @@ export async function tavarianPost(body, { signal } = {}) {
     : r.type === 'opaqueredirect' || r.status === 401 || r.status === 403 || (r.status === 404 && !d.code) ? 'Sign in again to control the player'
     : (d.error ?? 'Tavarian refused the request')
   return { ok: false, status: r.status, code: d.code ?? null, error, retryAfter: wait || null }
+}
+
+// ---- Spotify's next autoplay picks (owner): /api/private/settings/spotify/picks -> { nowUri, picks }, or null ----
+const PICKS_MS = 30_000
+const PICKS_RETRY_MS = 11_000 // just after a song change Spotify (or the server's 10 s cache) may still say the last one
+const PICKS_RETRIES = 2
+async function fetchPicks(signal) {
+  try {
+    const r = await fetch('/api/private/settings/spotify/picks', { redirect: 'manual', cache: 'no-store', signal })
+    return r.ok ? await r.json() : null
+  } catch {
+    return null
+  }
+}
+// on: the owner sees the Player and the song is an autoplay pick. Asks when the song changes and every 30 s while
+// the page shows (sooner, a couple of times, while the answer is still about another song) -> rows for the lists
+// (lib/player.js autoplayPicks: [] unless the account's queue is the station's song's)
+function useAutoplayPicks(on, song) {
+  const [answer, setAnswer] = useState(null)
+  const uri = on ? (song?.spotifyUri ?? null) : null // (a song without one can't be matched: nothing to ask)
+  const id = song?.id ?? null
+  useEffect(() => {
+    if (!uri) return
+    let alive = true
+    let timer = 0
+    let retries = PICKS_RETRIES
+    let asking = false // (the page showing again mid-question doesn't start a second round of asks)
+    const ctl = new AbortController()
+    const ask = async () => {
+      if (asking) return
+      clearTimeout(timer)
+      let wait = PICKS_MS
+      if (document.visibilityState === 'visible') {
+        asking = true
+        const a = await fetchPicks(ctl.signal)
+        asking = false
+        if (!alive) return
+        setAnswer(a)
+        if (a?.nowUri !== uri && retries-- > 0) wait = PICKS_RETRY_MS
+      }
+      timer = setTimeout(ask, wait)
+    }
+    const onVis = () => document.visibilityState === 'visible' && ask()
+    ask()
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+      ctl.abort()
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [uri, id])
+  return uri ? autoplayPicks(answer, song) : []
 }
 
 // ---- the live station ----
@@ -1248,7 +1302,8 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
   const auto = song ? (p.state?.autoplay ?? null) : null // a Spotify autoplay pick: { played, limit }
-  const list = cardList({ song, items, recent, autoplay: auto })
+  const picks = useAutoplayPicks(owner && auto != null, song) // Spotify's next picks (owner, during autoplay)
+  const list = cardList({ song, items, recent, autoplay: auto, picks })
   // the two rows glide (a skip: the first leaves, the second moves up, a new one comes in)
   const cardRows = useRef(null)
   useFlip(cardRows, flipSig([list.kind, ...list.rows.map((s) => s.id)]))
@@ -1411,10 +1466,13 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
             {list.rows.map((s) => (
               <li key={s.id} data-flip-key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
                 <Thumb s={s} className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
-                <span className="text-white/80 truncate" title={plain(s.title)}>
+                <span className="text-white/80 truncate" title={s.pick ? `Spotify pick: ${[plain(s.title), s.artists.join(', ')].filter(Boolean).join(' · ')}` : plain(s.title)}>
+                  {s.pick && <span className="sr-only">Spotify pick: </span>}
                   {plain(s.title)}
                 </span>
-                {s.durationSeconds > 0 && <span className="text-lofi-muted font-mono text-[10px] shrink-0 ml-auto">{mmss(s.durationSeconds)}</span>}
+                {/* (one of Spotify's autoplay picks, not a queued song: its small mark) */}
+                {s.pick && <i className="fa-brands fa-spotify text-[10px] text-[#1db954]/70 shrink-0 ml-auto" aria-hidden="true" title="Spotify pick" />}
+                {s.durationSeconds > 0 && <span className={`text-lofi-muted font-mono text-[10px] shrink-0 ${s.pick ? '' : 'ml-auto'}`}>{mmss(s.durationSeconds)}</span>}
               </li>
             ))}
           </ul>
@@ -1431,7 +1489,7 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
           {line}
         </p>
       )}
-      <PlayerSheet dlg={dlg} p={p} owner={owner} ops={ops} view={sheet} setView={setSheet} onClosed={() => setSheet(null)} />
+      <PlayerSheet dlg={dlg} p={p} owner={owner} ops={ops} picks={picks} view={sheet} setView={setSheet} onClosed={() => setSheet(null)} />
     </>
   )
 }
@@ -1567,7 +1625,7 @@ function useStillPage(dlg, open) {
 // Queue, recent, and for the owner Add (Search or link · Import playlist), Playlists and the Tavarian link. The same
 // <dialog> as Settings (.wx-sheet: a bottom sheet on phones, centered from sm; the same way in and out): ✕, Esc or a
 // tap on the backdrop closes it, animated (closeDialog). Its content exists only while a view is open.
-export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
+export function PlayerSheet({ dlg, p, owner, ops, picks = [], view, setView, onClosed }) {
   const [seed, setSeed] = useState('') // text handed from one Add tab to another
   const press = useRef(false) // the press began on the backdrop (a drag that ends there is not a tap on it)
   useStillPage(dlg, Boolean(view))
@@ -1642,7 +1700,7 @@ export function PlayerSheet({ dlg, p, owner, ops, view, setView, onClosed }) {
             </div>
           )}
           <div key={view} data-scroll className="min-h-0 grow overflow-y-auto overscroll-contain touch-pan-y -mr-1 pr-1">
-            {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} onAdd={() => go('search')} />}
+            {view === 'queue' && <QueueView p={p} owner={owner} ops={ops} picks={picks} onAdd={() => go('search')} />}
             {view === 'recent' && <RecentView p={p} owner={owner} ops={ops} />}
             {owner && view === 'search' && <SearchView p={p} ops={ops} seed={seed} />}
             {owner && view === 'playlists' && <PlaylistsView ops={ops} />}
@@ -1690,8 +1748,9 @@ function RecentView({ p, owner, ops }) {
 // The queue. The owner can also pick songs (Select: a box on each row, tap the row or the box; Select all / None and
 // the count, with Remove selected (N) in a bar that stays at the bottom) and Clear queue (asks first, like Settings ›
 // Reset all; the song playing keeps playing). Now and Up next glide when they change (one useFlip scope for both: the
-// song that starts playing glides from its row up to the Now slot); not while a row is dragged or held
-function QueueView({ p, owner, ops, onAdd }) {
+// song that starts playing glides from its row up to the Now slot); not while a row is dragged or held. During
+// Spotify autoplay the owner also sees Spotify's next picks after them (read-only: Spotify decides those)
+function QueueView({ p, owner, ops, picks = [], onAdd }) {
   const items = p.queue?.items ?? []
   const ids = items.map((s) => s.id)
   const song = p.state?.song
@@ -1829,6 +1888,18 @@ function QueueView({ p, owner, ops, onAdd }) {
         </ol>
       ) : (
         <p data-flip-key="~empty" className="text-xs text-lofi-muted text-center py-6">{song && p.state?.autoplay ? 'The queue is empty: Spotify autoplay picks the next song.' : 'The queue is empty.'}</p>
+      )}
+      {song && p.state?.autoplay && picks.length > 0 && !picking && (
+        <section aria-label="Spotify picks" className="mt-3">
+          <H3 className="flex items-center gap-1.5">
+            <i className="fa-brands fa-spotify text-[#1db954]/80" aria-hidden="true" /> Spotify picks
+          </H3>
+          <ul className="space-y-1.5">
+            {picks.map((s) => (
+              <SongRow key={s.id} s={s} sub={[s.artists.join(', '), s.durationSeconds > 0 && mmss(s.durationSeconds)].filter(Boolean).join(' · ')} className="opacity-80" />
+            ))}
+          </ul>
+        </section>
       )}
       {picking && items.length > 0 && (
         // stays at the bottom of the list while it scrolls
