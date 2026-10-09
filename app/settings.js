@@ -351,7 +351,8 @@ export function Settings({ dlg, set, update, reset, sync }) {
 // The owner's Home station section: which backend plays the station's songs (Tavarian's setting, for everyone; asked
 // for each time the panel opens). Spotify can be picked once Tavarian's Spotify player is logged in: Connect Spotify
 // asks Tavarian for a code to type at spotify.com/pair, then this asks again every few seconds until it's ready. A
-// change applies from the next song. Hidden when the player isn't set up here.
+// change applies from the next song. In Spotify mode, a switch for Spotify autoplay (when the queue runs out, Spotify's
+// picks play on, N songs, then it pauses; only when this Tavarian has it). Hidden when the player isn't set up here.
 const SP_LINE = {
   off: "Spotify isn't connected.",
   starting: 'The Spotify player is starting…',
@@ -361,7 +362,7 @@ const SP_LINE = {
 }
 function StationBackend({ dlg }) {
   const [st, setSt] = useState(null) // Tavarian's settings, null while asking
-  const [busy, setBusy] = useState(null) // 'backend' | 'pair'
+  const [busy, setBusy] = useState(null) // 'backend' | 'pair' | 'autoplay'
   const [err, setErr] = useState(null)
   const [off, setOff] = useState(false)
   const ask = useRef(() => {})
@@ -399,6 +400,17 @@ function StationBackend({ dlg }) {
     else setErr(r.error)
   }
   const pick = (backend) => backend !== st?.backend && run('backend', { action: 'backend', backend })
+  // the switch flips at once; Tavarian's answer confirms it, a failure puts it back
+  const flipAutoplay = async () => {
+    if (busy || typeof st?.autoplay !== 'boolean') return
+    const was = st.autoplay
+    setSt((s) => ({ ...s, autoplay: !was }))
+    setBusy('autoplay')
+    const r = await tavarianPost({ action: 'autoplay', autoplay: !was })
+    setBusy(null)
+    if (r.ok) setSt(r.data.settings), setErr(null)
+    else setSt((s) => s && { ...s, autoplay: was }), setErr(r.error)
+  }
   const pair = st?.pairing
   const hint =
     err ? <span className="text-red-300">{err}</span>
@@ -424,6 +436,19 @@ function StationBackend({ dlg }) {
       >
         <p className="mt-2 text-[11px] text-lofi-muted" aria-live="polite">{hint}</p>
       </Choice>
+      {st?.backend === 'spotify' && typeof st.autoplay === 'boolean' && (
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" role="switch" checked={st.autoplay} disabled={Boolean(busy)} onChange={flipAutoplay} className="peer sr-only" />
+          <span
+            aria-hidden="true"
+            className="relative mt-0.5 w-9 h-5 shrink-0 rounded-full border border-white/10 bg-white/10 transition-colors peer-checked:bg-[#1db954] peer-checked:border-transparent peer-disabled:opacity-60 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-lofi-primary after:absolute after:top-0.5 after:left-0.5 after:w-3.5 after:h-3.5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"
+          />
+          <span className="text-xs text-lofi-text">
+            When the queue ends, keep playing Spotify's picks
+            <span className="block text-[11px] text-lofi-muted">{st.autoplayLimit ? `${st.autoplayLimit} songs, then it pauses (Play starts more).` : 'Then it pauses (Play starts more).'}</span>
+          </span>
+        </label>
+      )}
       {st && !st.spotifyAvailable && (
         pair ? (
           <div className="rounded-2xl border border-[#1db954]/40 bg-[#1db954]/10 px-4 py-3 flex flex-col gap-2 motion-safe:animate-[panel-in_0.2s_ease-out]" aria-live="polite">

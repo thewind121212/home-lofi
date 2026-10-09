@@ -16,7 +16,7 @@
 // - The lists (the sheet's Now + Up next, Recent, the card's Up next) glide when they change: useFlip() (app/flip.js).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  allPicked, audioUrl, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
+  allPicked, audioUrl, autoplayText, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
   placedText, placementIcon, placementLabel, plain, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
   songLink, thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
@@ -1247,7 +1247,8 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
   const art = useArt(song) // (the blurred backdrop: also a Spotify song's fetched cover)
   const items = p.queue?.items ?? []
   const recent = p.queue?.recent ?? []
-  const list = cardList({ song, items, recent })
+  const auto = song ? (p.state?.autoplay ?? null) : null // a Spotify autoplay pick: { played, limit }
+  const list = cardList({ song, items, recent, autoplay: auto })
   // the two rows glide (a skip: the first leaves, the second moves up, a new one comes in)
   const cardRows = useRef(null)
   useFlip(cardRows, flipSig([list.kind, ...list.rows.map((s) => s.id)]))
@@ -1299,9 +1300,14 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
             <span className={`px-1.5 py-0.5 rounded-full border ${playing ? 'text-lofi-primary bg-lofi-primary/10 border-lofi-primary/20' : 'border-white/10'}`} role="status">
               {playing ? '●' : info.key === 'paused' ? '❚❚' : '○'} {info.label}
             </span>
-            {song && p.state?.playingVia === 'spotify' && (
-              <span className="px-1.5 py-0.5 rounded-full border border-[#1db954]/30 text-[#1db954] flex items-center gap-1" title="Playing from Spotify (320 kbps)">
-                <i className="fa-brands fa-spotify" aria-hidden="true" /> Spotify
+            {/* (a Spotify autoplay pick: the same badge says so, with how many of the round have played) */}
+            {song && (auto || p.state?.playingVia === 'spotify') && (
+              <span
+                className="min-w-0 px-1.5 py-0.5 rounded-full border border-[#1db954]/30 text-[#1db954] flex items-center gap-1"
+                title={auto ? `${autoplayText(auto)}: the queue ran out, Spotify picks the songs (it pauses after ${auto.limit})` : 'Playing from Spotify (320 kbps)'}
+              >
+                <i className="fa-brands fa-spotify" aria-hidden="true" />
+                {auto ? <span className="truncate"><span className="sr-only">Spotify </span>Autoplay · {auto.played}/{auto.limit}</span> : 'Spotify'}
               </span>
             )}
             {hearing && <EqBars />}
@@ -1413,7 +1419,9 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
             ))}
           </ul>
         ) : (
-          <p data-flip-key="~empty" className="text-[11px] text-lofi-muted italic pt-1">{owner ? 'The queue is empty: Add puts a song in it.' : 'The queue is empty.'}</p>
+          <p data-flip-key="~empty" className="text-[11px] text-lofi-muted italic pt-1">
+            {list.kind === 'autoplay' ? 'Autoplay: Spotify picks the next song.' : owner ? 'The queue is empty: Add puts a song in it.' : 'The queue is empty.'}
+          </p>
         )}
       </div>
       {mine ? (
@@ -1723,7 +1731,7 @@ function QueueView({ p, owner, ops, onAdd }) {
         <>
           <H3 data-flip-key="~now">Now</H3>
           <ul className="mb-3">
-            <SongRow key={song.id} data-flip-key={song.id} s={song} on sub={`${statusInfo({ state: p.state }).label}${song.durationSeconds > 0 ? ` · ${mmss(song.durationSeconds)}` : ''}`} />
+            <SongRow key={song.id} data-flip-key={song.id} s={song} on sub={[statusInfo({ state: p.state }).label, song.durationSeconds > 0 && mmss(song.durationSeconds), autoplayText(p.state?.autoplay)].filter(Boolean).join(' · ')} />
           </ul>
         </>
       )}
@@ -1820,7 +1828,7 @@ function QueueView({ p, owner, ops, onAdd }) {
           )}
         </ol>
       ) : (
-        <p data-flip-key="~empty" className="text-xs text-lofi-muted text-center py-6">The queue is empty.</p>
+        <p data-flip-key="~empty" className="text-xs text-lofi-muted text-center py-6">{song && p.state?.autoplay ? 'The queue is empty: Spotify autoplay picks the next song.' : 'The queue is empty.'}</p>
       )}
       {picking && items.length > 0 && (
         // stays at the bottom of the list while it scrolls
