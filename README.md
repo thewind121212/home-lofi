@@ -373,6 +373,7 @@ Optional, server side of the music card's **Player** tab: a station inside [Tava
 | --- | --- | --- |
 | `TAVARIAN_URL` | `https://tavarian.wliafdew.dev` | Tavarian's address (API under `/api/v1`, audio under `/home-audio/stream`) |
 | `TAVARIAN_TOKEN` | empty = off | a Tavarian API token for the home player. **Only in Coolify's env** (or your `.env`): never in git, a log or a browser |
+| `TAVARIAN_PROXY` | empty or `off` = direct | an HTTP proxy for this server's calls to Tavarian (API, event stream, status check), e.g. `http://10.10.0.217:1082` (the home WARP proxy, the Coolify default; set `off` there to go direct) when the direct route loses packets. If the proxy fails, the call goes direct. Browsers' audio never uses it |
 
 ```
 browser ──EventSource──> /api/tavarian/events ─┐            ┌─ one SSE stream ──> Tavarian /api/v1/home/events
