@@ -30,6 +30,8 @@ services:
       # Player tab: the Tavarian home player, see README "Tavarian player" (off unless TAVARIAN_TOKEN is set)
       TAVARIAN_URL: ${TAVARIAN_URL:-https://tavarian.wliafdew.dev}
       TAVARIAN_TOKEN: ${TAVARIAN_TOKEN:-}
+      # the home WARP proxy: the direct route to Tavarian (OVH) loses packets at times. `off` = direct
+      TAVARIAN_PROXY: ${TAVARIAN_PROXY:-http://10.10.0.217:1082}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)
       DATABASE_URL: ${DATABASE_URL:-}
       OWNER_USER: ${OWNER_USER:-}
