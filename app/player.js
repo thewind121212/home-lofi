@@ -487,7 +487,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   // to ask for a Spotify song's cover; it is set again when the cover arrives. No cover (yet): the station's own
   // picture, never an empty list (iOS then shows its blank disc and may keep the last song's picture)
   const art = useArt(listening ? song : null)
-  const who = (Array.isArray(song?.artists) && song.artists.length ? song.artists.join(', ') : plain(song?.artist)) || 'Home station'
+  const who = (Array.isArray(song?.artists) && song.artists.length ? song.artists.map(plain).filter(Boolean).join(', ') : plain(song?.artist)) || 'Home station'
   useEffect(() => {
     const ms = navigator.mediaSession
     if (!ms || !listening || mediaSessionOwner() !== 'tavarian') return
@@ -501,7 +501,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
             ? [{ src: art, sizes: art.startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] // (YouTube 16:9, Spotify square)
             : [{ src: stationCover(), sizes: '256x256', type: 'image/png' }],
         })
-      ms.playbackState = st?.status === 'paused' ? 'paused' : 'playing'
+      ms.playbackState = st?.status === 'playing' ? 'playing' : 'paused' // (loading, stopped, nothing to play: not playing)
     }
     put()
     // back from the lock screen / another app: say it again (a song change while iOS held the page back may be lost)
