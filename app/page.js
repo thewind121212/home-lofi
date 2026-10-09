@@ -7,7 +7,7 @@ import { STATIONS, stationById } from '../lib/stations'
 import { privateAnswer, retryIn } from '../lib/private-poll'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
 import { PlayerMini, PlayerPanel, usePlayer } from './player'
-import { SP_LOCK_REST, autoTab, musicSource, spOn } from '../lib/player'
+import { SP_LOCK_REST, autoTab, musicSource, spOn, startedTab } from '../lib/player'
 import { isStationDevice, pollCounts, volumeAnswer } from '../lib/spotify-volume'
 import { DEFAULTS, SETTINGS_KEY, clockParts, dayVariant, isDaytime, parseSettings, sceneBase, sceneWeather, themeColors, toUnit } from '../lib/settings'
 import { AQI_BANDS, aqiBand, aqiPos, chartPoints, memoCache, spread } from '../lib/weather'
@@ -266,6 +266,15 @@ export default function Home() {
     const t = autoTab({ tvPlaying, spPlaying: spOn(spotify) && Boolean(spotify.playing) })
     if (t) setAudioTab(t)
   }, [owner, invite, tvOn, tvPlaying, player.reachable, player.state, spotify])
+  // and later, while the page stays open: the station or Spotify starting to play switches to its tab (lib startedTab;
+  // a song change or a short pause isn't a start). Not saved either
+  const seenPlay = useRef({})
+  const tvActive = tvOn && Boolean(player.state?.song) && ['playing', 'loading'].includes(player.state.status)
+  const spPlaying = spOn(spotify) && Boolean(spotify.playing)
+  useEffect(() => {
+    const t = startedTab(seenPlay.current, { tvPlaying: tvActive, spPlaying, radioHere: tune.playing || tune.loading })
+    if (t && owner && !invite && autoPicked.current) setAudioTab(t)
+  }, [owner, invite, tvActive, spPlaying, tune.playing, tune.loading])
   // the bar's ☰ (owner): back to the dashboard, the Player tab, its queue open (openQueue: when it was asked for)
   const [openQueue, setOpenQueue] = useState(0)
   // (cleared once used, so a later remount of the Player tab doesn't open it unasked)
