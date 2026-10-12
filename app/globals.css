@@ -131,7 +131,7 @@ textarea:focus-visible {
 
 /* components layer so Tailwind utilities can override these */
 @layer components {
-  /* scene fallback (see NightSky in app/home.js) */
+  /* scene fallback (see NightSky in app/page.js) */
   .night-sky {
     background:
       radial-gradient(ellipse at 50% 115%, color-mix(in oklab, var(--color-lofi-secondary) 35%, transparent), transparent 60%),
@@ -372,7 +372,7 @@ textarea:focus-visible {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 /* Settings > Motion: Reduced (or the OS setting), set by Home; also neutralizes motion-safe: utilities */
-/* cloud sync: theme colors from another device cross-fade instead of jumping (app/home.js sets data-fade).
+/* cloud sync: theme colors from another device cross-fade instead of jumping (app/page.js sets data-fade).
    Registered so the browser can interpolate them; same initial values as @theme. */
 @property --color-lofi-primary { syntax: '<color>'; inherits: true; initial-value: #ff8a5c; }
 @property --color-lofi-secondary { syntax: '<color>'; inherits: true; initial-value: #e56b6f; }
