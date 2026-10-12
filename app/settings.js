@@ -170,7 +170,7 @@ function SyncStatus({ status }) {
   )
 }
 
-export function Settings({ dlg, set, update, reset, sync }) {
+export function Settings({ dlg, set, update, reset, sync, notify = false }) {
   // Reset all asks first: a warning row with Cancel (focused) and "Yes, reset", which wakes after a moment so a
   // double-click can't confirm; the row gives up after 8 s, or when the panel closes
   const [sure, setSure] = useState(false)
@@ -299,6 +299,25 @@ export function Settings({ dlg, set, update, reset, sync }) {
           </h3>
           <LockLook set={set} update={update} />
         </section>
+
+        {/* the notification hub (lib/notify.js): the owner's only, like the notifications themselves (notify: it's on) */}
+        {synced && notify && (
+          <section className="flex flex-col gap-4 pt-4 border-t border-white/5" aria-labelledby="ntf-set-title">
+            <h3 id="ntf-set-title" className="text-sm font-medium text-white flex items-center gap-2">
+              <i className="fa-solid fa-bell text-lofi-primary text-xs" aria-hidden="true" /> Notifications
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
+              {radio('notifyToasts', 'Pop-ups', [[true, 'On'], [false, 'Off']])}
+              {radio('notifyMin', 'Pop up for', [['all', 'Everything', !set.notifyToasts], ['warning', 'Warnings', !set.notifyToasts], ['error', 'Errors', !set.notifyToasts]])}
+              {radio('notifyAmbient', 'In Ambient', [[true, 'Show'], [false, 'Hide']],
+                <p className="mt-2 text-[11px] text-lofi-muted">The newest on the bar, and one line under the clock once the bar fades.</p>
+              )}
+              {radio('notifyLock', 'On the lock screen', [['titles', 'Titles'], ['full', 'Full'], ['count', 'Count'], ['off', 'Off']],
+                <p className="mt-2 text-[11px] text-lofi-muted">Titles leave the message out: anyone walking past can see the lock screen.</p>
+              )}
+            </div>
+          </section>
+        )}
 
         {synced && <StationBackend dlg={dlg} />}
 

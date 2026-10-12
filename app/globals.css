@@ -178,6 +178,9 @@ textarea:focus-visible {
       background: rgba(42, 42, 74, 0.86);
     }
     .card-blur { backdrop-filter: none; }
+    /* notification pop-ups (app/notify.js) float over the panels' text, not the scene: with no blur to hide it,
+       the panel color, opaque */
+    .toast-panel { background: rgb(42, 42, 74); }
   }
 
   .neon-text {
