@@ -7,8 +7,10 @@ import { clientId, liveBus } from '../../../../../lib/live.js'
 // 403 = someone else. Guests never get a stream.
 //   GET ?id=<this tab's id>   -> event: hello   (on connect)            data: { at }
 //                                event: changed (another tab saved)     data: { at, from }
+//                                event: notify  (a notification came, or one was read / cleared: pull them)  data: { at }
 //                                event: bye     (pushed out: too many open streams; then it ends)  data: { at }
-// A ": ping" comment every 20 s keeps proxies from closing it as idle. No settings ever go down this stream.
+// A ": ping" comment every 20 s keeps proxies from closing it as idle. No settings or notifications ever go down this
+// stream: only "pull".
 export const dynamic = 'force-dynamic'
 
 const PING = 20_000
@@ -54,7 +56,8 @@ export async function GET(request) {
       }
       quiet(frame('hello', { at: Date.now() }))
       // end: the bus lets go of this stream (this tab connected again, the cap, the server stopping)
-      unsubscribe = liveBus().subscribe(who, id, (event) => write(frame('changed', event)), end)
+      // ('notify': the notification hub has news, lib/notify.js; everything else is a settings save)
+      unsubscribe = liveBus().subscribe(who, id, ({ kind, ...event }) => write(frame(kind === 'notify' ? 'notify' : 'changed', event)), end)
       ping = setInterval(() => quiet(': ping\n\n'), PING)
       if (request.signal.aborted) end()
       else request.signal.addEventListener('abort', () => end(), { once: true })

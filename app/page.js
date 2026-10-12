@@ -17,6 +17,8 @@ import { ambientTick, ambientView, ambientWake, dockLift } from '../lib/ambient'
 import { FULLSCREEN_EVENTS, fullscreenApi, isFullscreenKey } from '../lib/fullscreen'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
+import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, useNotify } from './notify'
+import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
 
 // a browser with no saved location starts in Đà Lạt
 const DEFAULT_LOC = { id: 1584071, name: 'Da Lat', region: 'Lam Dong', country: 'Vietnam', lat: 11.94646, lon: 108.44193, tz: 'Asia/Ho_Chi_Minh' }
@@ -103,6 +105,7 @@ export default function Home() {
   const setDlg = useRef(null)
   const galDlg = useRef(null)
   const sndDlg = useRef(null)
+  const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
   // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
   // .current, so this hands it whichever of the two is open
   const [syncHold] = useState(() => ({ get current() { return [setDlg.current, sndDlg.current].find((d) => d?.open) ?? setDlg.current } }))
@@ -111,6 +114,8 @@ export default function Home() {
   // sounds play in this page (set below, once useSounds has run): the live sync stream stays open with the tab hidden
   // then, so a mix changed on another device reaches a phone playing them with its screen off
   const soundsOn = useRef(false)
+  // the notification hub listens on sync's live stream (one connection per device); set once useNotify has run below
+  const notifyLive = useRef(() => {})
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -126,7 +131,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn)
+  }, syncHold, soundsOn, (kind) => notifyLive.current(kind))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -236,6 +241,19 @@ export default function Home() {
   // owner = settings sync reached the server as OWNER_USER (the same check guards the Spotify controls).
   // wasOwner: this browser has been signed in as the owner before, so a lapsed login gets a "sign in" hint
   const owner = ['synced', 'syncing', 'offline'].includes(cloud.status)
+  // the owner's notifications (app/notify.js): pulled on load, when the tab shows, and when the live stream says so
+  const hub = useNotify(owner, set, inboxDlg)
+  notifyLive.current = hub.live
+  // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
+  function openInbox() {
+    const d = inboxDlg.current
+    if (!d || d.open) return
+    hub.markAllRead()
+    hub.clearToasts()
+    d.showModal()
+  }
+  const inboxKey = useRef(null) // N, for the key handler below (it's set up once): only for the owner
+  inboxKey.current = hub.on ? openInbox : null
   // the music card's tab: the last one picked in this browser (switching never stops the radio)
   const [audioTab, setAudioTab] = useState('radio')
   useEffect(() => {
@@ -289,7 +307,7 @@ export default function Home() {
   }, [owner])
 
   function lock() {
-    ;[setDlg.current, galDlg.current, sndDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
+    ;[setDlg.current, galDlg.current, sndDlg.current, inboxDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
     document.activeElement?.blur()
     setSoftLock(true)
   }
@@ -313,6 +331,17 @@ export default function Home() {
   }
   // what's on screen: the dashboard, or Ambient's bar / clock / hint, and the lock over everything (lib/ambient.js)
   const view = ambientView({ ...amb, locked: softLock, idleShow: set.idleShow })
+  // where notifications show right now (lib/notify.js): pop-ups + the bell on the dashboard, a chip on Ambient's bar,
+  // a line when it fades (screensaver), a stack on the lock screen
+  const places = notifyPlaces(view, { locked: softLock, set })
+  const tNow = +(now ?? 0)
+  const chipNote = hub.on && places.chip ? ambientNote(hub.items, hub.read, tNow) : null
+  const saverNote = hub.on && places.saver ? ambientNote(hub.items, hub.read, tNow, { saver: true }) : null
+  const lockNote = hub.on && places.lock ? lockNotes(hub.items, hub.read, tNow, places.lock) : null
+  const toastsOn = hub.on && places.toasts
+  useEffect(() => {
+    if (!toastsOn) hub.clearToasts() // (what came meanwhile is on the chip / the lock / in the inbox)
+  }, [toastsOn])
   // the dashboard just came back (from Ambient or the lock): it ignores the pointer for a moment, so the tap that
   // brought it back (or a second one right after) can't open a card that's only just appearing, and the page doesn't
   // scroll while it fades back in (holdScroll). The bar the same when it comes back (woken, unlocked)
@@ -323,8 +352,9 @@ export default function Home() {
   const [lift, liftMoves] = useDockLift(view.dockSet === 'ambient', barRef, dockRef)
   const full = useFullscreen()
   useEffect(() => {
-    // H toggles Ambient, L locks, A opens Sounds, Space three times quickly locks too (not while typing, not with a dialog
-    // open, not while locked; Space also not on a focused button / link / tab / slider, where it presses that control).
+    // H toggles Ambient, L locks, A opens Sounds, N the notifications (the owner's), Space three times quickly locks too
+    // (not while typing, not with a dialog open, not while locked; Space also not on a focused button / link / tab /
+    // slider, where it presses that control).
     // F toggles full screen by the same rules, but on the lock screen too (lib/fullscreen.js: never an unlock)
     let spaces = [] // times of the last Space presses
     const onKey = (e) => {
@@ -332,7 +362,7 @@ export default function Home() {
       if (isFullscreenKey(e, { typing, dialog: Boolean(document.querySelector('dialog[open]')) })) return e.preventDefault(), fullscreenApi(document).toggle()
       const k = e.key.toLowerCase()
       const space = e.code === 'Space'
-      if (k !== 'h' && k !== 'l' && k !== 'a' && !space) return
+      if (k !== 'h' && k !== 'l' && k !== 'a' && k !== 'n' && !space) return
       if (e.ctrlKey || e.metaKey || e.altKey || lockRef.current) return
       if (e.target.closest?.('input, textarea, select, [contenteditable="true"]') || document.querySelector('dialog[open]')) return
       if (space) {
@@ -344,6 +374,7 @@ export default function Home() {
         e.preventDefault()
         return lock()
       }
+      if (k === 'n') return inboxKey.current && (e.preventDefault(), inboxKey.current())
       e.preventDefault()
       if (k === 'a') return sndDlg.current?.showModal()
       k === 'l' ? lock() : ambRef.current.ambient ? leaveAmbient() : enterAmbient()
@@ -447,6 +478,7 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
+            {hub.on && <Bell className="order-3 sm:order-none" unread={hub.unread} onOpen={openInbox} />}
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               <Clock now={now} clock={set.clock} />
@@ -485,7 +517,7 @@ export default function Home() {
       </div>
 
       {softLock && (
-        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />}>
+        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={lockNote && <LockNotices notes={lockNote} now={tNow} />}>
           {(set.lockMusic !== 'hide' || snd.on) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
@@ -496,13 +528,16 @@ export default function Home() {
       )}
       {/* Ambient: the big clock fades in when the bar fades (Settings > When the bar fades = Scene + clock), and out
           when it comes back; "move to wake" once when Ambient came on by itself */}
-      {view.clock !== 'none' && <ClockScreen now={now} clock={set.clock} look={AMBIENT_LOOK} shown={view.clock === 'shown'} />}
+      {view.clock !== 'none' && (
+        <ClockScreen now={now} clock={set.clock} look={AMBIENT_LOOK} shown={view.clock === 'shown'} note={places.saver === 'clock' && saverNote && <SaverNote note={saverNote} now={tNow} />} />
+      )}
+      {places.saver === 'pill' && saverNote && <SaverNote pill note={saverNote} now={tNow} />}
       {view.hint && <WakeHint />}
       {/* a tap on the bare scene (under the bar and the dock, not on them) goes back to the dashboard, only while the bar
           shows: the tap that brings the bar back is swallowed (and the bar's guard holds a quick second one) */}
       {view.catcher && <div className={`fixed inset-0 z-[15] ${barSettling ? 'pointer-events-none' : ''}`} onClick={leaveAmbient} aria-hidden="true" />}
       {view.bar !== 'none' && (
-        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
       {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings. In Ambient (the
           dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
@@ -526,9 +561,11 @@ export default function Home() {
           )}
         </Dock>
       )}
-      <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} />
+      <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} notify={hub.on} />
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
+      <Inbox dlg={inboxDlg} hub={hub} now={tNow || null} />
+      {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
     </SteamData>
     </Prefs>
   )
@@ -663,7 +700,7 @@ const AMBIENT_LOOK = { clock: 'big', date: true, overlay: 'soft', blur: 0, weath
 // look.blur: px. Re-blurs the moving scene every frame: GPU work, so 0 (off) by default.
 // shown: Ambient keeps it mounted while the bar is there, faded out, so it can fade out and back in (mounting, or
 // shown again, it fades in: the animation; hidden, it fades out: the transition)
-function ClockScreen({ now, clock, look, wx, shown = true }) {
+function ClockScreen({ now, clock, look, wx, shown = true, note }) {
   const { unit } = useContext(Prefs)
   const blur = look.blur > 0 ? look.blur : 0
   const weather = look.weather && wx?.temp != null
@@ -704,6 +741,8 @@ function ClockScreen({ now, clock, look, wx, shown = true }) {
               )}
             </div>
           )}
+          {/* the screensaver's notification line (app/notify.js SaverNote) */}
+          {note}
         </div>
       )}
     </div>
@@ -733,7 +772,7 @@ function WakeHint() {
 // mouse elsewhere don't wake anything. full: Home's useFullscreen.
 const REST_MS = 3000
 const SPACE_MS = 1000
-function LockScreen({ onUnlock, set, update, full, screen, children }) {
+function LockScreen({ onUnlock, set, update, full, screen, notices, children }) {
   const [dy, setDy] = useState(0) // how far the screen is pushed up, px
   const [held, setHeld] = useState(false) // a finger / the mouse or Space is moving it: no spring transition
   const [leaving, setLeaving] = useState(false)
@@ -920,8 +959,9 @@ function LockScreen({ onUnlock, set, update, full, screen, children }) {
           </section>
         )}
       </div>
-      {/* bottom center: what's playing, then the breathing hint */}
+      {/* bottom center: notifications (app/notify.js LockNotices), what's playing, then the breathing hint */}
       <div className="absolute z-30 inset-x-0 bottom-0 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4">
+        {notices && <div className="mb-3">{notices}</div>}
         {children && (
           <div
             onPointerEnter={() => hover('music', true)}
@@ -955,14 +995,14 @@ function LockScreen({ onUnlock, set, update, full, screen, children }) {
   )
 }
 
-// Ambient's slim bar: music (MiniPlayer) | sounds (mute chip, while they play) | weather | time | server. Segments without
-// data are left out; 👁 Show panels and 🔒 Lock are on the dock, bottom right.
+// Ambient's slim bar: music (MiniPlayer) | sounds (mute chip, while they play) | notifications (the newest unread) |
+// weather | time | server. Segments without data are left out; 👁 Show panels and 🔒 Lock are on the dock, bottom right.
 // Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
 // calm: faded out (and inert: no Tab into an invisible bar), mounted still so it fades back in; settling: just came
 // back, it ignores the pointer for a moment. hover: a ref Home reads, true while the mouse rests on it (it stays then)
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
 const FIRST_SEG = 'flex items-center gap-1.5 sm:gap-2 pl-0.5 pr-2.5 sm:pr-4' // the music, first: no divider before it
-function AmbientBar({ now, wx, priv, mini, sounds, calm, settling, barRef, hover }) {
+function AmbientBar({ now, wx, priv, mini, sounds, notice, calm, settling, barRef, hover }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -980,6 +1020,9 @@ function AmbientBar({ now, wx, priv, mini, sounds, calm, settling, barRef, hover
       </div>
 
       {sounds && <div className={SEG}>{sounds}</div>}
+
+      {/* the newest unread notification (app/notify.js AmbientChip): only while there is one */}
+      {notice && <div className={SEG}>{notice}</div>}
 
       {wx && (
         <div className={SEG} title={wx.desc}>

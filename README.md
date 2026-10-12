@@ -110,6 +110,10 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   - Click the card (or **Details ›**) for a details panel: a 24-hour temperature + rain chart, 7 days, air quality (PM2.5 / PM10 / O₃ and advice), sun and wind.
   - The panel loads `/api/weather/detail` only when opened, and reuses it for 10 minutes per location.
   - The card refreshes every 5 minutes. Near Ho Chi Minh City its *now* is Tan Son Nhat airport's latest report (METAR, every 30 min, swapped in by the weather API), marked *Observed at Tan Son Nhat · 14:30*; elsewhere it's Open-Meteo's forecast for the hour. With the station, *now* in the details chart and the card's Rain Chance are what it sees too (raining there = 100 %; dry = half the forecast's chance, so a storm on its way still shows); from the next hour on it's the forecast.
+- **Notifications** (owner only): machines on the LAN (n8n, cron, Coolify, a script) POST a small notice to
+  `/api/notify`, and it shows on every open device a moment later: a pop-up and a 🔔 badge on the dashboard, a chip on
+  Ambient's bar, one quiet line under the big clock when the bar fades, a short stack on the lock screen. See
+  [Notifications](#notifications-owner-only).
 - **Steam card** (above the music): avatar with a ring in the status color, name, level, status in Steam's colors
   (Online / Playing · the game / Offline), games owned, total hours, the last 2 weeks and the recently played games;
   the Entertainment tab's Steam link shows the status too. Set `STEAM_ID` in `lib/data.js` to your SteamID64 (public profile); games owned and
@@ -143,6 +147,7 @@ The owner can also sync them across devices, see [Settings sync](#settings-sync-
 | Motion | System (follows the OS reduced-motion setting) / Reduced (turns animations off) |
 | Ambient after / When the bar fades | Ambient after 30 s – 5 min without input (Off: only by hand, ⛰ or H); when its bar fades, show the scene only, or the scene + a big clock. The input that brings the bar back never presses anything (its click is swallowed, and the bar ignores the pointer for 0.4 s); the panels ignore the pointer for 0.4 s after they come back from Ambient or the lock, and the page doesn't scroll while they fade in; it never locks |
 | Sounds | in its own panel (the music card's Sounds row / A): the mix (each sound's on / off and level), volume and sleep timer. Synced like the rest; whether sounds play right now isn't |
+| Notifications | owner only, once the hub is set up: Pop-ups On / Off · Pop up for Everything / Warnings / Errors · In Ambient Show / Hide (the bar's chip and the screensaver line) · On the lock screen Titles (default: no message text, anyone walking past sees it) / Full / Count / Off |
 | Lock screen | Clock size Big / Small / Off · Date Show / Hide · Overlay Off / Soft / Dark · Blur Off / Soft / Strong · Music Bright / Dim / Hide (what plays, above *swipe to unlock*: radio play / pause for anyone, the Player's listen / stop for anyone and ⏭ for the owner, Spotify ⏯ ⏭ for the owner, spinning until Spotify confirms; a paused Spotify stays a minute, then goes unless something changes; Dim fades it until a click / tap or the pointer comes to it) · Weather Show / Hide (under the date). Also on the lock screen itself (🎨 top right): the only settings that change while locked. Blur re-blurs the moving scene every frame, so it costs GPU (Off by default) |
 
 ## Quick start (dev)
@@ -176,6 +181,7 @@ Change it for your own domain.
 | `WEATHER_API_URL` | see `docker-compose.yml` | `/api/weather`, `/api/weather/detail`, `/api/geo` |
 | `PRIVATE_SERVICES_FILE` | `/config/private-services.json` | `/api/private` |
 | `DISK_PATH` | `/` | disk stat in `/api/private` |
+| `NOTIFY_TOKEN` | empty = off | the senders' Bearer token for `/api/notify` (≥ 16 chars; also needs `DATABASE_URL` and `OWNER_USER`), see [Notifications](#notifications-owner-only) |
 | `SERVER_NAME` | `Server` (Coolify: `lenovo`) | this machine's label on the Server card |
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
@@ -339,6 +345,69 @@ location /api/private/settings/events {
     proxy_read_timeout 1h;
     proxy_send_timeout 1h;
 }
+```
+
+### Notifications (owner only)
+
+Optional. A small notification hub: anything on the LAN that can make an HTTP request (n8n, a cron job, a deploy hook,
+`scripts/notify.sh`) sends a notice, and the owner's open devices show it about a second later. Needs
+[Settings sync](#settings-sync-owner-only) to work (it rides on its login, database and live stream), plus
+`NOTIFY_TOKEN` (`openssl rand -hex 32`). Without the token the hub is off: `/api/notify` answers 404 and there's no bell.
+
+**Send one**: `POST /api/notify` with `Authorization: Bearer <NOTIFY_TOKEN>` and a JSON body (4 KB at most):
+
+| field | type | what it does |
+| --- | --- | --- |
+| `title` | string, **required**, ≤ 80 | the headline (one line) |
+| `body` | string, ≤ 500 | the detail; newlines are kept; plain text, never HTML |
+| `level` | `info` (default) · `success` · `warning` · `error` | the default icon and color; an `error` pop-up stays until closed, and on the screensaver warnings and errors stay while unread |
+| `source` | string, ≤ 32 | who sent it (`coolify`, `backup`), in small mono text next to the time |
+| `icon` | `fa:<name>` (Font Awesome solid), `fa-brands fa-<name>`, `fa-regular fa-<name>`, or an `https://` image URL | drawn in the page's icon well, like a service card's. Emoji aren't icons here: anything else falls back to the level's icon |
+| `color` | `primary` · `secondary` · `highlight` · `muted` · `green` · `red` · `blue` · `purple` | the accent, from the page's own palette (the first three follow the theme). No hex values. Default: info = primary, success = green, warning = highlight, error = red |
+| `url` | http(s) URL | a click on the pop-up or the inbox title opens it |
+| `tag` | letters, digits, `. _ : / -`, ≤ 64 | **replaces** the earlier notice with the same tag (`deploy-home-lofi`: "started…" then "done ✓" as one item); the new one counts as new again |
+| `silent` | boolean | inbox only: no pop-up |
+| `ttl` | seconds, 10 – 2592000 | it goes by itself after that ("X is down" that fixes itself) |
+
+Answers: **201** `{ id, at, warnings? }` (warnings: text cut to its limit, an icon / color / url the page can't use and
+left out, unknown fields), **400** `{ error, field }` (no title, a wrong type, an unknown level, a bad tag / ttl /
+silent), **401** bad token, **404** hub off, **413** too large, **415** not JSON, **429** more than 60 a minute from one
+address (300 in all), **503** database down.
+
+```sh
+curl -X POST https://home.wliafdew.dev/api/notify \
+  -H "Authorization: Bearer $NOTIFY_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Backup done","body":"nextcloud → b2 · 4.2 GB","level":"success","source":"backup","icon":"fa:database"}'
+
+# the same with the helper (plain sh + curl: copy it to any box)
+NOTIFY_TOKEN=… scripts/notify.sh -l success -s backup -i fa:database "Backup done" "nextcloud → b2 · 4.2 GB"
+long_job && scripts/notify.sh -l success "Job done" || scripts/notify.sh -l error -t job "Job failed"
+```
+
+**On the page** (`app/notify.js`, rules in `lib/notify.js`):
+
+- **Dashboard**: 🔔 next to the scene picker with the unread count; new ones pop up top right (6 s; hovering holds them;
+  at most 3, then "+N more"). The bell or **N** opens the inbox: the newest 50 by day, ✕ to dismiss one, **Clear all**.
+  Opening it reads everything, on every device.
+- **Compact** (Ambient, bar up): a chip on the bar with the newest unread (phones: the icon and the count). It opens the inbox.
+- **Screensaver** (Ambient, bar faded): one quiet line under the big clock, or a small pill at the bottom with *Scene
+  only*. Info and success go after 30 minutes; warnings and errors stay until read.
+- **Lock screen**: the newest 3 unread as cards above the music, then "+N more". By default **titles only** (no message
+  text: anyone walking past sees the lock screen); Settings can show the full text, only a count, or nothing.
+
+**How they arrive**: the notice goes into Postgres (two small tables, created on first use; the newest 200 are kept,
+none older than 30 days). The server then says `notify` on the owner's live stream (`/api/private/settings/events`,
+the one settings sync uses: one connection per device) and each open tab pulls
+`/api/private/settings/notifications`. Tabs also pull on load and when they're shown again, so a phone that was
+asleep catches up. What arrived since a tab last looked pops up; the backlog on a fresh load only shows on the badge.
+Read state is one number per owner ("read up to id N"), so the badge clears everywhere at once.
+
+**Proxy**: the owner's routes sit under `/api/private/settings`, so the settings-sync locations above already cover
+them (nothing to add). `/api/notify` is meant for the LAN: on the **external** proxy host, block it (the token is the
+lock either way, but nothing outside needs to reach it), on the proxy host's **Advanced** tab:
+
+```nginx
+location = /api/notify { return 404; }
 ```
 
 ### Spotify now playing

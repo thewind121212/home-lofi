@@ -36,6 +36,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:-}
       OWNER_USER: ${OWNER_USER:-}
       SYNC_SECRET: ${SYNC_SECRET:-}
+      # the notification hub, see README "Notifications" (off unless set, with DATABASE_URL and OWNER_USER)
+      NOTIFY_TOKEN: ${NOTIFY_TOKEN:-}
       # live widget stats (a widget is on when its *_URL is set), see README "Live widget stats"
       ADGUARD_URL: ${ADGUARD_URL:-}
       ADGUARD_USER: ${ADGUARD_USER:-}

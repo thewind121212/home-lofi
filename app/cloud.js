@@ -49,13 +49,17 @@ function writeLocal(doc, keys) {
 // apply(keys): the hook already wrote those keys to localStorage; the page re-reads them into state.
 // hold: the Settings dialog; while it's open, incoming changes wait so nothing moves under the cursor.
 // keep: { current: true } while the live stream should stay open with the tab hidden (sounds play: the mix follows);
-// the page calls live() when it changes (a ref says nothing by itself)
-export function useCloudSync(apply, hold, keep) {
+// the page calls live() when it changes (a ref says nothing by itself).
+// onLive(kind): the stream said 'hello' (connected: anything may have happened meanwhile) or 'notify' (the notification
+// hub has news, app/notify.js pulls); the same stream carries both, so a device keeps one connection
+export function useCloudSync(apply, hold, keep, onLive) {
   const [status, setStatus] = useState('off')
   const touch = useRef(() => {}) // replaced once the effect runs; a stable function for the page to call
   const liveRef = useRef(() => {})
   const applyRef = useRef(apply)
   applyRef.current = apply
+  const onLiveRef = useRef(onLive)
+  onLiveRef.current = onLive
 
   useEffect(() => {
     let alive = true
@@ -188,6 +192,8 @@ export function useCloudSync(apply, hold, keep) {
       listen('hello')
       listen('changed')
       listen('bye')
+      src.addEventListener('notify', () => es === src && onLiveRef.current?.('notify'))
+      src.addEventListener('hello', () => es === src && onLiveRef.current?.('hello'))
       // a drop or a refusal: our own backoff, not EventSource's (it would retry a refusal never, a drop every 3 s)
       src.onerror = () => {
         if (es !== src) return
