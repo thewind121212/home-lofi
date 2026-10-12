@@ -388,7 +388,8 @@ long_job && scripts/notify.sh -l success "Job done" || scripts/notify.sh -l erro
 
 - **Dashboard**: 🔔 next to the scene picker with the unread count; new ones pop up top right (6 s; hovering holds them;
   at most 3, then "+N more"). The bell or **N** opens the inbox: the newest 50 by day, ✕ to dismiss one, **Clear all**.
-  Opening it reads everything, on every device.
+  It drops down under the bell (a bottom sheet on phones); a click outside or Esc closes it. Opening it reads
+  everything, on every device.
 - **Compact** (Ambient, bar up): a chip on the bar with the newest unread (phones: the icon and the count). It opens the inbox.
 - **Screensaver** (Ambient, bar faded): one quiet line under the big clock, or a small pill at the bottom with *Scene
   only*. Info and success go after 30 minutes; warnings and errors stay until read.

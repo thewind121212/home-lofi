@@ -106,6 +106,10 @@ body {
   outline: 2px solid var(--color-lofi-primary);
   outline-offset: 2px;
 }
+/* a heading that takes focus when its panel opens (the inbox popover's title) is where reading starts, not a control */
+h2[tabindex="-1"]:focus-visible {
+  outline: none;
+}
 /* text boxes draw their focus ring inside the border, so a scrolling panel can't clip it */
 input:focus-visible,
 textarea:focus-visible {
@@ -303,6 +307,15 @@ textarea:focus-visible {
     .scene-pop::backdrop { background: rgba(10, 10, 22, 0.3); backdrop-filter: none; }
     .scene-pop[open] { animation-name: pop-in; animation-duration: 0.2s; }
     .scene-pop[data-closing] { animation-name: pop-out; animation-duration: 0.15s; }
+  }
+
+  /* the notifications inbox (app/notify.js Inbox): the bottom sheet on phones; from sm the same popover, under the
+     bell, a bit wider, as tall as the room below it allows (--pop-max). Header and footer stay put, only the list
+     scrolls, so the phone sheet's pinned header (.wx-sticky) steps aside */
+  @media (min-width: 640px) {
+    .inbox-pop { width: 26rem; max-height: var(--pop-max, calc(100svh - 8rem)); }
+    .inbox-pop[open] { display: flex; flex-direction: column; overflow: hidden; }
+    .inbox-pop .wx-sticky { position: static; margin: 0; padding: 0; background: none; }
   }
 
   /* full-screen scene gallery <dialog>: opaque, fades + scales in, same data-closing exit as .wx-sheet */
