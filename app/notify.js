@@ -358,11 +358,7 @@ export function Inbox({ dlg, anchor, hub, now }) {
           </div>
         )}
 
-        <div className="shrink-0 pt-2 sm:pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
-          <p className="min-w-0 flex items-center gap-2 text-[11px] font-mono text-lofi-muted">
-            <i className="fa-solid fa-cloud w-4 text-center" aria-hidden="true" />
-            <span>Read and cleared on all your devices</span>
-          </p>
+        <div className="shrink-0 pt-2 sm:pt-3 border-t border-white/5 flex justify-end">
           <button
             onClick={hub.clear}
             disabled={!hub.items.length}
