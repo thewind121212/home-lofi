@@ -35,13 +35,11 @@ const STRIPE = {
 }
 
 // owner: settings sync answered as the owner (Home's `owner`); set: the settings (pop-ups, their level); dlg: the inbox
-// (while it's open, what arrives is shown there and counts as read, no pop-up); hint: the server says the hub is on for
-// this owner (app/page.js), so the bell is there from the first paint instead of after the first pull; a no from the
-// route (off) still takes it away.
+// (while it's open, what arrives is shown there and counts as read, no pop-up).
 // -> { on, items (alive, newest first), read, unread, shownRead, toasts, more, live, markAllRead, dismiss, clear,
 //      dropToast, clearToasts }
-export function useNotify(owner, set, dlg, hint = false) {
-  const [hub, setHub] = useState({ items: [], read: 0, ready: false, off: false })
+export function useNotify(owner, set, dlg) {
+  const [hub, setHub] = useState({ items: [], read: 0, ready: false })
   const [shownRead, setShownRead] = useState(0) // read as it was when the inbox opened: its "new" dots stay put
   const [toasts, setToasts] = useState({ show: [], more: 0 })
   const seen = useRef(null) // the newest id this tab has had (null until the first answer: the backlog doesn't pop up)
@@ -58,7 +56,7 @@ export function useNotify(owner, set, dlg, hint = false) {
 
     const take = ({ items, read }) => {
       if (!on || !Array.isArray(items)) return
-      setHub({ items, read: Number(read) || 0, ready: true, off: false })
+      setHub({ items, read: Number(read) || 0, ready: true })
       const top = maxId(items)
       if (seen.current == null) return void (seen.current = top)
       const fresh = items.filter((i) => i.id > seen.current && i.id > read)
@@ -81,7 +79,6 @@ export function useNotify(owner, set, dlg, hint = false) {
       try {
         const r = await fetch(URL_, { cache: 'no-store', redirect: 'manual' })
         if (r.ok) take(await r.json())
-        else if (on && (r.type === 'opaqueredirect' || [401, 403, 404].includes(r.status))) setHub((h) => ({ ...h, off: true }))
       } catch {}
       busy = false
       if (again) pull()
@@ -116,14 +113,14 @@ export function useNotify(owner, set, dlg, hint = false) {
   useEffect(() => {
     if (owner) return void api.current.pull?.()
     seen.current = null
-    setHub({ items: [], read: 0, ready: false, off: false })
+    setHub({ items: [], read: 0, ready: false })
     setToasts({ show: [], more: 0 })
   }, [owner])
 
   const items = alive(hub.items, Date.now())
   const unread = unreadOf(items, hub.read).length
   return {
-    on: owner && !hub.off && (hub.ready || hint),
+    on: owner && hub.ready,
     items,
     read: hub.read,
     unread,
