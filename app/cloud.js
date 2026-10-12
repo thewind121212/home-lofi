@@ -52,8 +52,11 @@ function writeLocal(doc, keys) {
 // the page calls live() when it changes (a ref says nothing by itself).
 // onLive(kind): the stream said 'hello' (connected: anything may have happened meanwhile) or 'notify' (the notification
 // hub has news, app/notify.js pulls); the same stream carries both, so a device keeps one connection
-export function useCloudSync(apply, hold, keep, onLive) {
-  const [status, setStatus] = useState('off')
+// owner: the server already saw the owner's login on this page load (app/page.js): start as 'syncing' (the owner's
+// controls are there from the first paint), and a passing failure before the first answer is 'offline' and retried,
+// not a quiet guest. Only the server's own no (sign in / not the owner / sync off) undoes it.
+export function useCloudSync(apply, hold, keep, onLive, owner = false) {
+  const [status, setStatus] = useState(owner ? 'syncing' : 'off')
   const touch = useRef(() => {}) // replaced once the effect runs; a stable function for the page to call
   const liveRef = useRef(() => {})
   const applyRef = useRef(apply)
@@ -66,6 +69,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
     let on = false // the server said yes at least once (owner, signed in, sync set up)
     let busy = false, dirty = false, again = false, timer, tries = 0 // again: a pull asked for while busy
     let answered = false
+    let vouched = owner // the server's word, until this hook's own first answer
     const early = {} // edits made before the first answer: they count only if that answer says "owner"
     const self = newClientId() // this tab, for the live stream: its own saves aren't echoed back to it
 
@@ -107,8 +111,8 @@ export function useCloudSync(apply, hold, keep, onLive) {
         })
         if (!alive) return
         answered = true
-        if (r.type === 'opaqueredirect' || r.status === 401) return (on = false), setStatus('signin')
-        if (r.status === 403 || r.status === 404) return (on = false), setStatus('off')
+        if (r.type === 'opaqueredirect' || r.status === 401) return (on = vouched = false), setStatus('signin')
+        if (r.status === 403 || r.status === 404) return (on = vouched = false), setStatus('off')
         if (!r.ok) throw new Error(r.status)
         const { doc } = await r.json()
         const first = !on
@@ -124,7 +128,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
         setStatus(dirty ? 'syncing' : 'synced')
       } catch {
         if (!alive) return
-        if (!on) return setStatus('off') // never reached the server: behave like a guest, quietly
+        if (!on && !vouched) return setStatus('off') // never reached the server: behave like a guest, quietly
         dirty ||= method === 'PUT'
         setStatus('offline')
         later(() => request(dirty ? 'PUT' : 'GET'), RETRY[Math.min(tries++, RETRY.length - 1)] * 1000)

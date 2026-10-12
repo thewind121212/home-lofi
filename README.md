@@ -347,6 +347,58 @@ location /api/private/settings/events {
 }
 ```
 
+### The page knows who's looking (optional)
+
+`/` is rendered per request (`app/page.js`). If the proxy tells it who's looking, the dashboard comes out of the server
+as that visitor will see it: your bell, sync and controls, or a guest's *Sign in* line, from the first paint instead
+of a moment later. Without this location nothing changes: the page finds out in the browser, as before.
+
+The page's own location asks Authelia **without forcing a login**. A guest, or an Authelia that's down or slow, passes
+with no user, so the page stays public. It adds `x-home-sync`, so `Remote-User` is trusted exactly as on
+`/api/private/settings` (`lib/gate.js pageAccess`). Nothing private is rendered into the page; the data still only
+comes from the gated routes. The response is `Cache-Control: private, no-store`. On each Nginx Proxy Manager host,
+**Advanced** tab, next to the blocks above:
+
+```nginx
+# home-lofi page: ask Authelia who's looking, never force a login (guests and an Authelia outage pass, with no user)
+location = /internal/home-lofi/authz-soft {
+    internal;
+    auth_request off;
+    proxy_pass http://authelia_backend/api/authz/auth-request;   # the same upstream as /internal/home-lofi/authz
+    proxy_set_header X-Original-Method GET;
+    proxy_set_header X-Original-URL https://$http_host/api/private/settings;   # the owner's rule, as settings sync
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Content-Length "";
+    proxy_set_header Connection "";
+    proxy_pass_request_body off;
+    proxy_http_version 1.1;
+    proxy_connect_timeout 2s;
+    proxy_read_timeout 3s;
+    proxy_intercept_errors on;
+    error_page 401 403 404 500 502 503 504 = @home_lofi_guest;
+}
+location @home_lofi_guest {
+    auth_request off;
+    return 204;
+}
+location = / {
+    auth_request /internal/home-lofi/authz-soft;
+    auth_request_set $home_lofi_user $upstream_http_remote_user;
+    proxy_set_header Remote-User $home_lofi_user;                 # from Authelia, never from the client
+    proxy_set_header x-home-sync "<SYNC_SECRET>";
+    proxy_set_header x-home-gate "<GATE_SECRET>";                 # only where /api/private needs no login (the LAN proxy)
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_pass http://home-lofi:3000;                             # same upstream as your /api/private location
+}
+```
+
+Leave the `x-home-gate` line out where `/api/private` is behind the login (the external proxy). There, the page knows
+the private part is yours only when you're the owner. The LAN proxy adds the gate on `/api/private` without a login,
+so it says the same for the page. Check: `curl -s https://<host>/ | grep -c 'Sign in to see server'` prints 1 for a
+guest on the external proxy and 0 on the LAN.
+
 ### Notifications (owner only)
 
 Optional. A small notification hub: anything on the LAN that can make an HTTP request (n8n, a cron job, a deploy hook,
