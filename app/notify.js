@@ -187,9 +187,11 @@ const fullDate = (at) => new Date(at).toLocaleString('en-US', { weekday: 'short'
 const meta = (item, now) => [item.source, ago(item.at, now)].filter(Boolean).join(' · ')
 
 // The header's bell, next to the scene picker (its size and well): the unread count on an accent badge. N opens it too.
-export function Bell({ unread, onOpen, className = '' }) {
+// ref: the inbox hangs under it from sm (popUnder)
+export function Bell({ unread, onOpen, className = '', ref }) {
   return (
     <button
+      ref={ref}
       onClick={onOpen}
       aria-haspopup="dialog"
       aria-label={unread ? `Notifications, ${unread} new (N)` : 'Notifications (N)'}
@@ -280,13 +282,31 @@ export function Toasts({ hub, now, onOpen }) {
   )
 }
 
-// The inbox: the .wx-sheet dialog (bottom sheet on phones, centered from sm) like Settings and Sounds. The newest 50 by
-// day; what was new when it opened keeps its accent dot until it closes (opening marks everything read). Each one can
-// go (✕), or all of them (Clear all).
-export function Inbox({ dlg, hub, now }) {
+// From sm the inbox hangs under the bell, right edges aligned (like the scene picker's popover). Absolute in the top
+// layer = page coordinates. The bell may be off screen (scrolled away, N or a pop-up opened it) or hidden (Ambient keeps
+// the dashboard's layout): then it hangs at the top of the screen, still under the bell's column. Its height is the room
+// below (--pop-max), so the list scrolls inside it.
+export function popUnder(dlg, anchor) {
+  if (!dlg || !anchor) return
+  const r = anchor.getBoundingClientRect()
+  const top = Math.max(r.bottom, 8) + 8
+  dlg.style.setProperty('--pop-top', `${top + scrollY}px`)
+  dlg.style.setProperty('--pop-right', `${Math.max(16, document.documentElement.clientWidth - r.right)}px`)
+  dlg.style.setProperty('--pop-max', `${Math.max(240, innerHeight - top - 16)}px`)
+}
+
+// The inbox: the .wx-sheet bottom sheet on phones; from sm a popover under the bell (.scene-pop + .inbox-pop, placed
+// by popUnder). The newest 50 by day; what was new when it opened keeps its accent dot until it closes (opening marks
+// everything read). Each one can go (✕), or all of them (Clear all). anchor: the bell
+export function Inbox({ dlg, anchor, hub, now }) {
   const t = now ?? Date.now()
   const days = byDay(hub.items, t)
   const fresh = unreadOf(hub.items, hub.shownRead).length
+  useEffect(() => {
+    const onResize = () => dlg.current?.open && popUnder(dlg.current, anchor.current)
+    addEventListener('resize', onResize)
+    return () => removeEventListener('resize', onResize)
+  }, [dlg, anchor])
   return (
     <dialog
       ref={dlg}
@@ -297,36 +317,39 @@ export function Inbox({ dlg, hub, now }) {
         closeDialog(dlg.current)
       }}
       onClose={() => (delete dlg.current.dataset.closing, hub.markAllRead())}
-      className="wx-sheet sm:max-w-xl glass-panel text-lofi-text overscroll-contain"
+      className="wx-sheet scene-pop inbox-pop glass-panel text-lofi-text overscroll-contain"
     >
-      <div className="p-5 sm:p-7 flex flex-col gap-6">
-        <div className="wx-sticky flex items-center justify-between gap-4">
-          <h2 id="ntf-title" className="text-xl sm:text-2xl short:text-lg font-medium text-white flex items-center gap-3">
-            <i className="fa-solid fa-bell text-lofi-primary text-lg" aria-hidden="true" /> Notifications
+      <div className="p-5 sm:p-4 min-h-0 flex flex-col gap-6 sm:gap-3">
+        <div className="wx-sticky shrink-0 flex items-center justify-between gap-4">
+          <h2 id="ntf-title" tabIndex={-1} className="text-xl sm:text-base short:text-lg font-medium text-white flex items-center gap-3 sm:gap-2.5">
+            <i className="fa-solid fa-bell text-lofi-primary text-lg sm:text-sm" aria-hidden="true" /> Notifications
             {fresh > 0 && <span className="text-[10px] font-mono font-normal text-lofi-primary border border-lofi-primary/30 bg-lofi-primary/10 rounded-full px-2 py-0.5">{fresh} new</span>}
           </h2>
+          {/* the phone sheet's close; the popover goes with a click outside or Esc, like the scene picker */}
           <button
             onClick={() => closeDialog(dlg.current)}
             aria-label="Close notifications"
-            className="w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
+            className="sm:hidden w-9 h-9 shrink-0 rounded-full bg-lofi-base/50 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white hover:border-lofi-primary/40 transition-colors"
           >
             <i className="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </div>
 
         {days.length ? (
-          days.map(([label, list]) => (
-            <section key={label} aria-label={label} className="flex flex-col gap-2">
-              <h3 className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{label}</h3>
-              <ul className="flex flex-col gap-2">
-                {list.map((i) => (
-                  <InboxRow key={i.id} item={i} now={t} isNew={i.id > hub.shownRead} onDismiss={hub.dismiss} />
-                ))}
-              </ul>
-            </section>
-          ))
+          <div className="min-h-0 flex flex-col gap-6 sm:gap-4 sm:overflow-y-auto sm:overscroll-contain sm:-mx-1 sm:px-1">
+            {days.map(([label, list]) => (
+              <section key={label} aria-label={label} className="flex flex-col gap-2">
+                <h3 className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{label}</h3>
+                <ul className="flex flex-col gap-2">
+                  {list.map((i) => (
+                    <InboxRow key={i.id} item={i} now={t} isNew={i.id > hub.shownRead} onDismiss={hub.dismiss} />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
         ) : (
-          <div className="py-10 flex flex-col items-center gap-3 text-center">
+          <div className="py-10 sm:py-6 flex flex-col items-center gap-3 text-center">
             <span className="w-14 h-14 rounded-2xl bg-lofi-surface border border-white/5 shadow-lg flex items-center justify-center text-lofi-muted">
               <i className="fa-solid fa-bell-slash text-xl" aria-hidden="true" />
             </span>
@@ -335,7 +358,7 @@ export function Inbox({ dlg, hub, now }) {
           </div>
         )}
 
-        <div className="pt-2 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+        <div className="shrink-0 pt-2 sm:pt-3 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
           <p className="min-w-0 flex items-center gap-2 text-[11px] font-mono text-lofi-muted">
             <i className="fa-solid fa-cloud w-4 text-center" aria-hidden="true" />
             <span>Read and cleared on all your devices</span>

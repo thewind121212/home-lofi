@@ -17,7 +17,7 @@ import { ambientTick, ambientView, ambientWake, dockLift } from '../lib/ambient'
 import { FULLSCREEN_EVENTS, fullscreenApi, isFullscreenKey } from '../lib/fullscreen'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
-import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, useNotify } from './notify'
+import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
 
 // a browser with no saved location starts in Đà Lạt
@@ -106,6 +106,7 @@ export default function Home() {
   const galDlg = useRef(null)
   const sndDlg = useRef(null)
   const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
+  const bellRef = useRef(null) // its bell: the inbox hangs under it from sm
   // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
   // .current, so this hands it whichever of the two is open
   const [syncHold] = useState(() => ({ get current() { return [setDlg.current, sndDlg.current].find((d) => d?.open) ?? setDlg.current } }))
@@ -250,7 +251,10 @@ export default function Home() {
     if (!d || d.open) return
     hub.markAllRead()
     hub.clearToasts()
+    popUnder(d, bellRef.current)
     d.showModal()
+    // the popover has no close button: focus would land on the first notice's ✕ (Enter = gone), so the title takes it
+    if (matchMedia('(min-width: 640px)').matches) d.querySelector('#ntf-title')?.focus()
   }
   const inboxKey = useRef(null) // N, for the key handler below (it's set up once): only for the owner
   inboxKey.current = hub.on ? openInbox : null
@@ -478,7 +482,7 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {hub.on && <Bell className="order-3 sm:order-none" unread={hub.unread} onOpen={openInbox} />}
+            {hub.on && <Bell ref={bellRef} className="order-3 sm:order-none" unread={hub.unread} onOpen={openInbox} />}
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               <Clock now={now} clock={set.clock} />
@@ -564,7 +568,7 @@ export default function Home() {
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} notify={hub.on} />
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
-      <Inbox dlg={inboxDlg} hub={hub} now={tNow || null} />
+      <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
       {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
     </SteamData>
     </Prefs>
