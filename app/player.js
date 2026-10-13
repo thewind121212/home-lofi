@@ -22,7 +22,7 @@ import {
   songLink, thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
-import { closeDialog, motionOff } from './settings'
+import { closeDialog, motionOff, useStillPage } from './settings'
 import { settleFlip, useFlip } from './flip'
 import { coverCache } from '../lib/spotify-cover'
 import { lazyWatcher, scrollRoot } from '../lib/lazy'
@@ -1613,48 +1613,6 @@ function PlaceBtns({ s, p, ops, short }) {
 
 // (one view since the one input: words, a song link or a playlist link all go in the same box)
 const ADD_VIEWS = [['search', 'Search or paste', 'fa-magnifying-glass']]
-
-// The sheet keeps the page still: only its lists ([data-scroll]) scroll. The modal <dialog> makes the page inert, but a
-// wheel or a swipe over the header, the chips, the backdrop, or past a list's end would still scroll the page (iOS
-// above all): while it's open those are cancelled here, with overscroll-behavior: contain on the lists as the first
-// line (and touch-action in globals.css .tv-sheet).
-function canScroll(from, stop, dy) {
-  for (let el = from; el && el !== stop; el = el.parentElement) {
-    const o = getComputedStyle(el).overflowY
-    if ((o === 'auto' || o === 'scroll') && el.scrollHeight > el.clientHeight + 1 && (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1)) return true
-  }
-  return false
-}
-function useStillPage(dlg, open) {
-  useEffect(() => {
-    const d = dlg.current
-    if (!d || !open) return
-    let x0 = 0
-    let y0 = 0
-    // (on the window while the sheet is open: a wheel over the backdrop doesn't reach the dialog)
-    const wheel = (e) => {
-      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // pinch zoom, sideways (the chips)
-      if (!(d.contains(e.target) && canScroll(e.target, d, e.deltaY))) e.preventDefault()
-    }
-    const start = (e) => ((x0 = e.touches[0]?.clientX ?? 0), (y0 = e.touches[0]?.clientY ?? 0))
-    const move = (e) => {
-      if (e.touches.length !== 1 || !e.cancelable) return
-      const dx = x0 - e.touches[0].clientX
-      const dy = y0 - e.touches[0].clientY
-      if (Math.abs(dx) > Math.abs(dy)) return
-      if (!(d.contains(e.target) && canScroll(e.target, d, dy))) e.preventDefault()
-    }
-    const opts = { capture: true, passive: false }
-    addEventListener('wheel', wheel, opts)
-    addEventListener('touchstart', start, { capture: true, passive: true })
-    addEventListener('touchmove', move, opts)
-    return () => {
-      removeEventListener('wheel', wheel, opts)
-      removeEventListener('touchstart', start, { capture: true })
-      removeEventListener('touchmove', move, opts)
-    }
-  }, [dlg, open])
-}
 
 // Queue, recent, and for the owner Add (Search or link · Import playlist), Playlists and the Tavarian link. The same
 // <dialog> as Settings (.wx-sheet: a bottom sheet on phones, centered from sm; the same way in and out): ✕, Esc or a

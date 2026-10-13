@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { LEVEL_LOOK, TOAST_MAX, TOAST_MS, ago, alive, byDay, left, look, maxId, sticky, toastsFor, unreadOf } from '../lib/notify'
-import { closeDialog } from './settings'
+import { closeDialog, useStillPage } from './settings'
 
 // The notification hub on the page (rules in lib/notify.js, the routes in app/api/notify and
 // app/api/private/settings/notifications). The owner's only: guests never ask, and the route says 404 / 403 anyway.
@@ -297,11 +297,22 @@ export function popUnder(dlg, anchor) {
 
 // The inbox: the .wx-sheet bottom sheet on phones; from sm a popover under the bell (.scene-pop + .inbox-pop, placed
 // by popUnder). The newest 50 by day; what was new when it opened keeps its accent dot until it closes (opening marks
-// everything read). Each one can go (✕), or all of them (Clear all). anchor: the bell
+// everything read). Each one can go (✕), or all of them (Clear all). anchor: the bell.
+// Header and footer stay put and only the list scrolls; while it's open the page behind doesn't (useStillPage)
 export function Inbox({ dlg, anchor, hub, now }) {
   const t = now ?? Date.now()
   const days = byDay(hub.items, t)
   const fresh = unreadOf(hub.items, hub.shownRead).length
+  const [open, setOpen] = useState(false)
+  useStillPage(dlg, open)
+  useEffect(() => {
+    const d = dlg.current
+    if (!d) return
+    // the page opens it (showModal in openInbox), so follow the open attribute
+    const seen = new MutationObserver(() => setOpen(d.open))
+    seen.observe(d, { attributes: true, attributeFilter: ['open'] })
+    return () => seen.disconnect()
+  }, [dlg])
   useEffect(() => {
     const onResize = () => dlg.current?.open && popUnder(dlg.current, anchor.current)
     addEventListener('resize', onResize)
@@ -317,7 +328,7 @@ export function Inbox({ dlg, anchor, hub, now }) {
         closeDialog(dlg.current)
       }}
       onClose={() => (delete dlg.current.dataset.closing, hub.markAllRead())}
-      className="wx-sheet scene-pop inbox-pop glass-panel text-lofi-text overscroll-contain"
+      className="wx-sheet scene-pop inbox-pop glass-panel text-lofi-text"
     >
       <div className="p-5 sm:p-4 min-h-0 flex flex-col gap-6 sm:gap-3">
         <div className="wx-sticky shrink-0 flex items-center justify-between gap-4">
@@ -336,7 +347,7 @@ export function Inbox({ dlg, anchor, hub, now }) {
         </div>
 
         {days.length ? (
-          <div className="min-h-0 flex flex-col gap-6 sm:gap-4 sm:overflow-y-auto sm:overscroll-contain sm:-mx-1 sm:px-1">
+          <div data-scroll className="min-h-0 flex flex-col gap-6 sm:gap-4 overflow-y-auto overscroll-contain touch-pan-y -mx-1 px-1">
             {days.map(([label, list]) => (
               <section key={label} aria-label={label} className="flex flex-col gap-2">
                 <h3 className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{label}</h3>

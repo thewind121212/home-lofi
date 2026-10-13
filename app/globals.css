@@ -310,12 +310,14 @@ textarea:focus-visible {
   }
 
   /* the notifications inbox (app/notify.js Inbox): the bottom sheet on phones; from sm the same popover, under the
-     bell, a bit wider, as tall as the room below it allows (--pop-max). Header and footer stay put, only the list
-     scrolls, so the phone sheet's pinned header (.wx-sticky) steps aside */
+     bell, a bit wider, as tall as the room below it allows (--pop-max). Like .tv-sheet it never scrolls itself:
+     header and footer stay put, only the list ([data-scroll]) does, so the pinned header (.wx-sticky) steps aside,
+     and a swipe on the header, the footer or the backdrop pans nothing (useStillPage does the rest) */
+  .inbox-pop[open] { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; touch-action: none; }
+  .inbox-pop::backdrop { touch-action: none; }
+  .inbox-pop .wx-sticky { position: static; margin: 0; padding: 0; background: none; }
   @media (min-width: 640px) {
     .inbox-pop { width: 26rem; max-height: var(--pop-max, calc(100svh - 8rem)); }
-    .inbox-pop[open] { display: flex; flex-direction: column; overflow: hidden; }
-    .inbox-pop .wx-sticky { position: static; margin: 0; padding: 0; background: none; }
   }
 
   /* full-screen scene gallery <dialog>: opaque, fades + scales in, same data-closing exit as .wx-sheet */
