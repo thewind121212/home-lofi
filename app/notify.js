@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { LEVEL_LOOK, NO_PENDING, TOAST_MAX, TOAST_MS, ago, alive, byDay, left, look, maxId, settle, sticky, toastsFor, unreadOf } from '../lib/notify'
 import { closeDialog, useStillPage } from './settings'
+import { useFlip } from './flip'
+import { flipSig } from '../lib/flip'
 
 // The notification hub on the page (rules in lib/notify.js, the routes in app/api/notify and
 // app/api/private/settings/notifications). The owner's only: guests never ask, and the route says 404 / 403 anyway.
@@ -329,6 +331,9 @@ export function Inbox({ dlg, anchor, hub, now }) {
   const fresh = unreadOf(hub.items, hub.shownRead).length
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)
+  const rows = useRef(null)
+  // only while it's open: a closed inbox has nothing on screen to glide
+  useFlip(rows, flipSig(days.flatMap(([label, list]) => [`~day:${label}`, ...list.map((i) => i.id)])), { paused: !open })
   useEffect(() => {
     const d = dlg.current
     if (!d) return
@@ -370,28 +375,32 @@ export function Inbox({ dlg, anchor, hub, now }) {
           </button>
         </div>
 
-        {days.length ? (
-          <div data-scroll className="min-h-0 flex flex-col gap-6 sm:gap-4 overflow-y-auto overscroll-contain touch-pan-y -mx-1 px-1">
-            {days.map(([label, list]) => (
-              <section key={label} aria-label={label} className="flex flex-col gap-2">
-                <h3 className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{label}</h3>
-                <ul className="flex flex-col gap-2">
-                  {list.map((i) => (
-                    <InboxRow key={i.id} item={i} now={t} isNew={i.id > hub.shownRead} onDismiss={hub.dismiss} />
-                  ))}
-                </ul>
-              </section>
-            ))}
+        <div data-scroll className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y -mx-1 px-1">
+          {/* the glide scope (app/flip.js): a dismissed notice fades out and the ones below move up, Clear all fades
+              them all, one arriving slides in. "All quiet" lives in here too, so the last ones can leave */}
+          <div ref={rows} className="relative flex flex-col gap-6 sm:gap-4">
+            {days.length ? (
+              days.map(([label, list]) => (
+                <section key={label} aria-label={label} className="flex flex-col gap-2">
+                  <h3 data-flip-key={`~day:${label}`} className="text-[10px] font-mono uppercase tracking-widest text-lofi-muted">{label}</h3>
+                  <ul className="flex flex-col gap-2">
+                    {list.map((i) => (
+                      <InboxRow key={i.id} item={i} now={t} isNew={i.id > hub.shownRead} onDismiss={hub.dismiss} />
+                    ))}
+                  </ul>
+                </section>
+              ))
+            ) : (
+              <div data-flip-key="~empty" className="py-10 sm:py-6 flex flex-col items-center gap-3 text-center">
+                <span className="w-14 h-14 rounded-2xl bg-lofi-surface border border-white/5 shadow-lg flex items-center justify-center text-lofi-muted">
+                  <i className="fa-solid fa-bell-slash text-xl" aria-hidden="true" />
+                </span>
+                <p className="text-sm text-white">All quiet</p>
+                <p className="text-[11px] font-mono text-lofi-muted">What your machines send shows up here.</p>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="py-10 sm:py-6 flex flex-col items-center gap-3 text-center">
-            <span className="w-14 h-14 rounded-2xl bg-lofi-surface border border-white/5 shadow-lg flex items-center justify-center text-lofi-muted">
-              <i className="fa-solid fa-bell-slash text-xl" aria-hidden="true" />
-            </span>
-            <p className="text-sm text-white">All quiet</p>
-            <p className="text-[11px] font-mono text-lofi-muted">What your machines send shows up here.</p>
-          </div>
-        )}
+        </div>
 
         <div className="shrink-0 pt-2 sm:pt-3 border-t border-white/5 flex justify-end">
           <button
@@ -410,6 +419,7 @@ export function Inbox({ dlg, anchor, hub, now }) {
 function InboxRow({ item, now, isNew, onDismiss }) {
   return (
     <li
+      data-flip-key={item.id}
       className={`group min-w-0 rounded-2xl border p-3 flex items-start gap-3 transition-colors ${isNew ? 'border-lofi-primary/40 bg-lofi-primary/5' : 'border-white/5 bg-lofi-base/40'}`}
     >
       <NoticeIcon item={item} className="w-10 h-10 text-base" />
