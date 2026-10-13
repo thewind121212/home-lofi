@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { LEVEL_LOOK, TOAST_MAX, TOAST_MS, ago, alive, byDay, left, look, maxId, sticky, toastsFor, unreadOf } from '../lib/notify'
+import { LEVEL_LOOK, NO_PENDING, TOAST_MAX, TOAST_MS, ago, alive, byDay, left, look, maxId, settle, sticky, toastsFor, unreadOf } from '../lib/notify'
 import { closeDialog, useStillPage } from './settings'
 
 // The notification hub on the page (rules in lib/notify.js, the routes in app/api/notify and
@@ -50,13 +50,21 @@ export function useNotify(owner, set, dlg) {
   const hubRef = useRef(hub)
   hubRef.current = hub
   const api = useRef({})
+  // dismissed / cleared / read here, until the server's answers show it too (lib/notify.js settle): an answer to a
+  // request made just before doesn't flash the notice back
+  const pending = useRef(NO_PENDING)
 
   useEffect(() => {
     let on = true, busy = false, again = false, soon = 0
+    let sent = 0 // requests numbered as they go out (settle: which answers are surely newer than a dismiss)
+    let shown = 0 // the newest request whose answer is on screen: an older answer landing later is out of date
 
-    const take = ({ items, read }) => {
-      if (!on || !Array.isArray(items)) return
-      setHub({ items, read: Number(read) || 0, ready: true })
+    const take = (answer, seq) => {
+      if (!on || !Array.isArray(answer?.items) || seq < shown) return
+      shown = seq
+      const { items, read, pending: still } = settle(answer, pending.current, seq)
+      pending.current = still
+      setHub({ items, read, ready: true })
       const top = maxId(items)
       if (seen.current == null) return void (seen.current = top)
       const fresh = items.filter((i) => i.id > seen.current && i.id > read)
@@ -77,21 +85,27 @@ export function useNotify(owner, set, dlg) {
       busy = true
       again = false
       try {
+        const seq = ++sent
         const r = await fetch(URL_, { cache: 'no-store', redirect: 'manual' })
-        if (r.ok) take(await r.json())
+        if (r.ok) take(await r.json(), seq)
       } catch {}
       busy = false
       if (again) pull()
     }
 
-    async function post(body) {
+    // done(n): the server did it, and n requests had gone out by then (any later one sees it);
+    // undo: the server didn't take it, so stop hiding what it would have changed, and show what it has
+    async function post(body, { done, undo } = {}) {
       try {
+        const seq = ++sent
         const r = await fetch(URL_, { method: 'POST', cache: 'no-store', redirect: 'manual', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-        if (r.ok) take(await r.json())
-        else pull() // the server didn't take it: show what it has
-      } catch {
-        pull()
-      }
+        if (r.ok) {
+          done?.(sent)
+          return take(await r.json(), seq)
+        }
+      } catch {}
+      undo?.()
+      pull()
     }
 
     // a burst (a script sending five at once) becomes one pull
@@ -113,6 +127,7 @@ export function useNotify(owner, set, dlg) {
   useEffect(() => {
     if (owner) return void api.current.pull?.()
     seen.current = null
+    pending.current = NO_PENDING
     setHub({ items: [], read: 0, ready: false })
     setToasts({ show: [], more: 0 })
   }, [owner])
@@ -135,13 +150,20 @@ export function useNotify(owner, set, dlg) {
       const top = maxId(h.items)
       if (top <= h.read) return
       setHub({ ...h, read: top })
-      api.current.post({ action: 'read', upTo: top })
+      const was = pending.current.read
+      pending.current = { ...pending.current, read: Math.max(was, top) }
+      api.current.post({ action: 'read', upTo: top }, { undo: () => (pending.current = { ...pending.current, read: was }) })
     },
     dismiss(id) {
       const h = hubRef.current
       setHub({ ...h, items: h.items.filter((i) => i.id !== id) })
       setToasts((t) => ({ ...t, show: t.show.filter((i) => i.id !== id) }))
-      api.current.post({ action: 'dismiss', id })
+      const gone = (fn) => (pending.current = { ...pending.current, gone: fn(pending.current.gone) })
+      gone((g) => [...g.filter((x) => x.id !== id), { id, after: null }])
+      api.current.post({ action: 'dismiss', id }, {
+        done: (n) => gone((g) => g.map((x) => (x.id === id ? { id, after: n } : x))),
+        undo: () => gone((g) => g.filter((x) => x.id !== id)),
+      })
     },
     clear() {
       const h = hubRef.current
@@ -149,7 +171,9 @@ export function useNotify(owner, set, dlg) {
       if (!top) return
       setHub({ ...h, items: [] })
       setToasts({ show: [], more: 0 })
-      api.current.post({ action: 'clear', upTo: top })
+      const was = pending.current.upTo
+      pending.current = { ...pending.current, upTo: Math.max(was, top) }
+      api.current.post({ action: 'clear', upTo: top }, { undo: () => (pending.current = { ...pending.current, upTo: was }) })
     },
     dropToast: (id) => setToasts((t) => ({ show: t.show.filter((i) => i.id !== id), more: t.show.length > 1 ? t.more : 0 })),
     clearToasts: () => setToasts((t) => (t.show.length ? { show: [], more: 0 } : t)),
