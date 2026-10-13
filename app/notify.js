@@ -332,8 +332,9 @@ export function Inbox({ dlg, anchor, hub, now }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)
   const rows = useRef(null)
-  // only while it's open: a closed inbox has nothing on screen to glide
-  useFlip(rows, flipSig(days.flatMap(([label, list]) => [`~day:${label}`, ...list.map((i) => i.id)])), { paused: !open })
+  // only while it's open: a closed inbox has nothing on screen to glide. resize: the list's box eases to its new
+  // height with the rows (the popover / sheet follows), and the glides don't flash scrollbars
+  useFlip(rows, flipSig(days.flatMap(([label, list]) => [`~day:${label}`, ...list.map((i) => i.id)])), { paused: !open, resize: true })
   useEffect(() => {
     const d = dlg.current
     if (!d) return
@@ -375,9 +376,10 @@ export function Inbox({ dlg, anchor, hub, now }) {
           </button>
         </div>
 
-        <div data-scroll className="min-h-0 overflow-y-auto overscroll-contain touch-pan-y -mx-1 px-1">
-          {/* the glide scope (app/flip.js): a dismissed notice fades out and the ones below move up, Clear all fades
-              them all, one arriving slides in. "All quiet" lives in here too, so the last ones can leave */}
+        <div data-scroll className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y -mx-1 px-1">
+          {/* the glide scope (app/flip.js): a dismissed notice fades out, the ones below move up and the panel eases
+              shorter; Clear all fades them all, one arriving slides in. "All quiet" lives in here too, so the last
+              ones can leave */}
           <div ref={rows} className="relative flex flex-col gap-6 sm:gap-4">
             {days.length ? (
               days.map(([label, list]) => (
