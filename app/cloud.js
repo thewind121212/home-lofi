@@ -60,6 +60,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
   applyRef.current = apply
   const onLiveRef = useRef(onLive)
   onLiveRef.current = onLive
+  const selfRef = useRef(null) // this tab's id (the effect makes it): the Habits card sends it too, so its own changes aren't echoed
 
   useEffect(() => {
     let alive = true
@@ -68,6 +69,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
     let answered = false
     const early = {} // edits made before the first answer: they count only if that answer says "owner"
     const self = newClientId() // this tab, for the live stream: its own saves aren't echoed back to it
+    selfRef.current = self
 
     // remote doc -> take the keys that are newer than ours; true if we still have newer keys to send up.
     // While the Settings dialog is open nothing incoming is written or shown (it would move under the cursor, and the
@@ -193,6 +195,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
       listen('changed')
       listen('bye')
       src.addEventListener('notify', () => es === src && onLiveRef.current?.('notify'))
+      src.addEventListener('habits', () => es === src && onLiveRef.current?.('habits'))
       src.addEventListener('hello', () => es === src && onLiveRef.current?.('hello'))
       // a drop or a refusal: our own backoff, not EventSource's (it would retry a refusal never, a drop every 3 s)
       src.onerror = () => {
@@ -230,5 +233,5 @@ export function useCloudSync(apply, hold, keep, onLive) {
     }
   }, [hold, keep])
 
-  return { status, touch: (keys) => touch.current(keys), live: () => liveRef.current() }
+  return { status, touch: (keys) => touch.current(keys), live: () => liveRef.current(), id: () => selfRef.current }
 }
