@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
-import { MAX, MAX_PINS, UNDO_MS, canUndo, cleanAction, cleanText, domainOf, validId } from '../../../../../lib/pins.js'
+import { MAX, MAX_PINS, UNDO_MS, canUndo, cleanAction, cleanText, domainOf, safeLink, validId } from '../../../../../lib/pins.js'
 import { KEEP_REMOVED, pinsStore } from '../../../../../lib/pins-store.js'
 import { fetchPreview } from '../../../../../lib/pins-fetch.js'
 
@@ -36,8 +36,9 @@ const view = (p) => ({
   domain: domainOf(p.url),
   title: p.data.title ?? null,
   description: p.data.description ?? null,
-  image: p.data.image ?? null,
-  icon: p.data.icon ?? null,
+  // (checked again on the way out: a picture's host rules apply to every row, whenever it was kept)
+  image: safeLink(p.data.image) ?? null,
+  icon: safeLink(p.data.icon) ?? null,
   site: p.data.site ?? null,
   ok: p.data.ok !== false,
   reason: p.data.reason ?? null,
@@ -58,7 +59,8 @@ async function preview(link) {
     globalThis.__homePinsFetching--
   }
   const str = (v, n) => (typeof v === 'string' ? cleanText(v, n) : null)
-  const href = (v) => (typeof v === 'string' && /^https?:\/\//i.test(v) && v.length <= 2048 ? v : null)
+  // pictures and icons: absolute, and only where a fetch could go (lib/pins.js safeLink: never into the LAN)
+  const href = (v) => (typeof v === 'string' && /^https?:\/\//i.test(v) ? safeLink(v) : null)
   if (!p?.ok) return { ok: false, reason: typeof p?.reason === 'string' ? p.reason.slice(0, 20) : 'unreachable', icon: href(p?.icon) }
   return { ok: true, reason: null, title: str(p.title, MAX.title), description: str(p.description, MAX.description), image: href(p.image), icon: href(p.icon), site: str(p.site, MAX.site) }
 }
@@ -104,7 +106,8 @@ export async function POST(request) {
         tell(who, request)
         return json({ ...(await state(store, who)), pin: old.id, dup: true, ok: old.data.ok !== false })
       }
-      if (!old && (await store.list(who)).length >= MAX_PINS) return conflict(`${MAX_PINS} pins at most: remove some first`)
+      // (a new link, or a removed one coming back: either adds one, so the cap first, before any fetch)
+      if ((await store.list(who)).length >= MAX_PINS) return conflict(`${MAX_PINS} pins at most: remove some first`)
       if (busy()) return json({ error: 'a few previews are on their way: try again in a moment' }, 429)
       const data = await preview(act.url)
       const id = await store.put(who, { id: mkId(), url: act.url, data, at: Date.now() })

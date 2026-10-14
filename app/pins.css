@@ -61,17 +61,27 @@
 .pn-dom > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pn-dom .pn-letter { display: none; } /* (no icon there: the domain says it) */
 
-/* ✕ (and ↻ for one without a preview) on the picture's corner: on hover / focus with a mouse, always on touch */
-.pn-acts { position: absolute; top: 5px; left: 5px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+/* ✕ (and ↻ for one without a preview) on the picture's corner: on hover / focus with a mouse, always on touch. Each
+   button is its whole target (no overhang onto its neighbour), the round dot inside is what shows: 32 px targets for a
+   mouse, 44 px on touch */
+.pn-acts { position: absolute; top: 2px; left: 2px; display: flex; opacity: 0; transition: opacity 0.2s; }
 .pn-tile:hover .pn-acts, .pn-tile:focus-within .pn-acts { opacity: 1; }
-@media (hover: none) { .pn-acts { opacity: 1; } }
-.pn-act {
-  position: relative; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; cursor: pointer;
-  background: rgb(26 26 46 / 0.78); border: 1px solid rgb(255 255 255 / 0.14); color: #fff; backdrop-filter: blur(4px); transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+.pn-act { width: 32px; height: 32px; padding: 0; border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: #fff; }
+.pn-act .dot {
+  width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center;
+  background: rgb(26 26 46 / 0.78); border: 1px solid rgb(255 255 255 / 0.14); backdrop-filter: blur(4px); transition: color 0.2s, border-color 0.2s;
 }
-.pn-act::after { content: ''; position: absolute; inset: -6px; } /* a bigger target than it looks */
-.pn-act:hover, .pn-act:focus-visible { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.6); }
+.pn-act:hover .dot, .pn-act:focus-visible .dot { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.6); }
+.pn-act:focus-visible { outline: none; }
+.pn-act:focus-visible .dot { outline: 2px solid var(--color-lofi-primary); outline-offset: 1px; }
 .pn-act:disabled { cursor: default; }
+@media (hover: none) {
+  .pn-acts { opacity: 1; top: 0; left: 0; }
+  .pn-act { width: 44px; height: 44px; }
+  .pn-act .dot { width: 28px; height: 28px; }
+  /* (the icon of one without a preview steps aside, to the corner the buttons leave free) */
+  .pn-tile.is-bare .pn-plain { place-items: end; padding: 6px; }
+}
 .pn-spin { animation: pn-spin 0.9s linear infinite; }
 @keyframes pn-spin { to { transform: rotate(360deg); } }
 

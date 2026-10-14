@@ -10,7 +10,7 @@
 //   or its first letter.
 // - The owner's other tabs follow on the live stream ('pins': pull).
 import './pins.css'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link2, Pin, Plus, RotateCw, Search, Trash2, X } from 'lucide-react'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
@@ -31,6 +31,8 @@ export function usePins(owner, clientId) {
   const [refreshing, setRefreshing] = useState(null) // the pin whose preview is fetched again
   const [undoing, setUndoing] = useState(null) // { pin, index, until }: the Undo bar (the pin is gone from the list)
   const [note, setNote] = useState(null)
+  const [said, setSaid] = useState('') // what the card's one live region says (screen readers): the latest news
+  const [gone, setGone] = useState(() => new Set()) // pins removed here whose removal the server hasn't confirmed yet
   const api = useRef({})
   const seq = useRef({ sent: 0, shown: 0, at: 0, key: 0 }) // an older answer landing later is out of date
   // every request goes one at a time, in order (a pull never reads around a change still on its way), and one that
@@ -48,12 +50,14 @@ export function usePins(owner, clientId) {
     if (id) headers['x-home-client'] = id
     if (body !== undefined) headers['content-type'] = 'application/json'
     const r = await fetch(URL_, { method, cache: 'no-store', redirect: 'manual', headers, body: body === undefined ? undefined : JSON.stringify(body) })
-    if (r.status === 404 || r.status === 403) {
+    const j = await r.json().catch(() => null)
+    // 404 / 403: not the owner (or not set up): no card. Not the route's own "forbidden" (a write it wouldn't take from
+    // here): that one is just a failed write
+    if (r.status === 404 || (r.status === 403 && j?.error !== 'forbidden')) {
       setOff(true)
       setData(null)
       return null
     }
-    const j = await r.json().catch(() => null)
     if (n >= seq.current.shown && Array.isArray(j?.pins)) {
       seq.current.shown = n
       setData(j)
@@ -107,10 +111,14 @@ export function usePins(owner, clientId) {
     return () => clearTimeout(t)
   }, [undoing])
 
+  // (the same words twice still get read out: a no-break space tells them apart)
+  const say = (text) => setSaid((cur) => (cur === text ? `${text}\u00a0` : text))
+  const tell = (text) => (setNote(text), say(text))
+  const ungone = (id) => setGone((g) => (g.has(id) ? new Set([...g].filter((x) => x !== id)) : g))
   const failed = (e, what) => {
-    if (e?.status === 400 || e?.status === 409 || e?.status === 429) setNote(e.message.charAt(0).toUpperCase() + e.message.slice(1))
+    if (e?.status === 400 || e?.status === 403 || e?.status === 409 || e?.status === 429) tell(e.message.charAt(0).toUpperCase() + e.message.slice(1))
     else {
-      setNote(`Couldn't ${what}: check the connection and try again`)
+      tell(`Couldn't ${what}: check the connection and try again`)
       api.current.pull?.()
     }
   }
@@ -124,21 +132,25 @@ export function usePins(owner, clientId) {
     refreshing,
     undoing,
     note,
+    said,
+    // hidden from the list: removed here (its Undo showing, or its removal still on its way: a pull meanwhile mustn't
+    // bring it back for a moment)
+    hidden: (id) => gone.has(id) || undoing?.pin.id === id,
     // 'pins': another tab changed something; 'hello': the stream (re)connected, a pull unless one just went out
     live: (kind) => (kind === 'pins' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
     // a link -> true once it's kept (or was already), false if not (the note says why)
     async add(text) {
       const c = cleanUrl(text)
       if (c.error) {
-        setNote(`That link won't do: ${c.error.replace(/^url: /, '')}`)
+        tell(`That link won't do: ${c.error.replace(/^url: /, '')}`)
         return false
       }
       const key = ++seq.current.key
       setAdding((a) => [{ key, url: c.url }, ...a])
       try {
         const j = await enqueue(() => call('POST', { url: c.url }))
-        if (j?.dup) setNote('Already pinned: moved it to the top')
-        else if (j && !j.ok) setNote(`Pinned without a preview: ${why(j.reason)}`)
+        if (j?.dup) tell('Already pinned: moved it to the top')
+        else if (j && !j.ok) tell(`Pinned without a preview: ${why(j.reason)}`)
         return Boolean(j)
       } catch (e) {
         failed(e, 'pin that')
@@ -151,14 +163,21 @@ export function usePins(owner, clientId) {
       const list = data?.pins ?? []
       const index = list.findIndex((p) => p.id === pin.id)
       if (index < 0) return
-      // gone from the list at once (the card hides it while its Undo shows, whatever a pull says meanwhile)
+      // gone from the list at once, and stays gone until the server agrees (another removal's Undo taking this one's
+      // place included: this one is then simply done)
+      setGone((g) => new Set(g).add(pin.id))
       setUndoing({ pin, index, until: Date.now() + UNDO_MS })
-      enqueue(() => call('DELETE', { id: pin.id })).catch((e) => (setUndoing(null), failed(e, 'remove it')))
+      say(`Removed ${pin.title ?? pin.domain}. Undo is there for a few seconds.`)
+      enqueue(() => call('DELETE', { id: pin.id }))
+        .then(() => ungone(pin.id))
+        .catch((e) => (ungone(pin.id), setUndoing((u) => (u?.pin.id === pin.id ? null : u)), failed(e, 'remove it')))
     },
     undo() {
       const u = undoing
       if (!u) return
       setUndoing(null)
+      ungone(u.pin.id)
+      say(`${u.pin.title ?? u.pin.domain} is back`)
       setData((d) => (d && !d.pins.some((p) => p.id === u.pin.id) ? { ...d, pins: [...d.pins.slice(0, u.index), u.pin, ...d.pins.slice(u.index)] } : d))
       enqueue(() => call('POST', { action: 'undo', id: u.pin.id })).catch((e) => failed(e, 'bring it back'))
     },
@@ -166,7 +185,7 @@ export function usePins(owner, clientId) {
       setRefreshing(pin.id)
       try {
         const j = await enqueue(() => call('POST', { action: 'refresh', id: pin.id }))
-        if (j && !j.ok) setNote(`Still no preview: ${why(j.reason)}`)
+        if (j && !j.ok) tell(`Still no preview: ${why(j.reason)}`)
       } catch (e) {
         failed(e, 'fetch it again')
       } finally {
@@ -234,11 +253,11 @@ function Tile({ pin, onRemove, onRefresh, refreshing }) {
       <div className="pn-acts">
         {!pin.ok && (
           <button type="button" className="pn-act" aria-label={`Fetch the preview of ${name} again`} title="Try the preview again" disabled={refreshing} onClick={() => onRefresh(pin)}>
-            <RotateCw size={13} className={refreshing ? 'pn-spin' : ''} aria-hidden="true" />
+            <span className="dot"><RotateCw size={13} className={refreshing ? 'pn-spin' : ''} aria-hidden="true" /></span>
           </button>
         )}
         <button type="button" className="pn-act" aria-label={`Remove ${name}`} title="Remove" onClick={() => onRemove(pin)}>
-          <X size={14} aria-hidden="true" />
+          <span className="dot"><X size={14} aria-hidden="true" /></span>
         </button>
       </div>
     </li>
@@ -335,9 +354,9 @@ function PinsBody({ pn }) {
     return () => clearInterval(t)
   }, [pn.undoing])
   // (the one being removed stays out while its Undo shows, whatever a pull brings meanwhile)
-  const pins = useMemo(() => pn.data.pins.filter((p) => p.id !== pn.undoing?.pin.id), [pn.data, pn.undoing])
+  const pins = pn.data.pins.filter((p) => !pn.hidden(p.id))
   const link = looksLikeLink(q)
-  const found = useMemo(() => (link || !q.trim() ? pins : pins.filter((p) => matches(p, q))), [pins, q, link])
+  const found = link || !q.trim() ? pins : pins.filter((p) => matches(p, q)) // (500 at most: as you type is fine)
   const shown = all ? found : found.slice(0, SHOWN)
   const total = pins.length
   const kept = link ? pins.find((p) => p.url === cleanUrl(q).url) : null
@@ -379,7 +398,6 @@ function PinsBody({ pn }) {
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
-          maxLength={2048}
         />
         {q && (
           <button type="button" className="pn-clear" aria-label="Clear" onClick={() => (setQ(''), box.current?.focus())}>
@@ -391,13 +409,15 @@ function PinsBody({ pn }) {
         </button>
       </form>
       {kept && <p className="pn-note soft">Already pinned: Enter moves it to the top</p>}
-      {pn.note && <p className="pn-note" role="status">{pn.note}</p>}
+      {/* the one live region, always there (one mounted with its words is often missed): notes, removals */}
+      <p className="sr-only" role="status" aria-live="polite">{pn.said}</p>
+      {pn.note && <p className="pn-note">{pn.note}</p>}
       {u && (
-        <div className="pn-undo" role="status">
+        <div className="pn-undo">
           <span className="ic" aria-hidden="true"><Trash2 size={15} /></span>
           <div className="msg">
             <span>Removed {u.pin.title ?? u.pin.domain}</span>
-            <small>undo for {Math.ceil(left / 1000)}s</small>
+            <small aria-hidden="true">undo for {Math.ceil(left / 1000)}s</small>
           </div>
           <button type="button" className="pn-ghost" onClick={() => pn.undo()}>Undo</button>
           <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />
