@@ -18,7 +18,7 @@ import {
   Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
   Timer, Waves, X,
 } from 'lucide-react'
-import { DEFAULT_ICON, GRACE_MIN, ICONS, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, spanOf, toMin } from '../lib/habits'
+import { DEFAULT_ICON, GRACE_MIN, ICONS, REMIND_BEFORE, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, remindAt, spanOf, toMin } from '../lib/habits'
 import { closeDialog, motionOff, useStillPage } from './settings'
 
 const URL_ = '/api/private/settings/habits'
@@ -604,7 +604,7 @@ function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
           <span className="bell" aria-hidden="true"><Bell size={18} strokeWidth={1.75} /></span>
           <div className="t" id="hb-remind">
             Remind me
-            <small>{kind === 'time' ? `at ${fmtMin(Math.max(0, toMin(draft.when.at) - 5))}, 5 min before` : kind === 'window' ? `at ${draft.when.from}, when the window opens` : 'any-time routines have no start to remind'}</small>
+            <small>{kind === 'time' ? `at ${fmtMin(remindAt({ ...draft, remind: true }))}, ${REMIND_BEFORE} min before` : kind === 'window' ? `at ${draft.when.from}, when the window opens` : 'any-time routines have no start to remind'}</small>
           </div>
           <button type="button" className="hb-switch" role="switch" aria-checked={kind !== 'any' && draft.remind} aria-labelledby="hb-remind" disabled={kind === 'any'} onClick={() => setDraft({ ...draft, remind: !draft.remind })}><i /></button>
         </div>

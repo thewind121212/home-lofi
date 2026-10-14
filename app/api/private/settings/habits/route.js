@@ -1,8 +1,9 @@
 import { randomBytes } from 'node:crypto'
-import { sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
+import { notifyOn, sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
 import { BACK_DAYS, DEFAULT_TZ, STREAK_DAYS, addDays, canUndo, checkable, cleanAction, cleanDoc, isLate, localNow, streakOf, validTz } from '../../../../../lib/habits.js'
 import { HISTORY_DAYS, habitsStore } from '../../../../../lib/habits-store.js'
+import { notifyStore } from '../../../../../lib/notify-store.js'
 
 // The owner's habits (app/habits.js), in the owner-only zone like the settings next door (lib/gate.js ownerOf): the
 // proxy's /api/private/settings location covers this path, Authelia login included. Guests get 404 / 403 and the page
@@ -105,6 +106,8 @@ export async function POST(request) {
       if (!checkable(habit, day, now)) return conflict(`day: today or up to ${BACK_DAYS} days back, while the habit exists`)
       // already kept (another tab, a stale one, two holds at once): the first record stands, its time and its rating
       if (!(await store.check(who, { habitId, day, at: ms, late: isLate(habit, day, now), rating: c.act.rating ?? null }))) return conflict('already kept that day')
+      // its reminder ("Workout in 5 min … hold to keep it") is done with: off the inbox and the lock screen
+      if (day === now.day && notifyOn() && (await notifyStore().dropTag(`habit:${habitId}`).catch(() => false))) liveBus().publish(who, { kind: 'notify', at: ms })
     } else if (action === 'rate') {
       if (!(await store.rate(who, { habitId, day, rating: c.act.rating, note: c.act.note }))) return conflict('not kept that day')
     } else if (action === 'undo') {
