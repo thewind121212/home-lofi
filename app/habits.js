@@ -15,7 +15,7 @@ import './habits.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronDown, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
-  Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
+  Fingerprint, Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
   Timer, Waves, X,
 } from 'lucide-react'
 import { DEFAULT_ICON, GRACE_MIN, ICONS, REMIND_BEFORE, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, remindAt, spanOf, toMin } from '../lib/habits'
@@ -299,8 +299,9 @@ function HoldRing({ habit, onDone, onHolding }) {
         <circle className="ring-bg" cx="30" cy="30" r="27" />
         <circle className="ring-fill" cx="30" cy="30" r="27" strokeDasharray={C} strokeDashoffset={C * (1 - p)} style={{ opacity: p > 0 ? 1 : 0 }} />
       </svg>
+      {/* a fingerprint: press and hold (it lights up as the ring fills); the label says it for screen readers */}
       <span className="ring-label" aria-hidden="true">
-        {holding ? `${((HOLD_MS * (1 - p)) / 1000).toFixed(1)}s` : (<>hold<br />to keep</>)}
+        <Fingerprint size={24} strokeWidth={1.6} style={{ opacity: 0.55 + 0.45 * p }} />
       </span>
     </button>
   )

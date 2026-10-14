@@ -72,15 +72,16 @@
   touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
   transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.hb-hold svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.hb-hold > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
 .hb-tile .hb-hold, .hb-tile .hb-kept { width: 52px; height: 52px; }
-.hb-tile .hb-hold .ring-label { font-size: 8px; }
+.hb-tile .hb-hold .ring-label svg { width: 22px; height: 22px; }
 .hb-tile .hb-kept .check { width: 22px; height: 22px; }
 .hb-hold .ring-bg { fill: rgb(26 26 46 / 0.6); stroke: rgb(255 255 255 / 0.12); stroke-width: 3; transition: stroke 0.2s; }
 .hb-hold .ring-fill { fill: none; stroke: var(--color-lofi-primary); stroke-width: 3.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgb(255 138 92 / 0.6)); }
-.hb-hold .ring-label { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-lofi-muted); line-height: 1.15; text-align: center; }
+.hb-hold .ring-label { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-lofi-muted); transition: color 0.25s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .hb-hold.is-holding { transform: scale(1.07); }
-.hb-hold.is-holding .ring-label { color: #fff; }
+.hb-hold.is-holding .ring-label { color: var(--color-lofi-primary); transform: scale(1.08); }
+.hb-hold:not(.is-holding):hover .ring-label { color: var(--color-lofi-text); }
 .hb-hold:not(.is-holding):hover .ring-bg { stroke: rgb(255 138 92 / 0.35); }
 .hb-hold .ring-hint { position: absolute; inset: -4px; border-radius: 50%; border: 1px solid rgb(255 138 92 / 0.35); opacity: 0; }
 .hb-tile.is-due .hb-hold:not(.is-holding) .ring-hint { animation: hb-ring-hint 2.6s ease-out infinite; }
