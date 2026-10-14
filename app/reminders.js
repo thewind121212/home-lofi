@@ -513,3 +513,78 @@ function PopupList({ rm }) {
     </ul>
   )
 }
+
+// ---- Ambient and the lock screen ----
+// From 06:00 while anything is open (the pop-up's rule; the pop-up itself waits for the dashboard), the reminders follow
+// to the other screens: a chip on Ambient's bar (a tap opens the list), a quiet line under Ambient's big clock, and a
+// small list on the lock screen (not buttons: a swipe over it still unlocks; done is a hold, once unlocked).
+export const remindersShowing = (rm) => Boolean(rm.on && rm.data.due && rm.data.items.length)
+const showing = remindersShowing
+
+export function RemindersChip({ rm, onOpen }) {
+  if (!showing(rm)) return null
+  const items = rm.data.items
+  const n = items.length
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen()}
+      aria-haspopup="dialog"
+      aria-label={`Reminders: ${n} open, ${items[0].text}${n > 1 ? ` and ${n - 1} more` : ''}. Open the list`}
+      title={items[0].text}
+      className="flex items-center gap-2 whitespace-nowrap text-white hover:text-lofi-primary transition-colors"
+    >
+      <ListTodo size={14} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
+      <span className="max-sm:hidden max-w-44 truncate font-sans text-xs">{items[0].text}</span>
+      <span className="text-[10px] text-lofi-muted tabular-nums">{n > 1 ? `+${n - 1}` : ''}</span>
+      <span className="sm:hidden text-xs tabular-nums">{n}</span>
+    </button>
+  )
+}
+
+// under Ambient's big clock (decorative, like the clock: the chip and the list are the way in)
+export function RemindersLine({ rm }) {
+  if (!showing(rm)) return null
+  const items = rm.data.items
+  const n = items.length
+  return (
+    <div className="mt-3 sm:mt-4 flex justify-center font-mono text-xs sm:text-sm text-white/85 whitespace-nowrap" aria-hidden="true">
+      <span className="flex items-center justify-center gap-2.5 min-w-0 motion-safe:animate-[fade-in_1.2s_ease-out]">
+        <ListTodo size={15} strokeWidth={2} className="text-lofi-primary shrink-0" />
+        <span className="min-w-0 truncate max-w-[60vw] sm:max-w-md">{items[0].text}</span>
+        {n > 1 && <span className="text-white/45 tabular-nums">+{n - 1}</span>}
+      </span>
+    </div>
+  )
+}
+
+// the lock screen: up to LOCK_SHOWN of them, then "+N more"; a short screen (a landscape phone): one pill with the count
+const LOCK_SHOWN = 3
+export function LockReminders({ rm }) {
+  if (!showing(rm)) return null
+  const items = rm.data.items
+  const n = items.length
+  return (
+    <div role="group" aria-label="Reminders" className="flex flex-col items-center gap-2 w-[min(22rem,calc(100vw-2rem))]">
+      <div className="short:hidden w-full glass-panel rounded-2xl px-3.5 py-3 text-left motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]">
+        <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-lofi-muted">
+          <ListTodo size={13} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
+          {n} reminder{n === 1 ? '' : 's'} today
+        </p>
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {items.slice(0, LOCK_SHOWN).map((r) => (
+            <li key={r.id} className="flex items-center gap-2 min-w-0 text-sm text-white">
+              <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-lofi-primary/70" aria-hidden="true" />
+              <span className="min-w-0 truncate">{r.text}</span>
+            </li>
+          ))}
+        </ul>
+        {n > LOCK_SHOWN && <p className="mt-1.5 font-mono text-[10px] text-lofi-muted">+{n - LOCK_SHOWN} more</p>}
+      </div>
+      <div className="hidden short:flex glass-panel h-9 px-3.5 rounded-full items-center gap-2 font-mono text-xs text-white">
+        <ListTodo size={13} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
+        {n} reminder{n === 1 ? '' : 's'} today
+      </div>
+    </div>
+  )
+}

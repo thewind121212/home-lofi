@@ -20,7 +20,7 @@ import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
 import { PinsBar, PinsSheet, usePins } from './pins'
-import { RemindersBar, RemindersPopup, RemindersSheet, useReminders } from './reminders'
+import { LockReminders, RemindersBar, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -263,6 +263,8 @@ export default function Home() {
   pinsLive.current = pins.live
   const reminders = useReminders(owner, cloud.id)
   remindersLive.current = reminders.live
+  // today's reminders, due and open: they follow to Ambient (its bar, under its clock) and the lock screen too
+  const remDue = remindersShowing(reminders)
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
   function openInbox() {
     const d = inboxDlg.current
@@ -569,7 +571,7 @@ export default function Home() {
       </div>
 
       {softLock && (
-        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={lockNote && <LockNotices notes={lockNote} now={tNow} />}>
+        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || lockNote) && <div className="flex flex-col items-center gap-2">{remDue && <LockReminders rm={reminders} />}{lockNote && <LockNotices notes={lockNote} now={tNow} />}</div>}>
           {(set.lockMusic !== 'hide' || snd.on) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
@@ -581,7 +583,13 @@ export default function Home() {
       {/* Ambient: the big clock fades in when the bar fades (Settings > When the bar fades = Scene + clock), and out
           when it comes back; "move to wake" once when Ambient came on by itself */}
       {view.clock !== 'none' && (
-        <ClockScreen now={now} clock={set.clock} look={AMBIENT_LOOK} shown={view.clock === 'shown'} note={places.saver === 'clock' && saverNote && <SaverNote note={saverNote} now={tNow} />} />
+        <ClockScreen
+          now={now}
+          clock={set.clock}
+          look={AMBIENT_LOOK}
+          shown={view.clock === 'shown'}
+          note={<>{places.saver === 'clock' && saverNote && <SaverNote note={saverNote} now={tNow} />}<RemindersLine rm={reminders} /></>}
+        />
       )}
       {places.saver === 'pill' && saverNote && <SaverNote pill note={saverNote} now={tNow} />}
       {view.hint && <WakeHint />}
@@ -589,7 +597,7 @@ export default function Home() {
           shows: the tap that brings the bar back is swallowed (and the bar's guard holds a quick second one) */}
       {view.catcher && <div className={`fixed inset-0 z-[15] ${barSettling ? 'pointer-events-none' : ''}`} onClick={leaveAmbient} aria-hidden="true" />}
       {view.bar !== 'none' && (
-        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
       {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings. In Ambient (the
           dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
@@ -1058,7 +1066,7 @@ function LockScreen({ onUnlock, set, update, full, screen, notices, children }) 
 // back, it ignores the pointer for a moment. hover: a ref Home reads, true while the mouse rests on it (it stays then)
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
 const FIRST_SEG = 'flex items-center gap-1.5 sm:gap-2 pl-0.5 pr-2.5 sm:pr-4' // the music, first: no divider before it
-function AmbientBar({ now, wx, priv, mini, sounds, notice, calm, settling, barRef, hover }) {
+function AmbientBar({ now, wx, priv, mini, sounds, notice, reminders, calm, settling, barRef, hover }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -1079,6 +1087,7 @@ function AmbientBar({ now, wx, priv, mini, sounds, notice, calm, settling, barRe
 
       {/* the newest unread notification (app/notify.js AmbientChip): only while there is one */}
       {notice && <div className={SEG}>{notice}</div>}
+      {reminders && <div className={SEG}>{reminders}</div>}
 
       {wx && (
         <div className={SEG} title={wx.desc}>
