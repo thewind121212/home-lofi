@@ -134,7 +134,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => (notifyLive.current(kind), habitsLive.current(kind)))
+  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind)))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.

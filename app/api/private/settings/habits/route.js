@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
-import { BACK_DAYS, DEFAULT_TZ, addDays, canUndo, checkable, cleanAction, cleanDoc, isLate, localNow } from '../../../../../lib/habits.js'
+import { BACK_DAYS, DEFAULT_TZ, STREAK_DAYS, addDays, canUndo, checkable, cleanAction, cleanDoc, isLate, localNow, streakOf, validTz } from '../../../../../lib/habits.js'
 import { HISTORY_DAYS, habitsStore } from '../../../../../lib/habits-store.js'
 
 // The owner's habits (app/habits.js), in the owner-only zone like the settings next door (lib/gate.js ownerOf): the
@@ -14,12 +14,13 @@ import { HISTORY_DAYS, habitsStore } from '../../../../../lib/habits-store.js'
 //        { action: 'undo', habitId, day }      right after a check (UNDO_MS): as if it never happened
 //        { action: 'untick', habitId, day, reason }   later: taken back, with why
 //   -> the fresh state { tz, today, now (minutes since midnight), at (the server's ms: the card runs its chips on this
-//      clock, not the device's), habits, checkins (the last HISTORY_DAYS) }; the owner's other tabs hear
+//      clock, not the device's), habits, checkins (the last HISTORY_DAYS), streaks ({ id: { count, atRisk } }) }; the
+//      owner's other tabs hear
 //      'habits' on the live stream and pull.
 // Every time is the server's: when it was kept, which day "today" is, on time or late, the undo window. The page only
 // says what was done; it never sends a time.
 // 404 = not set up (no gate / no database), 403 = someone else, 400 = a bad body ({ error, field }), 409 = not
-// possible now (not that day / the undo window passed / nothing to rate), 503 = database unreachable.
+// possible now (not that day / already kept / the undo window passed / nothing to rate), 503 = database unreachable.
 const HEADERS = { 'cache-control': 'no-store, private' }
 const json = (body, status = 200) => Response.json(body, { status, headers: HEADERS })
 const MAX_BODY = 32_768 // 20 habits are ~6 KB
@@ -29,8 +30,12 @@ const EMPTY = { tz: DEFAULT_TZ, habits: [] }
 async function state(store, who, ms = Date.now()) {
   const doc = (await store.getDoc(who)) ?? EMPTY
   const now = localNow(ms, doc.tz)
-  const checkins = await store.checkins(who, addDays(now.day, -HISTORY_DAYS))
-  return { tz: doc.tz, today: now.day, now: now.min, at: ms, habits: doc.habits, checkins }
+  const [checkins, done] = await Promise.all([store.checkins(who, addDays(now.day, -HISTORY_DAYS)), store.doneDays(who, addDays(now.day, -STREAK_DAYS))])
+  // never miss twice, over the whole streak window (the card only gets HISTORY_DAYS of check-ins)
+  const days = new Map()
+  for (const d of done) (days.get(d.habitId) ?? days.set(d.habitId, new Set()).get(d.habitId)).add(d.day)
+  const streaks = Object.fromEntries(doc.habits.filter((h) => !h.archived).map((h) => [h.id, streakOf(h, days.get(h.id) ?? new Set(), now.day)]))
+  return { tz: doc.tz, today: now.day, now: now.min, at: ms, habits: doc.habits, checkins, streaks }
 }
 const tell = (who, request) => liveBus().publish(who, { kind: 'habits', at: Date.now(), from: clientId(request.headers.get('x-home-client')) })
 
@@ -63,7 +68,10 @@ export async function PUT(request) {
   try {
     const store = habitsStore()
     const old = (await store.getDoc(who)) ?? EMPTY
-    const c = cleanDoc(b.value, { old, today: localNow(Date.now(), b.value?.tz ?? old.tz).day, mkId })
+    // (the zone is checked before it's used: a bad one is the editor's 400, not a 503)
+    const tz = b.value?.tz ?? old.tz
+    if (!validTz(tz)) return json({ error: 'tz: an IANA time zone', field: 'tz' }, 400)
+    const c = cleanDoc(b.value, { old, today: localNow(Date.now(), tz).day, mkId })
     if (c.error) return json({ error: c.error, field: c.field }, 400)
     await store.putDoc(who, c.doc)
     tell(who, request)
@@ -92,6 +100,9 @@ export async function POST(request) {
     const conflict = async (error) => json({ error, ...(await state(store, who, ms)) }, 409)
     if (action === 'check') {
       if (!checkable(habit, day, now)) return conflict(`day: today or up to ${BACK_DAYS} days back, while the habit exists`)
+      // already kept (another tab, a stale one): the first record stands, its time and its rating
+      const cur = await store.get(who, habitId, day)
+      if (cur && cur.undoneAt == null) return conflict('already kept that day')
       await store.check(who, { habitId, day, at: ms, late: isLate(habit, day, now), rating: c.act.rating ?? null })
     } else if (action === 'rate') {
       if (!(await store.rate(who, { habitId, day, rating: c.act.rating, note: c.act.note }))) return conflict('not kept that day')

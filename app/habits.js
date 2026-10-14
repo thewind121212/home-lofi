@@ -18,7 +18,7 @@ import {
   Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
   Timer, Waves, X,
 } from 'lucide-react'
-import { DEFAULT_ICON, GRACE_MIN, ICONS, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, spanOf, streakOf, toMin } from '../lib/habits'
+import { DEFAULT_ICON, GRACE_MIN, ICONS, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, spanOf, toMin } from '../lib/habits'
 import { closeDialog, motionOff, useStillPage } from './settings'
 
 const URL_ = '/api/private/settings/habits'
@@ -81,6 +81,8 @@ export function useHabits(owner, clientId) {
   const [fresh, setFresh] = useState(null) // the habit just kept (its burst, its rating question)
   const skew = useRef(0) // the server's clock minus this device's
   const api = useRef({})
+  const seq = useRef({ sent: 0, shown: 0, at: 0 }) // requests numbered as they go: an older answer landing later is out of date
+  const queue = useRef(Promise.resolve()) // changes go one at a time, in order (a rating never overtakes its check)
   const dataRef = useRef(data)
   dataRef.current = data
   const ownerRef = useRef(owner)
@@ -92,6 +94,8 @@ export function useHabits(owner, clientId) {
     setData(s)
   }
   async function call(method, body) {
+    const n = ++seq.current.sent
+    seq.current.at = Date.now()
     const headers = {}
     const id = clientId?.()
     if (id) headers['x-home-client'] = id
@@ -103,7 +107,10 @@ export function useHabits(owner, clientId) {
       return null
     }
     const j = await r.json().catch(() => null)
-    take(j)
+    if (n >= seq.current.shown) {
+      seq.current.shown = n
+      take(j)
+    }
     if (!r.ok) throw Object.assign(new Error(j?.error ?? 'failed'), { status: r.status })
     return j
   }
@@ -163,6 +170,7 @@ export function useHabits(owner, clientId) {
       const next = fn(cur)
       return { ...d, checkins: next ? [...rest, next] : rest }
     })
+  const send = (body) => (queue.current = queue.current.then(() => call('POST', body)))
   const fail = (e) => {
     if (e?.status === 409) setNote(e.message.charAt(0).toUpperCase() + e.message.slice(1))
     else {
@@ -178,7 +186,8 @@ export function useHabits(owner, clientId) {
     undoing,
     fresh,
     local,
-    live: (kind) => (kind === 'habits' || kind === 'hello') && api.current.live?.(),
+    // 'habits': another tab changed something; 'hello': the stream (re)connected, a pull unless one just went out
+    live: (kind) => (kind === 'habits' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
     keep(h) {
       const now = local()
       if (!now) return
@@ -186,13 +195,13 @@ export function useHabits(owner, clientId) {
       patch(h.id, day, () => ({ habitId: h.id, day, doneAt: Date.now() + skew.current, late: isLate(h, day, now), rating: null, note: null, undoneAt: null, reason: null }))
       setFresh(h.id)
       setUndoing({ habitId: h.id, day, until: Date.now() + UNDO_MS })
-      call('POST', { action: 'check', habitId: h.id, day }).catch((e) => (setUndoing(null), setFresh(null), fail(e)))
+      send({ action: 'check', habitId: h.id, day }).catch((e) => (setUndoing(null), setFresh(null), fail(e)))
     },
-    rate(h, rating) {
-      const day = local()?.day
+    // day: the one the row shows (not "now": a rating tapped just after midnight is for the day it was kept)
+    rate(h, rating, day) {
       patch(h.id, day, (c) => c && { ...c, rating })
       setFresh(null)
-      call('POST', { action: 'rate', habitId: h.id, day, rating }).catch(fail)
+      send({ action: 'rate', habitId: h.id, day, rating }).catch(fail)
     },
     undo() {
       const u = undoing
@@ -200,19 +209,18 @@ export function useHabits(owner, clientId) {
       setUndoing(null)
       setFresh(null)
       patch(u.habitId, u.day, () => null)
-      call('POST', { action: 'undo', habitId: u.habitId, day: u.day }).catch(fail)
+      send({ action: 'undo', habitId: u.habitId, day: u.day }).catch(fail)
     },
-    takeBack(h, reason) {
-      if (undoing?.habitId === h.id) return this.undo()
-      const day = local()?.day
+    takeBack(h, reason, day) {
+      if (undoing?.habitId === h.id && undoing.day === day) return this.undo()
       patch(h.id, day, (c) => c && { ...c, undoneAt: Date.now() + skew.current, reason })
-      call('POST', { action: 'untick', habitId: h.id, day, reason }).catch(fail)
+      send({ action: 'untick', habitId: h.id, day, reason }).catch(fail)
     },
     endUndo: () => setUndoing(null),
     // the editor's whole list -> null (saved) or what was wrong
     async save(habits) {
       try {
-        await call('PUT', { tz: dataRef.current?.tz, habits })
+        await (queue.current = queue.current.then(() => call('PUT', { tz: dataRef.current?.tz, habits })))
         return null
       } catch (e) {
         return e?.status === 400 ? e.message : "Couldn't save: check the connection and try again"
@@ -366,7 +374,7 @@ function Row({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
             <div className="hb-after-in">
               <span className="q">How was it?</span>
               {RATINGS.map(([k, I, t]) => (
-                <button key={k} type="button" className={`hb-rate ${k}`} onClick={() => onRate(habit, k)}>
+                <button key={k} type="button" className={`hb-rate ${k}`} onClick={() => onRate(habit, k, today)}>
                   <I size={17} strokeWidth={1.75} aria-hidden="true" />{t}
                 </button>
               ))}
@@ -375,8 +383,8 @@ function Row({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
           {asking && done && (
             <div className="hb-after-in">
               <p>Take back today's {habit.name.toLowerCase()}?</p>
-              <button type="button" className="hb-ghost" onClick={() => (setAsking(false), onTakeBack(habit, 'mistake'))}>Tapped by mistake</button>
-              <button type="button" className="hb-ghost warm" onClick={() => (setAsking(false), onTakeBack(habit, 'not-done'))}>Didn't really do it</button>
+              <button type="button" className="hb-ghost" onClick={() => (setAsking(false), onTakeBack(habit, 'mistake', today))}>Tapped by mistake</button>
+              <button type="button" className="hb-ghost warm" onClick={() => (setAsking(false), onTakeBack(habit, 'not-done', today))}>Didn't really do it</button>
               <button type="button" className="hb-ghost" onClick={() => setAsking(false)}>Keep it</button>
             </div>
           )}
@@ -389,7 +397,7 @@ function Row({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
 // ---- the week ----
 
 const pretty = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
-function Week({ habits, checkins, today }) {
+function Week({ habits, checkins, streaks, today }) {
   const monday = addDays(today, 1 - dowOf(today))
   const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
   const kept = useMemo(() => {
@@ -406,7 +414,7 @@ function Week({ habits, checkins, today }) {
       </div>
       {habits.map((h) => {
         const mine = kept.get(h.id) ?? new Map()
-        const st = streakOf(h, new Set(mine.keys()), today)
+        const st = streaks?.[h.id] ?? { count: 0, atRisk: false }
         return (
           <div className="hb-wk" key={h.id}>
             <div className="hb-wk-name">
@@ -530,7 +538,8 @@ function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
     setDraft((d) => {
       if (k === d.when.kind) return d
       const at = d.when.kind === 'time' ? d.when.at : d.when.kind === 'window' ? d.when.from : '07:00'
-      return { ...d, when: k === 'time' ? { kind: k, at } : k === 'window' ? { kind: k, from: at, to: fmtMin(Math.min(1435, toMin(at) + 150)) } : { kind: k } }
+      const from = Math.min(toMin(at), 1420) // (a window needs 15 min after its start, the same day)
+      return { ...d, when: k === 'time' ? { kind: k, at } : k === 'window' ? { kind: k, from: fmtMin(from), to: fmtMin(Math.min(1435, from + 150)) } : { kind: k } }
     })
   const toggleDay = (n) => setDraft((d) => ({ ...d, days: d.days.includes(n) ? d.days.filter((x) => x !== n) : [...d.days, n].sort((a, b) => a - b) }))
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i])
@@ -604,7 +613,7 @@ function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
         <button type="button" className="hb-btn" onClick={onBack}>Cancel</button>
         <button type="button" className="hb-btn primary" disabled={Boolean(err) || busy} onClick={() => onSave(draft)}>{busy ? 'Saving…' : 'Save routine'}</button>
         {habit.id && (
-          <button type="button" className="hb-archive" disabled={busy} onClick={() => onArchive(draft)}>
+          <button type="button" className="hb-archive" disabled={busy} onClick={() => onArchive(habit)}>
             <Archive size={14} strokeWidth={2} aria-hidden="true" />Archive routine (its history stays)
           </button>
         )}
@@ -730,7 +739,7 @@ export function HabitsCard({ hb }) {
           <p className="hb-label">Today</p>
           <ul className="hb-rows">
             {habits.map((h) => (
-              <Row key={h.id} habit={h} today={today} now={now} entry={entry(h.id)} fresh={hb.fresh === h.id} onKeep={hb.keep} onRate={hb.rate} onTakeBack={(x, r) => hb.takeBack(x, r)} />
+              <Row key={h.id} habit={h} today={today} now={now} entry={entry(h.id)} fresh={hb.fresh === h.id} onKeep={hb.keep} onRate={hb.rate} onTakeBack={(x, r, d) => hb.takeBack(x, r, d)} />
             ))}
           </ul>
         </div>
@@ -755,7 +764,7 @@ export function HabitsCard({ hb }) {
       )}
       {hb.note && <p className="hb-note" role="status">{hb.note}</p>}
 
-      {habits.length > 0 && <Week habits={habits} checkins={data.checkins} today={today} />}
+      {habits.length > 0 && <Week habits={habits} checkins={data.checkins} streaks={data.streaks} today={today} />}
       <Routines hb={hb} dlg={dlg} />
     </section>
   )
