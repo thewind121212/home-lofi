@@ -43,6 +43,7 @@ const STRIPE = {
 //      dropToast, clearToasts }
 export function useNotify(owner, set, dlg) {
   const [hub, setHub] = useState({ items: [], read: 0, ready: false })
+  const [tried, setTried] = useState(false) // the first pull came back, whatever it said (the bell's stand-in ends)
   const [shownRead, setShownRead] = useState(0) // read as it was when the inbox opened: its "new" dots stay put
   const [toasts, setToasts] = useState({ show: [], more: 0 })
   const seen = useRef(null) // the newest id this tab has had (null until the first answer: the backlog doesn't pop up)
@@ -92,6 +93,7 @@ export function useNotify(owner, set, dlg) {
         const r = await fetch(URL_, { cache: 'no-store', redirect: 'manual' })
         if (r.ok) take(await r.json(), seq)
       } catch {}
+      if (on) setTried(true)
       busy = false
       if (again) pull()
     }
@@ -139,6 +141,7 @@ export function useNotify(owner, set, dlg) {
   const unread = unreadOf(items, hub.read).length
   return {
     on: owner && hub.ready,
+    tried,
     items,
     read: hub.read,
     unread,

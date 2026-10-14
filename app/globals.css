@@ -463,3 +463,19 @@ html[data-fade]:not([data-motion='reduce']) {
 .seek-bar:active::-moz-range-thumb {
   transform: scale(1);
 }
+
+/* skeletons (app/skeleton.js, lib/skeleton.js): a value's stand-in, inside the element that will hold it */
+.sk-bone { display: inline-block; height: 0.85em; vertical-align: -0.1em; border-radius: 0.35em; background: rgb(255 255 255 / 0.09); }
+.sk-bone.sk-block { display: block; height: 100%; }
+.sk-bone, .sk-pulse { animation: sk-pulse 1.6s ease-in-out infinite; }
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+/* the shapes remembered from last time (<html data-sk-*>, set before the first paint); .sk-force: the page knows
+   better now (the owner, just signed in for the first time on this browser) */
+html:not([data-sk-owner]) .sk-owner:not(.sk-force) { display: none !important; }
+html:not([data-sk-priv]) .sk-priv { display: none !important; }
+html[data-sk-priv] .sk-locked { display: none !important; }
+html[data-sk-one-host] .sk-host-table { display: none !important; }
+html[data-sk-one-host] .sk-host-tiles { display: flex !important; }
+/* (collapsed, not removed: the real row keeps an empty span there, so Details stays on the right) */
+html[data-sk-wx-no-aqi] .sk-wx-aqi { flex: 0 0 0 !important; width: 0; overflow: hidden; visibility: hidden; }
+html:not([data-sk-wx-station]) .sk-wx-station { display: none !important; }

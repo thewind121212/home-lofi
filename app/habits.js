@@ -12,6 +12,8 @@
 //   reminder switch, a live one-line summary. Icons: Lucide (lucide-react).
 // - The owner's other tabs follow on the live stream ('habits': pull).
 import './habits.css'
+import { Bone, rememberShape } from './skeleton'
+import { SK_MAX } from '../lib/skeleton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronDown, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
@@ -76,6 +78,7 @@ const order = (h) => (h.when.kind === 'any' ? 1440 : spanOf(h)[0])
 export function useHabits(owner, clientId) {
   const [data, setData] = useState(null)
   const [off, setOff] = useState(false)
+  const [tried, setTried] = useState(false) // a load was tried (so a failed one ends the skeleton)
   const [note, setNote] = useState(null)
   const [undoing, setUndoing] = useState(null) // { habitId, day, until }: the Undo bar
   const [fresh, setFresh] = useState(null) // the habit just kept (its burst, its rating question)
@@ -129,6 +132,7 @@ export function useHabits(owner, clientId) {
         await enqueue(() => call('GET'))
       } catch {}
       busy = false
+      if (on) setTried(true)
       if (again) pull()
     }
     api.current.pull = pull
@@ -184,6 +188,7 @@ export function useHabits(owner, clientId) {
 
   return {
     on: Boolean(owner && data && !off),
+    pending: Boolean(owner && !data && !off && !tried), // the owner's first load is on its way: the skeleton
     data,
     note,
     undoing,
@@ -704,18 +709,83 @@ function Routines({ hb, dlg }) {
 
 // ---- the card ----
 
+// The card while it's on its way: its own parts (head, tiles, the week strip) with stand-ins. The pre-paint stylesheet
+// (lib/skeleton.js) shows it only on the owner's browser, with as many tiles as there were routines and, at the same
+// window width, the height the card had (a phone's tiles wrap their lines)
+const SK_HB = Array.from({ length: SK_MAX.habits }, (_, i) => i)
+function HabitsSkeleton({ force }) {
+  return (
+    <section aria-label="Habits" aria-busy="true" className={`glass-panel rounded-3xl p-4 sm:p-5 hb sk-owner sk-hb-card ${force ? 'sk-force' : ''}`}>
+      <span className="sr-only">Loading habits…</span>
+      <div className="hb-head" aria-hidden="true">
+        <div className="hb-dayring">
+          <svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="13" fill="none" stroke="rgb(255 255 255 / 0.1)" strokeWidth="3" /></svg>
+        </div>
+        <div className="hb-title">
+          <h2>Habits</h2>
+          <span className="hb-sub"><Bone w="15ch" /></span>
+        </div>
+        <span className="hb-iconbtn hb-weekbtn sk-pulse"><CalendarDays size={16} /><ChevronDown size={14} className="chev" /></span>
+        <span className="hb-iconbtn sk-pulse"><SlidersHorizontal size={16} /></span>
+      </div>
+      <ul className="hb-tiles" aria-hidden="true">
+        {SK_HB.map((i) => (
+          <li key={i} data-sk-hb={i} className="hb-tile">
+            <div className="hb-tile-main">
+              <span className="hb-well sk-pulse" />
+              <div className="hb-text">
+                <div className="hb-name"><Bone w="9ch" /></div>
+                <div className="hb-line" data-show="meta">
+                  <div className="hb-meta"><span><Bone w="12ch" /></span><span className="hb-chip"><Bone w="6ch" /></span></div>
+                </div>
+              </div>
+              <span className="hb-sk-ring sk-pulse" />
+            </div>
+            <div className="hb-after"><div /></div>
+          </li>
+        ))}
+      </ul>
+      <div className="hb-fold sk-hb-fold" aria-hidden="true">
+        <div>
+          <div className="hb-week">
+            <p className="hb-label" style={{ margin: 0 }}><Bone w="9ch" /></p>
+            <div className="hb-wk"><span />{DOW.map((d, k) => <span key={k} className="hb-wk-day">{d}</span>)}</div>
+            {SK_HB.map((i) => (
+              <div key={i} className="hb-wk" data-sk-hb={i}>
+                <div className="hb-wk-name"><b><Bone w="9ch" /></b><small><Bone w="10ch" /></small></div>
+                {DOW.map((d, k) => <span key={k} className="hb-dot off" />)}
+              </div>
+            ))}
+            <div className="hb-legend"><span><Bone w="20ch" /></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 const WEEK_KEY = 'habitsWeek' // the week strip folded open on this device
 // hb: useHabits(). Nothing at all unless the server said this is the owner and answered. A short, wide bar: today's
 // habits as tiles, the week folded under ▾, the routines behind the sliders.
-export function HabitsCard({ hb }) {
+// wait: the owner's card may be on its way (owner not known yet, or the first load), so its skeleton keeps the place;
+// force: it surely is (the owner), whatever the remembered shape says
+export function HabitsCard({ hb, wait = false, force = false }) {
+  if (!hb.on) return wait ? <HabitsSkeleton force={force} /> : null
+  return <HabitsBody hb={hb} />
+}
+
+// (mounted only once the data is here, in the browser: the week strip opens as it was, without animating open)
+function HabitsBody({ hb }) {
   const dlg = useRef(null)
-  const [week, setWeek] = useState(false)
-  const [, tick] = useState(0)
-  useEffect(() => {
+  const card = useRef(null)
+  const [week, setWeek] = useState(() => {
     try {
-      setWeek(localStorage.getItem(WEEK_KEY) === '1')
-    } catch {}
-  }, [])
+      return localStorage.getItem(WEEK_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const [, tick] = useState(0)
   const toggleWeek = () =>
     setWeek((w) => {
       try {
@@ -732,7 +802,6 @@ export function HabitsCard({ hb }) {
     const t = setTimeout(hb.endUndo, Math.max(0, hb.undoing.until - Date.now()))
     return () => clearTimeout(t)
   }, [hb.undoing])
-  if (!hb.on) return null
   const { data } = hb
   const now = hb.local()
   const today = data.today
@@ -745,8 +814,22 @@ export function HabitsCard({ hb }) {
   const u = hb.undoing && data.habits.find((h) => h.id === hb.undoing.habitId)
   const left = hb.undoing ? Math.max(0, hb.undoing.until - Date.now()) : 0
   const openRoutines = () => dlg.current?.showModal()
+  // the next visit's skeleton: how many routines, the week strip, and this card's height at this window width
+  const count = habits.length
+  useEffect(() => rememberShape({ habits: count, hbWeek: week && count > 0 }), [count, week])
+  useEffect(() => {
+    const el = card.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let t = 0
+    const ro = new ResizeObserver(() => {
+      clearTimeout(t)
+      t = setTimeout(() => rememberShape({ hbH: { w: innerWidth, h: Math.round(el.getBoundingClientRect().height) } }), 600)
+    })
+    ro.observe(el)
+    return () => (ro.disconnect(), clearTimeout(t))
+  }, [])
   return (
-    <section aria-labelledby="hb-title" className="glass-panel rounded-3xl p-4 sm:p-5 hb">
+    <section ref={card} aria-labelledby="hb-title" className="glass-panel rounded-3xl p-4 sm:p-5 hb">
       <div className="hb-head">
         <div className="hb-dayring" aria-hidden="true">
           <svg viewBox="0 0 32 32">
