@@ -543,10 +543,13 @@ export default function Home() {
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} stationKnown={stationKnown} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
-            <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
-            {/* the owner's Reminders and Pins: slim bars like Sounds' (their skeletons while they may be on the way) */}
-            <RemindersBar rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
-            <PinsBar pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+            {/* Sounds, and the owner's Reminders and Pins: slim bars like Sounds' (their skeletons while they may be on the
+                way), close together as one stack */}
+            <div className="flex flex-col gap-2">
+              <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
+              <RemindersBar rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
+              <PinsBar pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+            </div>
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
