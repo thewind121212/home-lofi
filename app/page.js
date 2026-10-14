@@ -18,6 +18,7 @@ import { FULLSCREEN_EVENTS, fullscreenApi, isFullscreenKey } from '../lib/fullsc
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
+import { HabitsCard, useHabits } from './habits'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
 
 // a browser with no saved location starts in Đà Lạt
@@ -117,6 +118,7 @@ export default function Home() {
   const soundsOn = useRef(false)
   // the notification hub listens on sync's live stream (one connection per device); set once useNotify has run below
   const notifyLive = useRef(() => {})
+  const habitsLive = useRef(() => {}) // the Habits card too ('habits', and 'hello' after a reconnect)
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -132,7 +134,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => notifyLive.current(kind))
+  }, syncHold, soundsOn, (kind) => (notifyLive.current(kind), habitsLive.current(kind)))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -245,6 +247,8 @@ export default function Home() {
   // the owner's notifications (app/notify.js): pulled on load, when the tab shows, and when the live stream says so
   const hub = useNotify(owner, set, inboxDlg)
   notifyLive.current = hub.live
+  const habits = useHabits(owner, cloud.id)
+  habitsLive.current = habits.live
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
   function openInbox() {
     const d = inboxDlg.current
@@ -505,6 +509,7 @@ export default function Home() {
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
             <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
+            <HabitsCard hb={habits} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
