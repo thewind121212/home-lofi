@@ -10,7 +10,9 @@ import { useEffect, useRef, useState } from 'react'
 
 const URL_ = '/api/private/settings/push'
 
-const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+const isIPad = () => /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+const isIOS = () => /iPhone|iPod/.test(navigator.userAgent) || isIPad()
+const phoneWord = () => (isIPad() ? 'iPad' : 'iPhone')
 const standalone = () => matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true
 const canPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext
 
@@ -18,7 +20,7 @@ const canPush = () => 'serviceWorker' in navigator && 'PushManager' in window &&
 function deviceName() {
   const ua = navigator.userAgent
   const dev = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'Device'
-  const app = standalone() ? 'Home Screen' : /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser'
+  const app = standalone() ? (isIOS() ? 'Home Screen' : 'App') : /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser'
   return `${dev} · ${app}`
 }
 const bytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0))
@@ -38,11 +40,12 @@ async function api(method, body) {
     body: body ? JSON.stringify(body) : undefined,
   })
   const j = await r.json().catch(() => null)
-  if (!r.ok) throw Object.assign(new Error(j?.error ?? 'failed'), { status: r.status })
+  if (!r.ok) throw Object.assign(new Error(j?.error ?? 'failed'), { status: r.status, field: j?.field })
   return j
 }
 
-// -> { state: 'loading' | 'off-server' | 'unsupported' | 'install' | 'denied' | 'off' | 'on', ... }
+// -> { state: 'loading' | 'off-server' | 'unsupported' | 'install' | 'denied' | 'error' | 'off' | 'on', ... }
+// ('error': the server couldn't be asked (the network, a lapsed login): nothing is touched until it can)
 export function usePush(active) {
   const [state, setState] = useState('loading')
   const [busy, setBusy] = useState(false)
@@ -53,7 +56,9 @@ export function usePush(active) {
   // "Turn on" was tapped before the check came back) doesn't write its older answer over it
   const gen = useRef(0)
 
+  const busyRef = useRef(false)
   async function refresh() {
+    if (busyRef.current) return // a tap is under way: it says what's true when it's done
     const n = ++gen.current
     const set = (v) => n === gen.current && setState(v)
     if (!canPush()) return set(isIOS() && !standalone() ? 'install' : 'unsupported')
@@ -61,7 +66,7 @@ export function usePush(active) {
     try {
       srv = await api('GET')
     } catch (e) {
-      return set(e?.status === 404 || e?.status === 403 ? 'off-server' : 'off')
+      return set(e?.status === 404 || e?.status === 403 ? 'off-server' : 'error')
     }
     if (n !== gen.current) return
     key.current = srv.publicKey
@@ -72,8 +77,12 @@ export function usePush(active) {
     if (Notification.permission === 'denied') return set('denied')
     set(s && sameKey(s, srv.publicKey) && srv.devices.some((d) => d.endpoint === s.endpoint) ? 'on' : 'off')
   }
+  const check = () => {
+    const n = gen.current + 1
+    refresh().catch(() => n === gen.current && setState('error'))
+  }
   useEffect(() => {
-    if (active) refresh().catch(() => setState('off'))
+    if (active) check()
   }, [active])
   useEffect(() => {
     if (!note) return
@@ -83,6 +92,7 @@ export function usePush(active) {
 
   async function turnOn() {
     ++gen.current
+    busyRef.current = true
     setBusy(true)
     setNote(null)
     try {
@@ -92,6 +102,9 @@ export function usePush(active) {
         setState(perm === 'denied' ? 'denied' : 'off')
         return setNote(perm === 'denied' ? null : 'Not turned on: allow notifications to get alerts')
       }
+      // the server's key, or nothing changes: without it a working subscription would be undone for nothing
+      key.current ??= (await api('GET')).publicKey
+      if (!key.current) throw new Error('no key')
       const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
       await navigator.serviceWorker.ready
       let s = await reg.pushManager.getSubscription()
@@ -104,11 +117,13 @@ export function usePush(active) {
     } catch {
       setNote("Couldn't turn alerts on: try again")
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
   async function turnOff() {
     ++gen.current
+    busyRef.current = true
     setBusy(true)
     setNote(null)
     try {
@@ -120,6 +135,7 @@ export function usePush(active) {
       sub.current = null
       setState('off')
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
@@ -130,13 +146,15 @@ export function usePush(active) {
       const r = await api('POST', { action: 'test', endpoint: sub.current.endpoint })
       setNote(r.test?.sent ? 'Sent: it should arrive in a moment' : "This device didn't take it: turn alerts off and on again")
       if (!r.devices.some((d) => d.endpoint === sub.current.endpoint)) setState('off')
-    } catch {
-      setNote("Couldn't send a test: try again")
+    } catch (e) {
+      // the server doesn't have this device any more (it stopped taking pushes): it needs turning on again
+      if (e?.status === 400 && e?.field === 'endpoint') setState('off'), setNote("This device isn't on any more: turn alerts on again")
+      else setNote("Couldn't send a test: try again")
     } finally {
       setBusy(false)
     }
   }
-  return { state, busy, note, turnOn, turnOff, test }
+  return { state, busy, note, turnOn, turnOff, test, retry: check }
 }
 
 const pill = 'h-9 px-3.5 rounded-full border font-mono text-xs transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait'
@@ -151,7 +169,12 @@ export function PushControl({ open }) {
       <div className="flex flex-wrap items-center gap-2">
         {p.state === 'install' && (
           <button type="button" onClick={() => setHelp((h) => !h)} aria-expanded={help} className={`${pill} border-white/10 text-lofi-muted hover:text-white`}>
-            <i className="fa-solid fa-mobile-screen" aria-hidden="true" /> Alerts on this iPhone
+            <i className="fa-solid fa-mobile-screen" aria-hidden="true" /> Alerts on this {phoneWord()}
+          </button>
+        )}
+        {p.state === 'error' && (
+          <button type="button" onClick={p.retry} className={`${pill} border-white/10 text-lofi-muted hover:text-white`}>
+            <i className="fa-solid fa-rotate-right" aria-hidden="true" /> Couldn't check alerts · Retry
           </button>
         )}
         {p.state === 'denied' && (
@@ -177,11 +200,13 @@ export function PushControl({ open }) {
       </div>
       {help && p.state === 'install' && (
         <p className="max-w-xs font-mono text-[11px] leading-relaxed text-lofi-muted">
-          iPhone alerts come from the Home Screen app: tap <i className="fa-solid fa-arrow-up-from-bracket text-white/80" aria-label="Share" /> Share › Add to Home Screen, open
-          Home from its icon, then turn alerts on here.
+          {phoneWord()} alerts come from the Home Screen app: tap <i className="fa-solid fa-arrow-up-from-bracket text-white/80" aria-hidden="true" /> Share › Add to Home
+          Screen, open Home from its icon and sign in there (it keeps its own login), then turn alerts on in this inbox. Added it
+          already? Open Home from its icon.
         </p>
       )}
-      {p.note && <p role="status" className="font-mono text-[11px] text-lofi-highlight">{p.note}</p>}
+      {/* one live region, always there, so a screen reader reads each new note */}
+      <p role="status" aria-live="polite" className="font-mono text-[11px] text-lofi-highlight empty:hidden">{p.note ?? ''}</p>
     </div>
   )
 }

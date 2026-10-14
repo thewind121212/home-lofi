@@ -23,25 +23,24 @@ self.addEventListener('push', (e) => {
   e.waitUntil(self.registration.showNotification(title, options))
 })
 
-// a tap: the notice's link (http / https only), or the home page; an open window of this site is reused
+// a tap: the notice's link (http / https only), or the home page. The home page reuses an open window of this site
+// (focused); any other link opens on its own, as the inbox opens them (target=_blank), so a playing page isn't
+// navigated away. Anything the browser refuses (focus, navigate) falls back to opening a window.
 self.addEventListener('notificationclick', (e) => {
   e.notification.close()
-  let url = '/'
+  let url = self.location.origin + '/'
   try {
     const u = new URL(e.notification.data?.url || '/', self.location.origin)
     if (u.protocol === 'https:' || u.protocol === 'http:') url = u.href
   } catch {}
   e.waitUntil(
     (async () => {
-      const here = new URL(url).origin === self.location.origin
-      if (here) {
-        const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-        for (const w of wins) {
-          if (new URL(w.url).origin !== self.location.origin) continue
-          await w.focus()
-          if (w.url !== url && 'navigate' in w) await w.navigate(url).catch(() => {})
-          return
-        }
+      if (url === self.location.origin + '/') {
+        try {
+          const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+          const w = wins.find((c) => new URL(c.url).origin === self.location.origin)
+          if (w) return void (await w.focus())
+        } catch {}
       }
       await self.clients.openWindow(url)
     })(),
