@@ -280,6 +280,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     const a = audio.current
     if (!a?.getAttribute('src')) return
     m.haltAt = Date.now() // its 'pause' event, a moment later, is ours
+    a.loop = false
     a.pause()
     a.removeAttribute('src') // a live stream keeps downloading while paused: let it go
     a.load()
@@ -344,6 +345,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     m.gain = 0
     apply()
     m.haltAt = Date.now() // a 'pause' from swapping the source is ours too
+    a.loop = false // (the silence that held the phone's audio while it waited, listen())
     a.src = audioUrl(t.streamUrl, s2.streamId, m.id, t.ticket)
     a.play().catch((e) => {
       if (e?.name === 'NotAllowedError') return setNote('Tap Listen to start'), fn.current.stop()
@@ -373,11 +375,15 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     setNote(null)
     live.current.onListen?.()
     claimMediaSession('tavarian', media)
-    // iOS: this tap "unlocks" the element (a moment of silence), so a later song change can play without one
+    // iOS: this tap "unlocks" the element, so a later song change can play without one. The silence loops until the
+    // station's stream takes its place (sync): from the lock screen (▶ while the phone is locked) the stream only comes
+    // after Resume's answer, and if the element stopped in between, iOS takes the page for idle in the background,
+    // refuses the stream's play() and leaves the lock screen empty
     const a = audio.current
     if (!a.getAttribute('src')) {
+      a.loop = true
       a.src = silentWav()
-      a.play().then(() => a.getAttribute('src')?.startsWith('data:') && halt(), () => {})
+      a.play().catch(() => {})
     }
     sync()
     scheduleRenew()
