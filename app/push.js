@@ -4,7 +4,7 @@
 // public/sw.js shows them). Lives in the bell inbox's footer (owner only, like the inbox). Per device:
 // - an iPhone / iPad in a Safari tab can't: push needs the Home Screen app (iOS 16.4+), so it says how to add it
 // - "Turn on alerts": the tap itself asks for permission (iOS only shows the prompt for a tap), then subscribes with
-//   the server's key and hands the subscription to the server; "Test" sends one to this device; "Turn off" ends it
+//   the server's key and hands the subscription to the server; "Turn off" ends it
 // - blocked in the browser's / iOS settings: it says where to change that
 import { useEffect, useRef, useState } from 'react'
 
@@ -139,22 +139,7 @@ export function usePush(active) {
       setBusy(false)
     }
   }
-  async function test() {
-    if (!sub.current) return
-    setBusy(true)
-    try {
-      const r = await api('POST', { action: 'test', endpoint: sub.current.endpoint })
-      setNote(r.test?.sent ? 'Sent: it should arrive in a moment' : "This device didn't take it: turn alerts off and on again")
-      if (!r.devices.some((d) => d.endpoint === sub.current.endpoint)) setState('off')
-    } catch (e) {
-      // the server doesn't have this device any more (it stopped taking pushes): it needs turning on again
-      if (e?.status === 400 && e?.field === 'endpoint') setState('off'), setNote("This device isn't on any more: turn alerts on again")
-      else setNote("Couldn't send a test: try again")
-    } finally {
-      setBusy(false)
-    }
-  }
-  return { state, busy, note, turnOn, turnOff, test, retry: check }
+  return { state, busy, note, turnOn, turnOff, retry: check }
 }
 
 const pill = 'h-9 px-3.5 rounded-full border font-mono text-xs transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-wait'
@@ -193,7 +178,6 @@ export function PushControl({ open }) {
             <span className="h-9 px-3 rounded-full bg-lofi-primary/10 border border-lofi-primary/30 font-mono text-xs text-lofi-primary flex items-center gap-2">
               <i className="fa-solid fa-bell" aria-hidden="true" /> Alerts on
             </span>
-            <button type="button" onClick={p.test} disabled={p.busy} className={`${pill} border-white/10 text-lofi-muted hover:text-white`}>Test</button>
             <button type="button" onClick={p.turnOff} disabled={p.busy} className={`${pill} border-white/10 text-lofi-muted hover:text-white`}>Turn off</button>
           </>
         )}
