@@ -37,7 +37,7 @@
 .hb-tile.is-holding { border-color: rgb(255 138 92 / 0.35); }
 .hb-tile.is-done { border-color: rgb(255 138 92 / 0.4); background: rgb(255 138 92 / 0.06); }
 .hb-tile.is-rest { opacity: 0.62; }
-.hb-tile-main { display: flex; align-items: center; gap: 10px; min-height: 52px; }
+.hb-tile-main { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .hb-tile .hb-well { width: 38px; height: 38px; border-radius: 12px; }
 .hb-well {
   width: 44px; height: 44px; flex: none; border-radius: 14px; background: var(--color-lofi-surface);
@@ -73,7 +73,7 @@
   transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .hb-hold > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
-.hb-tile .hb-hold, .hb-tile .hb-kept { width: 52px; height: 52px; }
+.hb-tile .hb-hold, .hb-tile .hb-kept { width: 44px; height: 44px; } /* (44: still a full-size tap target) */
 .hb-tile .hb-hold .ring-label svg { width: 20px; height: 20px; }
 .hb-hold .ring-label .check path { stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
 .hb-hold .ring-label .ghost { opacity: 0.32; }
@@ -82,7 +82,7 @@
 .hb-tile.is-due .hb-hold:not(.is-holding) .ring-label { color: var(--color-lofi-primary); animation: hb-beckon 2.6s ease-in-out infinite; }
 .hb-tile .hb-kept .check { width: 19px; height: 19px; }
 /* the skeleton's (HabitsSkeleton): the ring's place, and the week strip open when it was open last time */
-.hb-tile .hb-sk-ring { width: 52px; height: 52px; flex: none; border-radius: 50%; border: 3px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.6); }
+.hb-tile .hb-sk-ring { width: 44px; height: 44px; flex: none; border-radius: 50%; border: 3px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.6); }
 html[data-sk-hb-week] .hb-fold.sk-hb-fold { grid-template-rows: 1fr; opacity: 1; }
 html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 .hb-hold .ring-bg { fill: rgb(26 26 46 / 0.6); stroke: rgb(255 255 255 / 0.12); stroke-width: 3; transition: stroke 0.2s; }
