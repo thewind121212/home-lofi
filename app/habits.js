@@ -18,9 +18,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronDown, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
   Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
-  Timer, Waves, X,
+  Timer, Trash2, Waves, X,
 } from 'lucide-react'
-import { DEFAULT_ICON, GRACE_MIN, ICONS, REMIND_BEFORE, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, remindAt, spanOf, toMin } from '../lib/habits'
+import { DELETE_WORD, DEFAULT_ICON, GRACE_MIN, ICONS, REMIND_BEFORE, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, remindAt, spanOf, toMin } from '../lib/habits'
 import { closeDialog, motionOff, useStillPage } from './settings'
 
 const URL_ = '/api/private/settings/habits'
@@ -225,6 +225,15 @@ export function useHabits(owner, clientId) {
       send({ action: 'untick', habitId: h.id, day, reason }).catch(fail)
     },
     endUndo: () => setUndoing(null),
+    // an archived habit for good (its check-ins too) -> null (gone) or what was wrong
+    async remove(habitId) {
+      try {
+        await enqueue(() => call('DELETE', { habitId, confirm: DELETE_WORD }))
+        return null
+      } catch (e) {
+        return e?.status === 400 || e?.status === 409 ? e.message : "Couldn't delete: check the connection and try again"
+      }
+    },
     // the editor's whole list -> null (saved) or what was wrong
     async save(habits) {
       try {
@@ -643,6 +652,7 @@ function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
 
 function Routines({ hb, dlg }) {
   const [view, setView] = useState(null) // null: the list; else the habit being edited ({} new)
+  const [doomed, setDoomed] = useState(null) // an archived habit about to be deleted for good (its confirm screen)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [open, setOpen] = useState(false)
@@ -673,14 +683,29 @@ function Routines({ hb, dlg }) {
       aria-labelledby="hb-routines"
       onClick={(e) => e.target === dlg.current && closeDialog(dlg.current)}
       onCancel={(e) => (e.preventDefault(), closeDialog(dlg.current))}
-      onClose={() => (delete dlg.current.dataset.closing, setView(null), setError(null))}
+      onClose={() => (delete dlg.current.dataset.closing, setView(null), setDoomed(null), setError(null))}
       className="wx-sheet hb-sheet text-lofi-text"
     >
       <div className="hb-sheet-head">
-        <h3 id="hb-routines">{view ? (view.id ? 'Edit routine' : 'New routine') : 'Your routines'}</h3>
+        <h3 id="hb-routines">{doomed ? 'Delete routine' : view ? (view.id ? 'Edit routine' : 'New routine') : 'Your routines'}</h3>
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={() => closeDialog(dlg.current)}><X size={18} aria-hidden="true" /></button>
       </div>
-      {view ? (
+      {doomed ? (
+        <DeleteRoutine
+          habit={doomed}
+          busy={busy}
+          error={error}
+          onBack={() => (setDoomed(null), setError(null))}
+          onDelete={async () => {
+            setBusy(true)
+            setError(null)
+            const e = await hb.remove(doomed.id)
+            setBusy(false)
+            if (e) return setError(e)
+            setDoomed(null)
+          }}
+        />
+      ) : view ? (
         <Editor key={view.id ?? 'new'} habit={view} busy={busy} error={error} onBack={() => (setView(null), setError(null))} onSave={put} onArchive={(d) => put({ ...d, archived: true })} />
       ) : (
         <div className="hb-list">
@@ -694,16 +719,57 @@ function Routines({ hb, dlg }) {
           <button type="button" className="hb-add" onClick={() => setView(blank())}><Plus size={16} strokeWidth={2} aria-hidden="true" />New routine</button>
           {archived.length > 0 && <p className="hb-label" style={{ margin: '12px 0 0' }}>Archived</p>}
           {archived.map((h) => (
-            <button key={h.id} type="button" className="hb-item is-archived" disabled={busy} onClick={() => put({ ...h, archived: false })}>
-              <span className="hb-well" aria-hidden="true"><Glyph name={h.icon} /></span>
-              <span className="min-w-0"><b>{h.name}</b><small>tap to bring it back</small></span>
-              <span className="chev" aria-hidden="true"><ArchiveRestore size={18} /></span>
-            </button>
+            <div key={h.id} className="hb-arch">
+              <button type="button" className="hb-item is-archived" disabled={busy} onClick={() => put({ ...h, archived: false })}>
+                <span className="hb-well" aria-hidden="true"><Glyph name={h.icon} /></span>
+                <span className="min-w-0"><b>{h.name}</b><small>tap to bring it back</small></span>
+                <span className="chev" aria-hidden="true"><ArchiveRestore size={18} /></span>
+              </button>
+              <button type="button" className="hb-trash" disabled={busy} aria-label={`Delete ${h.name} for good`} title="Delete for good" onClick={() => (setError(null), setDoomed(h))}>
+                <Trash2 size={17} aria-hidden="true" />
+              </button>
+            </div>
           ))}
           {error && <p className="hb-note">{error}</p>}
         </div>
       )}
     </dialog>
+  )
+}
+
+// Deleting an archived routine for good: what goes (it and every check-in: its streaks and history), and the word
+// typed to say so (a tap alone can't do it). Archive is the everyday way out; this one can't be undone.
+function DeleteRoutine({ habit, busy, error, onBack, onDelete }) {
+  const [word, setWord] = useState('')
+  const ok = word.trim().toLowerCase() === DELETE_WORD
+  return (
+    <form className="hb-del" onSubmit={(e) => (e.preventDefault(), ok && !busy && onDelete())}>
+      <div className="hb-del-who">
+        <span className="hb-well" aria-hidden="true"><Glyph name={habit.icon} /></span>
+        <b>{habit.name}</b>
+      </div>
+      <p>This deletes the routine and <strong>all its check-ins</strong>: its streaks and history go too. It can&apos;t be undone.</p>
+      <label htmlFor="hb-del-word">Type <code>{DELETE_WORD}</code> to confirm</label>
+      <input
+        id="hb-del-word"
+        className="hb-input"
+        value={word}
+        onChange={(e) => setWord(e.target.value)}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder={DELETE_WORD}
+        autoFocus
+      />
+      {error && <p className="hb-note" role="alert">{error}</p>}
+      <div className="hb-del-act">
+        <button type="button" className="hb-ghost" onClick={onBack}>Cancel</button>
+        <button type="submit" className="hb-danger" disabled={!ok || busy}>
+          <Trash2 size={15} aria-hidden="true" />{busy ? 'Deleting…' : 'Delete for good'}
+        </button>
+      </div>
+    </form>
   )
 }
 

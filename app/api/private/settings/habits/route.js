@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { notifyOn, sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
-import { BACK_DAYS, DEFAULT_TZ, STREAK_DAYS, addDays, canUndo, checkable, cleanAction, cleanDoc, isLate, localNow, streakOf, validTz } from '../../../../../lib/habits.js'
+import { BACK_DAYS, DEFAULT_TZ, STREAK_DAYS, addDays, canUndo, checkable, cleanAction, cleanDelete, cleanDoc, isLate, localNow, streakOf, validTz } from '../../../../../lib/habits.js'
 import { HISTORY_DAYS, habitsStore } from '../../../../../lib/habits-store.js'
 import { notifyStore } from '../../../../../lib/notify-store.js'
 
@@ -14,6 +14,8 @@ import { notifyStore } from '../../../../../lib/notify-store.js'
 //        { action: 'rate', habitId, day, rating, note? }
 //        { action: 'undo', habitId, day }      right after a check (UNDO_MS): as if it never happened
 //        { action: 'untick', habitId, day, reason }   later: taken back, with why
+//   DELETE { habitId, confirm: 'delete' }   an archived habit for good, its check-ins and reminders too (409: archive
+//                                           it first)
 //   -> the fresh state { tz, today, now (minutes since midnight), at (the server's ms: the card runs its chips on this
 //      clock, not the device's), habits, checkins (the last HISTORY_DAYS), streaks ({ id: { count, atRisk } }) }; the
 //      owner's other tabs hear
@@ -120,6 +122,28 @@ export async function POST(request) {
     }
     tell(who, request)
     return json(await state(store, who, ms, doc))
+  } catch {
+    return json({ error: 'database unavailable' }, 503)
+  }
+}
+
+export async function DELETE(request) {
+  const who = syncOwner(request)
+  if (typeof who === 'number') return json({ error: 'no habits' }, who)
+  if (!sameOriginJson(request)) return json({ error: 'forbidden' }, 403)
+  const b = await body(request)
+  if (b.status) return json(b.out, b.status)
+  const c = cleanDelete(b.value)
+  if (c.error) return json({ error: c.error, field: c.field }, 400)
+  try {
+    const store = habitsStore()
+    const out = await store.deleteHabit(who, c.habitId)
+    if (out.error === 'none') return json({ error: 'habitId: no such habit', field: 'habitId' }, 400)
+    if (out.error === 'active') return json({ error: 'archive it first', ...(await state(store, who)) }, 409)
+    // a reminder of it still in the inbox / on the lock screen goes too
+    if (notifyOn() && (await notifyStore().dropTag(`habit:${c.habitId}`).catch(() => false))) liveBus().publish(who, { kind: 'notify', at: Date.now() })
+    tell(who, request)
+    return json(await state(store, who, Date.now(), out.doc))
   } catch {
     return json({ error: 'database unavailable' }, 503)
   }
