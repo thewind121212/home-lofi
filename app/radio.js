@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MOODS, STATIONS, stationById } from '../lib/stations'
 import { load, motionOff, save } from './settings'
+import { Bone, rememberShape } from './skeleton'
 
 const START_MS = 15000 // no sound by then: that station is skipped
 const YT_WAIT_MS = 15000 // the IFrame API never came (an ad blocker, a network that blocks YouTube): youtube stations off
@@ -107,6 +108,7 @@ export function useRadio({ station, info, onStation, onTune, host }) {
   const [muted, setMuted] = useState(false)
   const [yt, setYt] = useState('loading') // the IFrame API: loading | ready | blocked
   const [fixedVolume, setFixedVolume] = useState(false) // iOS: the page can't set volume
+  const [ready, setReady] = useState(false) // the saved volume and the device's volume rule are read (stand-ins till then)
   const [sleepAt, setSleepAt] = useState(null)
   const [now, setNow] = useState(null) // what a stream station plays: { artist, title }
   const player = useRef(null)
@@ -278,6 +280,8 @@ export function useRadio({ station, info, onStation, onTune, host }) {
     const probe = document.createElement('audio')
     probe.volume = 0.5
     setFixedVolume((m.fixed = probe.volume !== 0.5))
+    rememberShape({ fixedVol: m.fixed }) // (the next first paint leaves the slider out on this device)
+    setReady(true)
 
     const a = (audio.current = new Audio())
     a.preload = 'none'
@@ -408,7 +412,7 @@ export function useRadio({ station, info, onStation, onTune, host }) {
     return () => clearTimeout(t)
   }, [note])
 
-  return { status, note, setNote, volume, muted, fixedVolume, yt, now, sleepLeft, sleepAt, setSleepAt, toggle, pause, select, step, setLevel, toggleMute }
+  return { status, note, setNote, volume, muted, fixedVolume, ready, yt, now, sleepLeft, sleepAt, setSleepAt, toggle, pause, select, step, setLevel, toggleMute }
 }
 
 // the little dancing bars (rest low when paused, still with reduced motion)
@@ -425,19 +429,24 @@ export function Bars({ on, className = '' }) {
 const SLEEP = [15, 30, 60, 90]
 
 // The Radio tab: cover + what's on, the controls, then every station one tap away. The name opens the full list.
-export function RadioPanel({ r, station, info, invite, onList }) {
+// known: the station is the one picked last (read from this browser once the page runs); until then the station's parts
+// are stand-ins, so the default one never flashes before it
+export function RadioPanel({ r, station, info, invite, onList, known = true }) {
   const playing = r.status === 'playing'
   const loading = r.status === 'loading'
-  const meta = info?.[station.id]
+  const meta = known ? info?.[station.id] : null
   const mounted = useMounted()
-  const art = mounted ? coverOf(station, info) : null
+  const art = mounted && known ? coverOf(station, info) : null
   const strip = useRef(null)
+  const placed = useRef(false) // the strip has been put on the station once (that first time: no slide)
   const [sleepMenu, setSleepMenu] = useState(false)
   // keep the current station's chip in view
   useEffect(() => {
     const el = strip.current?.querySelector('[aria-current="true"]')
-    if (el && strip.current) strip.current.scrollTo({ left: el.offsetLeft - strip.current.clientWidth / 2 + el.clientWidth / 2, behavior: motionOff() ? 'auto' : 'smooth' })
-  }, [station.id])
+    if (!known || !el || !strip.current) return
+    strip.current.scrollTo({ left: el.offsetLeft - strip.current.clientWidth / 2 + el.clientWidth / 2, behavior: motionOff() || !placed.current ? 'auto' : 'smooth' })
+    placed.current = true
+  }, [station.id, known])
 
   function share() {
     const url = `${location.origin}/?station=${station.id}`
@@ -458,8 +467,8 @@ export function RadioPanel({ r, station, info, invite, onList }) {
 
       <div className="relative flex gap-4 min-w-0">
         <button onClick={onList} aria-haspopup="dialog" aria-label={`Station: ${station.name}. All stations`} className="relative shrink-0 w-24 h-24 rounded-2xl overflow-hidden border border-white/10 shadow-xl group">
-          {art ? <img src={art} alt="" className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${playing ? '' : 'saturate-75'}`} /> : <span className="w-full h-full bg-lofi-surface flex items-center justify-center text-3xl">{station.emoji}</span>}
-          {station.kind === 'stream' && <span className="absolute bottom-1 right-1 text-[10px] leading-none bg-lofi-base/80 rounded-full px-1 py-0.5" title="Keeps playing with the screen off">📱</span>}
+          {art ? <img src={art} alt="" className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${playing ? '' : 'saturate-75'}`} /> : <span className={`w-full h-full bg-lofi-surface flex items-center justify-center text-3xl ${known ? '' : 'sk-pulse'}`}>{known && station.emoji}</span>}
+          {known && station.kind === 'stream' && <span className="absolute bottom-1 right-1 text-[10px] leading-none bg-lofi-base/80 rounded-full px-1 py-0.5" title="Keeps playing with the screen off">📱</span>}
         </button>
         <div className="min-w-0 flex-1 flex flex-col justify-center">
           <p className="flex items-center gap-2 text-[10px] font-mono text-lofi-muted mb-1">
@@ -468,12 +477,11 @@ export function RadioPanel({ r, station, info, invite, onList }) {
             {meta?.watching > 0 && <span>{short(meta.watching)} listening</span>}
           </p>
           <button onClick={onList} aria-haspopup="dialog" className="min-w-0 flex items-center gap-1.5 text-left text-base font-medium text-white hover:text-lofi-primary transition-colors">
-            <span aria-hidden="true">{station.emoji}</span>
-            <span className="truncate">{station.name}</span>
+            {known ? <><span aria-hidden="true">{station.emoji}</span><span className="truncate">{station.name}</span></> : <Bone w="11ch" />}
             <i className="fa-solid fa-chevron-down text-[9px] text-lofi-muted" aria-hidden="true" />
           </button>
-          <p className="text-xs text-lofi-muted truncate">{station.by}</p>
-          <p className="text-[11px] text-lofi-text/70 truncate italic mt-0.5" title={title}>{title}</p>
+          <p className="text-xs text-lofi-muted truncate">{known ? station.by : <Bone w="8ch" />}</p>
+          <p className="text-[11px] text-lofi-text/70 truncate italic mt-0.5" title={known ? title : undefined}>{known ? title : <Bone w="18ch" />}</p>
         </div>
       </div>
 
@@ -483,7 +491,7 @@ export function RadioPanel({ r, station, info, invite, onList }) {
         </button>
         <button
           onClick={r.toggle}
-          aria-label={playing || loading ? 'Pause' : `Play ${station.name}`}
+          aria-label={playing || loading ? 'Pause' : known ? `Play ${station.name}` : 'Play'}
           title={playing || loading ? 'Pause' : 'Play'}
           className={`w-12 h-12 shrink-0 rounded-full bg-lofi-primary text-lofi-base flex items-center justify-center hover:bg-lofi-highlight transition-all hover:scale-105 shadow-[0_0_15px_color-mix(in_oklab,var(--color-lofi-primary)_40%,transparent)] ${invite && r.status === 'idle' ? 'motion-safe:animate-pulse ring-4 ring-lofi-primary/30' : ''}`}
         >
@@ -492,7 +500,15 @@ export function RadioPanel({ r, station, info, invite, onList }) {
         <button onClick={() => r.step(1)} aria-label="Next station" title="Next station" className="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
           <i className="fa-solid fa-forward-step" aria-hidden="true" />
         </button>
-        {!r.fixedVolume && (
+        {/* the volume's stand-in until the saved level is read; a device that can't set it (iOS) never shows one (the
+            pre-paint script marks it: lib/skeleton.js) */}
+        {!r.ready && (
+          <div className="sk-vol flex items-center gap-1.5 min-w-0 flex-1 ml-1" aria-hidden="true">
+            <span className="w-7 h-7 shrink-0 flex items-center justify-center text-lofi-muted/50"><i className="fa-solid fa-volume-low text-xs" /></span>
+            <span className="min-w-0 flex-1 h-1 rounded-full bg-white/10 sk-pulse" />
+          </div>
+        )}
+        {r.ready && !r.fixedVolume && (
           <div className="flex items-center gap-1.5 min-w-0 flex-1 ml-1">
             <button onClick={r.toggleMute} aria-label={r.muted ? 'Unmute' : 'Mute'} title={r.muted ? 'Unmute' : 'Mute'} className="w-7 h-7 shrink-0 flex items-center justify-center text-lofi-muted hover:text-white transition-colors">
               <i className={`fa-solid ${r.muted || r.volume === 0 ? 'fa-volume-xmark' : r.volume < 50 ? 'fa-volume-low' : 'fa-volume-high'} text-xs`} aria-hidden="true" />
@@ -510,7 +526,7 @@ export function RadioPanel({ r, station, info, invite, onList }) {
             />
           </div>
         )}
-        <div className={`relative flex items-center gap-0.5 shrink-0 ${r.fixedVolume ? 'ml-auto' : ''}`}>
+        <div className={`relative flex items-center gap-0.5 shrink-0 ${r.ready ? (r.fixedVolume ? 'ml-auto' : '') : 'sk-vol-rest'}`}>
           <button
             onClick={() => setSleepMenu((v) => !v)}
             aria-label={r.sleepLeft ? `Sleep timer: ${r.sleepLeft} min left` : 'Sleep timer'}
@@ -544,7 +560,7 @@ export function RadioPanel({ r, station, info, invite, onList }) {
       {/* every station, one tap away (📱 = keeps playing with the screen off) */}
       <div ref={strip} className="relative mt-3 -mx-1 px-1 flex gap-1.5 overflow-x-auto overscroll-x-contain scrollbar-none [mask-image:linear-gradient(90deg,transparent,black_12px,black_calc(100%-12px),transparent)]">
         {STATIONS.map((s) => {
-          const on = s.id === station.id
+          const on = known && s.id === station.id
           const ok = playable(s, info, r.yt)
           return (
             <button

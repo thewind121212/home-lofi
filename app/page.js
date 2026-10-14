@@ -89,6 +89,7 @@ export default function Home() {
   const info = useRadioInfo()
   // the radio station: a shared link's (?station=id, then the address is tidied), else the last one picked here
   const [stationId, setStationId] = useState('lofi')
+  const [stationKnown, setStationKnown] = useState(false) // read from this browser (the radio shows stand-ins till then)
   const [invite, setInvite] = useState(false) // came from a shared link: the play button calls
   useEffect(() => {
     const shared = new URLSearchParams(location.search).get('station')
@@ -101,6 +102,7 @@ export default function Home() {
       history.replaceState(history.state, '', u)
     }
     setStationId(stationById(load('station', 'lofi')).id)
+    setStationKnown(true)
   }, [])
   const pickStation = (id) => (setStationId(id), save('station', id))
   const station = stationById(stationId)
@@ -520,7 +522,7 @@ export default function Home() {
         <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
-            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
+            <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} stationKnown={stationKnown} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
             <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
@@ -1109,7 +1111,7 @@ const AUDIO_TABS = [
   ['spotify', 'Spotify', 'fa-brands fa-spotify'],
   ['player', 'Player', 'fa-solid fa-music'],
 ]
-function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, info, onStation, invite, player, openQueue }) {
+function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, station, stationKnown, info, onStation, invite, player, openQueue }) {
   const host = useRef(null)
   const [list, setList] = useState(false) // the station list popup
   const r = useRadio({ station, info, onStation, onTune, host })
@@ -1154,7 +1156,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
 
       {/* above the tabs (z-20) only while an Up next popup is open */}
       <div role="tabpanel" id="audio-panel" aria-labelledby={`audio-tab-${tab}`} className="grow min-h-0 flex flex-col z-10 has-[[role=dialog]]:z-30">
-        {tab === 'radio' && <RadioPanel r={r} station={station} info={info} invite={invite} onList={() => setList(true)} />}
+        {tab === 'radio' && <RadioPanel r={r} station={station} known={stationKnown} info={info} invite={invite} onList={() => setList(true)} />}
         {tab === 'radio' && list && <StationList r={r} current={station.id} info={info} playing={r.status === 'playing'} onClose={() => setList(false)} />}
         {tab === 'spotify' && <SpotifyPanel sp={spotify} owner={owner} wasOwner={wasOwner} onState={onSpotify} />}
         {tab === 'player' && <PlayerPanel p={player} owner={owner} vol={r} openQueue={openQueue} />}
