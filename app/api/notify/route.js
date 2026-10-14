@@ -3,6 +3,7 @@ import { clientIp, windowLimit } from '../../../lib/limits.js'
 import { liveBus } from '../../../lib/live.js'
 import { MAX_BODY, cleanNotice } from '../../../lib/notify.js'
 import { notifyStore } from '../../../lib/notify-store.js'
+import { pushNotice } from '../../../lib/push.js'
 
 // The notification hub's inbox for machines (lib/notify.js has the fields and rules, README "Notifications" the
 // examples). A LAN script, n8n or a cron job POSTs one notice; it's stored and the owner's open tabs hear about it at
@@ -39,5 +40,7 @@ export async function POST(request) {
     return json({ error: 'database unavailable' }, 503)
   }
   liveBus().publish(process.env.OWNER_USER, { kind: 'notify', at: saved.at })
+  // and to the owner's phones (lib/push.js): in the background, so the sender doesn't wait on Apple / Google
+  void pushNotice(process.env.OWNER_USER, r.notice)
   return json({ ...saved, ...(r.warnings.length && { warnings: r.warnings }) }, 201)
 }

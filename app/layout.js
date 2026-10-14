@@ -8,7 +8,12 @@ const workSans = Work_Sans({ subsets: ['latin'], weight: ['300', '400', '500', '
 export const metadata = {
   title: 'wliafdew.dev',
   description: 'A lofi home page.',
+  // installable (app/manifest.js); on iPhone the Home Screen app gets an opaque status bar, so nothing slides under
+  // the notch (the page doesn't pad for safe areas everywhere)
+  appleWebApp: { capable: true, title: 'Home', statusBarStyle: 'black' },
+  other: { 'apple-mobile-web-app-capable': 'yes' }, // (Next writes the standard tag; older iOS reads only Apple's)
 }
+export const viewport = { themeColor: '#1a1a2e' }
 
 export default function RootLayout({ children }) {
   return (

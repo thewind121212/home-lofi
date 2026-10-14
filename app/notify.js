@@ -5,6 +5,7 @@ import { LEVEL_LOOK, NO_PENDING, TOAST_MAX, TOAST_MS, ago, alive, byDay, left, l
 import { closeDialog, useStillPage } from './settings'
 import { useFlip } from './flip'
 import { flipSig } from '../lib/flip'
+import { PushControl } from './push'
 
 // The notification hub on the page (rules in lib/notify.js, the routes in app/api/notify and
 // app/api/private/settings/notifications). The owner's only: guests never ask, and the route says 404 / 403 anyway.
@@ -404,11 +405,13 @@ export function Inbox({ dlg, anchor, hub, now }) {
           </div>
         </div>
 
-        <div className="shrink-0 pt-2 sm:pt-3 border-t border-white/5 flex justify-end">
+        {/* this device's push alerts (app/push.js), then Clear all */}
+        <div className="shrink-0 pt-2 sm:pt-3 border-t border-white/5 flex items-start justify-between gap-3">
+          <PushControl open={open} />
           <button
             onClick={hub.clear}
             disabled={!hub.items.length}
-            className="h-9 px-4 rounded-full border border-white/10 font-mono text-xs text-lofi-muted hover:text-white hover:border-red-400/60 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-lofi-muted disabled:hover:border-white/10"
+            className="shrink-0 h-9 px-4 rounded-full border border-white/10 font-mono text-xs text-lofi-muted hover:text-white hover:border-red-400/60 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-lofi-muted disabled:hover:border-white/10"
           >
             <i className="fa-solid fa-broom" aria-hidden="true" /> Clear all
           </button>
