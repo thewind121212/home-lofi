@@ -81,6 +81,10 @@
 .hb-hold .ring-label .ink { stroke: var(--color-lofi-primary); filter: drop-shadow(0 0 3px rgb(255 138 92 / 0.7)); }
 .hb-tile.is-due .hb-hold:not(.is-holding) .ring-label { color: var(--color-lofi-primary); animation: hb-beckon 2.6s ease-in-out infinite; }
 .hb-tile .hb-kept .check { width: 22px; height: 22px; }
+/* the skeleton's (HabitsSkeleton): the ring's place, and the week strip open when it was open last time */
+.hb-tile .hb-sk-ring { width: 52px; height: 52px; flex: none; border-radius: 50%; border: 3px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.6); }
+html[data-sk-hb-week] .hb-fold.sk-hb-fold { grid-template-rows: 1fr; opacity: 1; }
+html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 .hb-hold .ring-bg { fill: rgb(26 26 46 / 0.6); stroke: rgb(255 255 255 / 0.12); stroke-width: 3; transition: stroke 0.2s; }
 .hb-hold .ring-fill { fill: none; stroke: var(--color-lofi-primary); stroke-width: 3.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgb(255 138 92 / 0.6)); }
 .hb-hold .ring-label { position: absolute; inset: 0; display: grid; place-items: center; color: var(--color-lofi-muted); transition: color 0.25s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }

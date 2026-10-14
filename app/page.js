@@ -19,6 +19,8 @@ import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, mot
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
+import { Bone, rememberShape } from './skeleton'
+import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
 
 // a browser with no saved location starts in Đà Lạt
@@ -81,7 +83,7 @@ export default function Home() {
   const lockRef = useRef(false)
   lockRef.current = softLock
   const [status, setStatus] = useState('loading')
-  const priv = usePrivate()
+  const [priv, privFailed] = usePrivate()
   const [spotify, applySpotify] = useSpotify()
   const steam = useSteam()
   const info = useRadioInfo()
@@ -313,6 +315,10 @@ export default function Home() {
     if (owner) save('owner', true)
     setWasOwner(owner || load('owner', false) === true)
   }, [owner])
+  // the owner's skeletons (the bell, Habits) on the next visit's first paint: only for the owner (lib/skeleton.js)
+  useEffect(() => {
+    if (cloud.sure) rememberShape({ owner }) // (a failed first sync doesn't count as "not the owner")
+  }, [cloud.sure, owner])
 
   function lock() {
     ;[setDlg.current, galDlg.current, sndDlg.current, inboxDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
@@ -470,11 +476,12 @@ export default function Home() {
         {/* phones: greeting, then clock | scene on one row. sm+: one row (also landscape phones) */}
         <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-4 min-w-0">
-            <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} flex items-center justify-center text-xl shadow-lg`}>
+            <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} ${icon ? '' : 'sk-pulse'} flex items-center justify-center text-xl shadow-lg`}>
               {icon && <i className={`fa-solid ${icon} text-white`} aria-hidden="true" />}
             </div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white">{greeting}</h1>
+              {/* (the hour is the browser's: a stand-in until the page runs) */}
+              <h1 className="text-2xl font-semibold tracking-tight text-white">{hour == null ? <Bone w="9.5ch" /> : greeting}</h1>
               <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
             </div>
           </div>
@@ -486,13 +493,19 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {hub.on && <Bell ref={bellRef} className="order-3 sm:order-none" unread={hub.unread} onOpen={openInbox} />}
+            {hub.on ? (
+              <Bell ref={bellRef} className="order-3 sm:order-none" unread={hub.unread} onOpen={openInbox} />
+            ) : (
+              // the bell's place while it's not known yet whether this is the owner (the owner's browser only), or
+              // the owner's inbox is on its way
+              (!cloud.known || (owner && !hub.tried)) && <span aria-hidden="true" className={`sk-owner ${owner ? 'sk-force' : ''} order-3 sm:order-none w-11 h-11 shrink-0 rounded-xl bg-lofi-base/50 border border-white/5 sk-pulse`} />
+            )}
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
-              <Clock now={now} clock={set.clock} />
+              {now ? <Clock now={now} clock={set.clock} /> : <Bone w="5ch" />}
             </div>
             <div className="text-xs text-lofi-muted uppercase tracking-widest">
-              {now?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) ?? ' '}
+              {now?.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) ?? <Bone w="11ch" />}
             </div>
             </div>
           </div>
@@ -512,7 +525,7 @@ export default function Home() {
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
-              <Hub status={status} priv={priv} />
+              <Hub status={status} priv={priv} privFailed={privFailed} />
             </div>
             <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">
               <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
@@ -520,8 +533,9 @@ export default function Home() {
           </div>
           {/* the owner's Habits bar sits on top of the hosted apps, their width (nothing for guests) */}
           <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
-            <HabitsCard hb={habits} />
-            <Services priv={priv} />
+            {/* its skeleton while it may be on its way: the owner not known yet (the owner's browser), or loading */}
+            <HabitsCard hb={habits} wait={!cloud.known || (owner && habits.pending)} force={owner} />
+            <Services priv={priv} privFailed={privFailed} />
           </div>
         </main>
       </div>
@@ -1167,6 +1181,12 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
   const dlg = useRef(null)
   const [detail, setDetail] = useState({ state: 'idle' }) // details panel: { key, state, data }
   const { unit } = useContext(Prefs)
+  const wait = !w && status !== 'error' // the first answer (or a new city's) is on its way: stand-ins
+  // next visit's skeleton: an AQI pill, an "Observed at" line
+  const aqi = w ? w.aqi != null : null, station = w ? Boolean(w.station) : null
+  useEffect(() => {
+    if (aqi != null) rememberShape({ wxAqi: aqi, wxStation: station })
+  }, [aqi, station])
 
   useEffect(() => {
     const l = load('location', null)
@@ -1367,30 +1387,42 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
         <div className="min-w-0">
           <h2 className="text-xs text-lofi-text/80 mb-1 uppercase tracking-wider font-mono">Current Conditions</h2>
           <h3 className="text-xl font-medium text-white truncate max-w-[180px]" title={w?.name || loc?.name}>
-            {w?.name || loc?.name || ' '}
+            {w?.name || loc?.name || <Bone w="9ch" />}
           </h3>
         </div>
-        <div className={`text-5xl ${ICON_COLOR[w?.icon] ?? 'text-white'} drop-shadow-[0_0_15px_currentColor] transition-all duration-500`}>
+        {/* (a fixed box: the icon font arriving from the CDN would otherwise make the row 2px taller) */}
+        <div className={`h-12 leading-none text-5xl ${ICON_COLOR[w?.icon] ?? 'text-white'} drop-shadow-[0_0_15px_currentColor] transition-all duration-500`}>
           <i className={`fa-solid ${w?.icon ?? 'fa-cloud'}`} aria-hidden="true" />
         </div>
       </div>
 
       <div className="mb-6 z-10">
         <div className="text-6xl font-light text-white mb-1 tracking-tighter leading-none">
-          {toUnit(w?.temp, unit) ?? '--'}
+          {toUnit(w?.temp, unit) ?? (wait ? <Bone w="1.1em" /> : '--')}
           <span className="text-2xl text-lofi-muted font-normal">°{unit}</span>
         </div>
         <div className="text-sm text-lofi-primary font-medium mt-2">
-          {w?.desc ?? (status === 'error' ? 'Weather unavailable' : 'Loading...')}
+          {w?.desc ?? (status === 'error' ? 'Weather unavailable' : <><Bone w="16ch" /><span className="sr-only">Loading…</span></>)}
           {w && <span className="text-lofi-muted font-normal"> · feels like {toUnit(w.feelsLike, unit)}°</span>}
         </div>
+        {wait && (
+          <div className="sk-wx-station font-mono text-[10px] uppercase tracking-wider mt-1" aria-hidden="true"><Bone w="30ch" /></div>
+        )}
         {w?.station && (
           <div className="font-mono text-[10px] uppercase tracking-wider text-lofi-muted mt-1">
             Observed at {w.station.name} · {new Date(w.station.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-2 mt-2.5">
-          {w?.aqi != null ? <AqiPill aqi={w.aqi} className="grow basis-48" /> : <span />}
+          {w?.aqi != null ? (
+            <AqiPill aqi={w.aqi} className="grow basis-48" />
+          ) : wait ? (
+            <div className="sk-wx-aqi @container min-w-0 grow basis-48" aria-hidden="true">
+              <span className="inline-flex rounded-full border border-white/5 px-2.5 py-0.5 font-mono text-[11px]"><Bone w="13ch" /></span>
+            </div>
+          ) : (
+            <span />
+          )}
           <button
             onClick={openDetail}
             aria-haspopup="dialog"
@@ -1403,10 +1435,10 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-auto z-10">
-        <Stat icon="fa-cloud-rain text-lofi-secondary" label="Rain Chance" value={w?.rainChance != null ? `${w.rainChance}%` : '--'} />
-        <Stat icon="fa-sun text-lofi-highlight" label="UV Index" value={w?.uv != null ? `${w.uv} (${w.uvLabel})` : '--'} />
-        <Stat icon="fa-droplet text-blue-400" label="Humidity" value={w ? `${w.humidity}%` : '--'} />
-        <Stat icon="fa-wind text-gray-400" label="Wind" value={w ? `${w.wind} km/h` : '--'} />
+        <Stat icon="fa-cloud-rain text-lofi-secondary" label="Rain Chance" value={w?.rainChance != null ? `${w.rainChance}%` : wait ? <Bone /> : '--'} />
+        <Stat icon="fa-sun text-lofi-highlight" label="UV Index" value={w?.uv != null ? `${w.uv} (${w.uvLabel})` : wait ? <Bone w="6ch" /> : '--'} />
+        <Stat icon="fa-droplet text-blue-400" label="Humidity" value={w ? `${w.humidity}%` : wait ? <Bone /> : '--'} />
+        <Stat icon="fa-wind text-gray-400" label="Wind" value={w ? `${w.wind} km/h` : wait ? <Bone w="6ch" /> : '--'} />
       </div>
     </div>
 
@@ -2059,8 +2091,8 @@ function Stat({ icon, label, value, pct, title, fit }) {
 }
 
 // Top of the right column, so the server stats stay above the fold (1080p): status row, then Server below it.
-function Hub({ status, priv }) {
-  const [latency, setLatency] = useState(null)
+function Hub({ status, priv, privFailed }) {
+  const [latency, setLatency] = useState() // undefined = the first ping is on its way, null = it failed
 
   useEffect(() => {
     const ping = async () => {
@@ -2078,6 +2110,14 @@ function Hub({ status, priv }) {
   }, [])
 
   const [label, color] = { loading: ['Checking', 'text-gray-400'], ok: ['Online', 'text-green-400'], error: ['Offline', 'text-red-400'] }[status]
+  // stand-ins while the first answers are on their way (screen readers still hear "Checking"); a later refresh (the
+  // weather's, every 5 min) says "Checking" as before
+  const [answered, setAnswered] = useState(false)
+  useEffect(() => {
+    if (status !== 'loading') setAnswered(true)
+  }, [status])
+  const shown = status === 'loading' && !answered ? <><Bone w="7ch" /><span className="sr-only">{label}</span></> : label
+  const ms = latency === undefined ? <Bone w="4ch" /> : latency == null ? '--' : `${latency}ms`
 
   return (
     <div className="@container glass-panel rounded-3xl p-6 flex flex-col gap-5 relative overflow-hidden">
@@ -2092,8 +2132,8 @@ function Hub({ status, priv }) {
             <p className="text-xs @lg:text-sm text-lofi-muted font-mono truncate">Gateway: home.wliafdew.dev</p>
             <p className="@lg:hidden shrink-0 flex items-center gap-1.5 rounded-full px-2.5 py-1 bg-lofi-base/50 border border-white/5 font-mono text-[11px]" title="System status · round-trip to /api/health">
               <span className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} aria-hidden="true" />
-              <span className={color}>{label}</span>
-              <span className="text-lofi-muted">· {latency == null ? '--' : `${latency}ms`}</span>
+              <span className={color}>{shown}</span>
+              <span className="text-lofi-muted">· {ms}</span>
             </p>
           </div>
         </div>
@@ -2101,21 +2141,25 @@ function Hub({ status, priv }) {
           <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner" title="Weather API proxy status">
             <div className="text-[10px] text-lofi-muted font-mono uppercase">System Status</div>
             <div className={`text-sm ${color} font-medium flex items-center gap-1.5 justify-center mt-0.5`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} /> {label}
+              <div className={`w-1.5 h-1.5 rounded-full ${DOT[status]}`} /> {shown}
             </div>
           </div>
           <div className="text-center px-4 py-2 bg-lofi-base/50 rounded-xl border border-white/5 shadow-inner" title="Round-trip to /api/health">
             <div className="text-[10px] text-lofi-muted font-mono uppercase">Latency</div>
-            <div className="text-sm text-white font-medium mt-0.5">{latency == null ? '--' : `${latency}ms`}</div>
+            <div className="text-sm text-white font-medium mt-0.5">{ms}</div>
           </div>
         </div>
       </div>
-      <Server d={priv} />
+      <Server d={priv} failed={privFailed} />
     </div>
   )
 }
 
 const TABS = ['All', ...SERVICES.map((g) => g.section), 'Internal']
+// each app keeps its accent (its place in the full list, internal apps after the public ones), whichever tab shows it
+const SVC_COUNT = SERVICES.reduce((a, g) => a + g.items.length, 0)
+const SVC_INDEX = new Map(SERVICES.flatMap((g) => g.items).map((s, i) => [s.name + s.href, i]))
+const accentOf = (s, internal = 0) => ACCENTS[(SVC_INDEX.get(s.name + s.href) ?? SVC_COUNT + internal) % ACCENTS.length]
 // staggered rise-in for everything marked data-anim inside el
 function enter(el) {
   el.querySelectorAll('[data-anim]').forEach((c, i) =>
@@ -2135,13 +2179,16 @@ const BRUSH = 'polygon(0% 6%, 93% 0%, 100% 22%, 95% 44%, 99% 66%, 93% 100%, 1% 9
 const BRUSH_2 = 'polygon(2% 0%, 97% 10%, 92% 34%, 100% 58%, 96% 88%, 88% 96%, 0% 100%)'
 
 // Hosted Applications with a group picker. Internal = /api/private services: shown when unlocked, sign-in prompt when locked.
-function Services({ priv }) {
+function Services({ priv, privFailed }) {
   const [tab, setTab] = useState('Sites')
-  const [health, setHealth] = useState({}) // public up/down for the Apps section
+  // until the page runs, the picked tab isn't known (it's in localStorage): every group is drawn, and the pre-paint
+  // stylesheet (lib/skeleton.js) shows only the picked one's, so the first paint already has its height
+  const [booted, setBooted] = useState(false)
+  const [health, setHealth] = useState(null) // public up/down for the Apps section; null = on its way
   const [teaser, setTeaser] = useState(null) // locked: the internal services' names + up/down only (/api/internal)
   const box = useRef(null)
   useEffect(() => {
-    const get = () => fetch('/api/status').then((r) => r.json()).then(setHealth, () => {})
+    const get = () => fetch('/api/status').then((r) => r.json()).then(setHealth, () => setHealth((h) => h ?? {}))
     get()
     const t = setInterval(get, 60_000)
     return () => clearInterval(t)
@@ -2150,6 +2197,7 @@ function Services({ priv }) {
   useEffect(() => {
     const t = load('tab', 'Sites')
     if (TABS.includes(t)) setTab(t)
+    setBooted(true)
   }, [])
 
   // GSAP-style timeline with the native Web Animations API (no library):
@@ -2199,7 +2247,23 @@ function Services({ priv }) {
   }, [locked])
 
   const groups = [...SERVICES, ...(priv?.services?.length ? [{ section: 'Internal', items: priv.services }] : [])]
-  const shown = tab === 'All' ? groups : groups.filter((g) => g.section === tab)
+  const shown = !booted ? SERVICES : tab === 'All' ? groups : groups.filter((g) => g.section === tab)
+  // the internal apps' place while /api/private is on its way (signed in last time: lib/skeleton.js), then their
+  // count for next time
+  const intWait = priv === undefined && !privFailed && (!booted || tab === 'All' || tab === 'Internal')
+  const intCount = priv?.services?.length
+  const intChips = priv?.services?.map((s) => {
+    const st = s.stats ?? (s.widget && priv.widgets?.[s.widget])
+    return Array.isArray(st) ? Math.min(st.length, SK_MAX.chips) : 0
+  }).slice(0, SK_MAX.internal).join()
+  // (and the public apps' chips from /api/private, by widget)
+  const wChips = priv ? JSON.stringify(Object.fromEntries(SERVICES.flatMap((g) => g.items).filter((x) => x.widget).map((x) => [x.widget, Math.min(priv.widgets?.[x.widget]?.length ?? 0, SK_MAX.chips)]))) : ''
+  useEffect(() => {
+    if (intCount != null) rememberShape({ internal: intCount, intChips: intChips ? intChips.split(',').map(Number) : [] })
+  }, [intCount, intChips])
+  useEffect(() => {
+    if (wChips) rememberShape({ wChips: JSON.parse(wChips) })
+  }, [wChips])
   const count = (t) => (t === 'All' ? groups : groups.filter((g) => g.section === t)).reduce((a, g) => a + g.items.length, 0)
   // shared by both tab variants (pills < lg, brush bookmarks >= lg); n = null while Internal is locked
   const meta = (t) => ({ on: tab === t, icon: t === 'Internal' && !locked ? 'fa-lock-open' : TAB_ICON[t], n: t === 'Internal' && locked ? (teaser?.length ?? null) : count(t) })
@@ -2284,23 +2348,39 @@ function Services({ priv }) {
           })}
         </div>
       </div>
-      <div ref={box} className="space-y-6">
+      {/* (a gap, not space-y: the boot's hidden groups would still leave their margins) */}
+      <div ref={box} className={`flex flex-col gap-6 ${booted ? '' : 'svc-boot'}`}>
         {shown.map(({ section, items }) => (
-          <section key={section}>
-            {tab === 'All' && <h4 data-anim className="text-[10px] font-mono text-lofi-text/80 uppercase tracking-widest mb-3">{section}</h4>}
+          <section key={section} data-sk-grp={booted ? undefined : section}>
+            {(tab === 'All' || !booted) && (
+              <h4 data-anim data-sk-head={booted ? undefined : ''} className="text-[10px] font-mono text-lofi-text/80 uppercase tracking-widest mb-3">{section}</h4>
+            )}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-              {items.map((s) => (
+              {items.map((s, i) => (
                 <ServiceCard
                   key={s.name + s.href}
                   s={s}
-                  accent={ACCENTS[n++ % ACCENTS.length]}
-                  live={s.live ?? (s.status && health[s.status])}
+                  accent={accentOf(s, i)}
+                  live={s.live ?? (s.status && health?.[s.status])}
+                  wait={Boolean(s.status && !s.live && health === null)}
+                  chipsWait={Boolean(s.widget && priv === undefined && !privFailed)}
                   stats={s.stats ?? (s.widget && priv?.widgets?.[s.widget])}
                 />
               ))}
             </div>
           </section>
         ))}
+        {intWait && (
+          <section className="sk-priv sk-int-grp" data-sk-grp={booted ? undefined : 'Internal'} aria-busy="true">
+            <span className="sr-only">Loading internal apps…</span>
+            {(tab === 'All' || !booted) && (
+              <h4 aria-hidden="true" data-sk-head={booted ? undefined : ''} className="text-[10px] font-mono text-lofi-text/80 uppercase tracking-widest mb-3">Internal</h4>
+            )}
+            <div aria-hidden="true" className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+              {Array.from({ length: SK_MAX.internal }, (_, i) => <ServiceCardSkeleton key={i} i={i} />)}
+            </div>
+          </section>
+        )}
         {tab === 'Internal' && locked && (
           <>
             <div data-anim className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-lofi-base/40 border border-white/5 px-4 py-3">
@@ -2318,7 +2398,7 @@ function Services({ priv }) {
             {/* name + live status only; the card goes nowhere and every one wears the sealed vault */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 gap-4">
               {teaser?.map((s) => (
-                <ServiceCard key={s.name} s={{ ...s, href: '#', host: '█████.wliafdew.dev', deco: 'vault' }} accent={ACCENTS[n++ % ACCENTS.length]} live={s.live} />
+                <ServiceCard key={s.name} s={{ ...s, href: '#', host: '█████.wliafdew.dev', deco: 'vault' }} accent={accentOf(s, n++)} live={s.live} />
               ))}
             </div>
           </>
@@ -2495,30 +2575,35 @@ function SteamDot({ d }) {
   return <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${steamState(d)[1]} ${d.state === 'offline' ? '' : 'shadow-[0_0_6px_currentColor] motion-safe:animate-pulse'}`} aria-hidden="true" />
 }
 
-// The Steam card while /api/steam is on its way: the same shape in pulsing blocks, so nothing jumps when it lands
+// The Steam card while /api/steam is on its way: the card's own markup with stand-ins for the values (the same
+// lines, boxes and gaps), so nothing moves when it lands
 function SteamSkeleton() {
-  const bar = 'rounded-md bg-white/8 motion-safe:animate-pulse'
   return (
     <section aria-label="Steam" aria-busy="true" className="glass-panel rounded-3xl p-5 flex flex-col gap-4">
       <span className="sr-only">Loading Steam…</span>
-      <div className="flex items-center gap-4" aria-hidden="true">
-        <span className={`w-14 h-14 rounded-2xl ${bar}`} />
-        <span className="flex-1 flex flex-col gap-2">
-          <span className={`h-4 w-28 ${bar}`} />
-          <span className={`h-3 w-20 ${bar}`} />
-          <span className={`h-2.5 w-32 ${bar}`} />
-        </span>
+      <div className="flex items-center gap-4 min-w-0" aria-hidden="true">
+        <span className="relative shrink-0 w-14 h-14 rounded-2xl bg-white/8 sk-pulse" />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 min-w-0">
+            <span className="text-base font-medium"><Bone w="7ch" /></span>
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-xs font-mono"><Bone w="9ch" /></p>
+          <p className="mt-0.5 text-[10px] font-mono"><Bone w="18ch" /></p>
+        </div>
       </div>
-      <div className="grid grid-cols-3 gap-2" aria-hidden="true">
+      <dl className="grid grid-cols-3 gap-2" aria-hidden="true">
         {[0, 1, 2].map((i) => (
-          <span key={i} className={`h-[3.25rem] rounded-xl ${bar}`} />
+          <div key={i} className="bg-lofi-base/50 border border-white/5 rounded-xl px-2.5 py-2 min-w-0">
+            <dt className="text-[9px] font-mono uppercase tracking-wider"><Bone w="7ch" /></dt>
+            <dd className="mt-0.5 text-sm font-medium"><Bone w="5ch" /></dd>
+          </div>
         ))}
-      </div>
-      <div aria-hidden="true">
-        <span className={`block mb-1.5 h-2.5 w-24 ${bar}`} />
+      </dl>
+      <div className="min-w-0" aria-hidden="true">
+        <p className="mb-1.5 text-[9px] font-mono uppercase tracking-widest"><Bone w="15ch" /></p>
         <div className="grid grid-cols-3 gap-2">
           {[0, 1, 2].map((i) => (
-            <span key={i} className={`aspect-[460/215] rounded-lg ${bar}`} />
+            <span key={i} className="block aspect-[460/215] rounded-lg bg-white/8 sk-pulse" />
           ))}
         </div>
       </div>
@@ -2529,6 +2614,14 @@ function SteamSkeleton() {
 // The Entertainment tab's Steam link: just the live status (the numbers live on the Steam card)
 function SteamStatus() {
   const d = useContext(SteamData)
+  // (on its way: a stand-in line keeps the card's height)
+  if (d === undefined) {
+    return (
+      <div aria-hidden="true" className="z-10 w-full flex items-center justify-center gap-1.5 text-[10px] font-mono min-w-0">
+        <Bone w="1.5ch" round /><Bone w="10ch" />
+      </div>
+    )
+  }
   if (!d) return null
   const [label, , text] = steamState(d)
   return (
@@ -2637,7 +2730,9 @@ function SteamCard({ d }) {
 // card decorations by `deco` key (lib/data.js / private-services.json)
 const DECOR = { vault: Secret, graph: Graph, shell: Shell, steam: SteamStatus }
 
-function ServiceCard({ s, accent, live, stats }) {
+// wait: its live status is on its way (a stand-in line keeps its place)
+// chipsWait: its stat chips (from /api/private) are on their way: stand-ins, for the owner (lib/skeleton.js)
+function ServiceCard({ s, accent, live, stats, wait = false, chipsWait = false }) {
   const Deco = DECOR[s.deco]
   return (
     <a
@@ -2670,8 +2765,16 @@ function ServiceCard({ s, accent, live, stats }) {
             {live.up ? live.ms == null ? 'Online' : <span><span className="@max-[8rem]:sr-only">Online · </span>{live.ms} ms</span> : 'Down'}
           </div>
         )}
+        {!live && wait && (
+          <div aria-hidden="true" className="mt-1.5 text-[10px] font-mono whitespace-nowrap flex items-center justify-center gap-1.5">
+            <Bone w="1.5ch" round /><Bone w="11ch" />
+          </div>
+        )}
       </div>
       {Deco && <Deco />}
+      {chipsWait && !Array.isArray(stats) && (
+        <div className="sk-priv z-10 w-full" data-sk-w={s.widget} aria-hidden="true"><SkChips /></div>
+      )}
       {/* live widget numbers (internal services only, from /api/private) */}
       {Array.isArray(stats) && (
         <dl className="z-10 w-full grid grid-cols-1 @[9rem]:grid-cols-2 gap-1.5">
@@ -2684,6 +2787,36 @@ function ServiceCard({ s, accent, live, stats }) {
         </dl>
       )}
     </a>
+  )
+}
+
+// an internal app's card while /api/private is on its way: the card's frame with stand-ins (data-sk-int = i: the
+// pre-paint stylesheet keeps as many cards as there were last time, and as many stat chips as each had)
+const SK_CHIPS = Array.from({ length: SK_MAX.chips }, (_, k) => k)
+function ServiceCardSkeleton({ i }) {
+  return (
+    <div data-sk-int={i} className="@container bg-lofi-base/40 border border-white/5 px-3 py-5 sm:p-5 rounded-2xl flex flex-col items-center text-center gap-3">
+      <div className="w-14 h-14 rounded-2xl bg-lofi-surface border border-white/5 sk-pulse" />
+      <div className="mt-1 w-full min-w-0">
+        <div className="min-h-[2lh] text-sm font-medium"><Bone w="9ch" /></div>
+        <div className="text-[10px] mt-1 font-mono"><Bone w="16ch" /></div>
+        <div className="mt-1.5 text-[10px] font-mono flex items-center justify-center gap-1.5"><Bone w="1.5ch" round /><Bone w="11ch" /></div>
+      </div>
+      <SkChips />
+    </div>
+  )
+}
+// stat chips' stand-ins (data-sk-chip = k: the pre-paint stylesheet keeps as many as there were)
+function SkChips() {
+  return (
+    <div className="sk-chips z-10 w-full grid grid-cols-1 @[9rem]:grid-cols-2 gap-1.5">
+      {SK_CHIPS.map((k) => (
+        <div key={k} data-sk-chip={k} className="bg-lofi-base/60 border border-white/5 rounded-lg px-1.5 py-1 min-w-0">
+          <div className="text-[9px] font-mono uppercase"><Bone w="6ch" /></div>
+          <div className="text-xs font-medium"><Bone w="4ch" /></div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -2720,7 +2853,7 @@ function useSpotify() {
           if (!alive) return
           setSp((prev) => mark(prev, d))
           if (d.enabled === false) stop()
-        }, () => {})
+        }, () => alive && setSp((prev) => prev ?? { failed: true })) // (unreachable: the resting look, not a stand-in forever)
     const t = setInterval(get, 15_000)
     const stop = () => (clearInterval(t), document.removeEventListener('visibilitychange', get))
     document.addEventListener('visibilitychange', get)
@@ -2899,7 +3032,20 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
   const ctl = useSpotifyControl(onState)
   const vol = useSpotifyVolume(Boolean(owner && sp?.enabled && sp.track))
   const [peek, setPeek] = useState(null) // an Up next track shown in the popup
-  if (sp === undefined) return null // first answer on its way
+  // first answer on its way: the now-playing row's shape (the card's height is fixed, this is just its look)
+  if (sp === undefined) {
+    return (
+      <div aria-busy="true" className="flex items-center gap-4 mb-3">
+        <span className="sr-only">Loading Spotify…</span>
+        <span aria-hidden="true" className="shrink-0 w-20 h-20 rounded-xl bg-white/8 sk-pulse" />
+        <div aria-hidden="true" className="min-w-0 flex-1">
+          <p className="text-[9px] font-mono mb-1"><Bone w="11ch" /></p>
+          <p className="text-base font-medium"><Bone w="14ch" /></p>
+          <p className="text-xs"><Bone w="10ch" /></p>
+        </div>
+      </div>
+    )
+  }
   if (!sp.enabled || !sp.track) return <SpotifyResting owner={owner} ctl={ctl} />
   const artists = sp.artists.join(', ')
   const pos = Math.min(sp.durationMs || 0, sp.progressMs + (sp.ageMs ?? 0) + (sp.playing ? Math.max(0, Date.now() - sp.seen) : 0))
@@ -3202,6 +3348,7 @@ function SpotifyResting({ owner, ctl }) {
 // deploy (502 / 503), a rate limit, a timeout, no network — keeps the last stats and asks again, waiting longer each time
 function usePrivate() {
   const [d, setD] = useState(undefined) // undefined = loading, null = locked
+  const [failed, setFailed] = useState(false) // an ask failed while nothing's known yet: the stand-ins give up
 
   useEffect(() => {
     let alive = true, t = 0, fails = 0
@@ -3220,6 +3367,7 @@ function usePrivate() {
         if (data) return (fails = 0), setD(data), next(5000)
       }
       if (answer === 'locked') return setD(null) // logged out / not allowed: stop (a reload after signing in starts again)
+      setFailed(true)
       fails++
       next(retryIn(fails)) // (the last stats stay on screen meanwhile)
     }
@@ -3230,13 +3378,19 @@ function usePrivate() {
     }
   }, [])
 
-  return d
+  return [d, failed]
 }
 
 // The Hub's second row: host stats when unlocked, otherwise a sign-in line. Internal services render inside Services.
-function Server({ d }) {
+function Server({ d, failed }) {
   const { unit } = useContext(Prefs)
-  if (d === undefined) return null
+  // next visit's skeleton: locked (0), or how many machines, and which show watts
+  const hosts = d === undefined ? null : d ? 1 + (d.hosts?.length ?? 0) : 0
+  const power = d ? [Boolean(d.stats?.power), ...(d.hosts ?? []).map((h) => Boolean(h.stats?.power))].slice(0, SK_MAX.hosts).join() : ''
+  useEffect(() => {
+    if (hosts != null) rememberShape({ hosts, power: power ? power.split(',').map((b) => b === 'true') : [] })
+  }, [hosts, power])
+  if (d === undefined) return failed ? null : <ServerSkeleton />
   const here = encodeURIComponent(location.href)
 
   if (!d) {
@@ -3271,20 +3425,46 @@ function Server({ d }) {
   )
 }
 
+// The Hub's second row while /api/private is on its way, in the shape it had last time (lib/skeleton.js: the CSS keeps
+// the sign-in line, or the machines' table / tiles with as many rows as there were). The real parts with stand-ins
+const SK_HOSTS = Array.from({ length: SK_MAX.hosts }, (_, i) => ({ name: '', st: {}, i }))
+function ServerSkeleton() {
+  return (
+    <>
+      <div aria-hidden="true" className="sk-locked z-10 border-t border-white/5 pt-4 flex items-center justify-between gap-4">
+        <p className="text-xs font-mono flex items-center gap-3 min-w-0"><Bone w="1.2em" /><Bone w="22ch" /></p>
+        <span className="shrink-0 text-xs font-mono px-3 py-2 rounded-full border border-white/5 bg-white/5 sk-pulse"><span className="invisible">Sign in</span></span>
+      </div>
+      <section aria-label="Server" aria-busy="true" className="sk-priv z-10 border-t border-white/5 pt-4">
+        <span className="sr-only">Loading server status…</span>
+        <div aria-hidden="true">
+          <HostTable hosts={SK_HOSTS} skel className="sk-host-table" />
+          <div className="sk-host-tiles hidden @lg:flex flex-col gap-3">
+            {SK_HOSTS.map((h) => <HostStats key={h.i} skel name="" st={{}} i={h.i} />)}
+          </div>
+        </div>
+      </section>
+    </>
+  )
+}
+
 // the table's columns say GB, so the cells fit a number only
 const gbNum = (x) => (x ? (x.used / GB).toFixed(1) : '--')
 
 // One row per machine: name (uptime / load in its title, ⚡ watts under it), then CPU, RAM, temp, disk with thin bars
-function HostTable({ hosts, unit }) {
+// skel: the skeleton's (stand-ins for the values; each row's cells carry data-sk-host, its index, for the CSS)
+function HostTable({ hosts, unit, skel = false, className = '' }) {
   // label / more: read by screen readers only (the header row is hidden from them)
-  const cell = (value, pct, title, label, more = '') => (
-    <div className="min-w-0" title={title}>
+  const cell = (value, pct, title, label, more = '', i) => (
+    <div className="min-w-0" title={title} data-sk-host={skel ? i : undefined}>
       <div className="text-sm text-white font-medium truncate">
-        <span className="sr-only">{label} </span>
-        {value}
-        {more && <span className="sr-only">{more}</span>}
+        {skel ? <Bone w="3.5ch" /> : <>
+          <span className="sr-only">{label} </span>
+          {value}
+          {more && <span className="sr-only">{more}</span>}
+        </>}
       </div>
-      {pct != null && (
+      {skel ? <div className="h-1 mt-1 rounded-full bg-lofi-base/60" /> : pct != null && (
         <div className="h-1 mt-1 rounded-full bg-lofi-base/60 overflow-hidden" aria-hidden="true">
           <div className={`h-full rounded-full transition-all duration-500 ${pct > 85 ? 'bg-red-400' : 'bg-lofi-primary'}`} style={{ width: `${Math.min(100, pct)}%` }} />
         </div>
@@ -3292,11 +3472,19 @@ function HostTable({ hosts, unit }) {
     </div>
   )
   return (
-    <div className="@lg:hidden grid grid-cols-[auto_repeat(4,minmax(0,1fr))] items-center gap-x-3 gap-y-2.5 font-mono">
+    <div className={`@lg:hidden grid grid-cols-[auto_repeat(4,minmax(0,1fr))] items-center gap-x-3 gap-y-2.5 font-mono ${className}`}>
       {['', 'CPU', 'RAM GB', 'Temp', 'Disk GB'].map((l) => (
         <div key={l} aria-hidden="true" className="text-[10px] text-lofi-muted uppercase tracking-wider">{l}</div>
       ))}
-      {hosts.map(({ name, st, offline }, i) => (
+      {hosts.map(({ name, st, offline }, i) => skel ? (
+        <Fragment key={i}>
+          <div className="min-w-0 text-[10px]" data-sk-host={i}>
+            <p className="flex items-center gap-1.5 uppercase tracking-widest"><Bone w="8ch" /></p>
+            <p><Bone w="5ch" /></p>
+          </div>
+          {[0, 1, 2, 3].map((k) => <Fragment key={k}>{cell(null, null, undefined, '', '', i)}</Fragment>)}
+        </Fragment>
+      ) : (
         <Fragment key={`${i}:${name}`}>
           <div
             className="min-w-0 text-[10px] text-lofi-muted"
@@ -3333,7 +3521,26 @@ const powerTitle = (p) =>
   `CPU ${p.cpu ?? '--'} W + RAM ${p.ram ?? '--'} W, measured by the CPU (10 s average)${p.extra ? ` + ${p.extra} W estimated (EXTRA_WATTS)` : ''}. The whole PC at the wall uses more.`
 
 // One machine: uptime / load / ⚡ watts line, then CPU, RAM, temp, disk tiles. offline: its agent didn't answer.
-function HostStats({ name, st, offline, unit }) {
+// skel: the skeleton's (stand-ins; data-sk-host = i, for the CSS)
+function HostStats({ name, st, offline, unit, skel = false, i }) {
+  if (skel) {
+    const b = <Bone w="5ch" />
+    return (
+      <div className="flex flex-col gap-3" data-sk-host={i}>
+        <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-[10px] font-mono">
+          <p className="flex items-center gap-2">
+            <Bone w="1.2em" /><Bone w="8ch" /><Bone w="24ch" />
+            <span className="sk-power inline-flex items-center gap-1 rounded-full border border-white/5 px-2 py-0.5"><Bone w="5ch" /></span>
+          </p>
+        </div>
+        <div className="grid grid-cols-4 gap-2 @lg:gap-3">
+          {['fa-gauge', 'fa-memory', 'fa-temperature-half', 'fa-hard-drive'].map((icon) => (
+            <Stat key={icon} fit icon={`${icon} text-lofi-muted/40`} label={<Bone w="6ch" />} value={b} pct={0} />
+          ))}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-1 text-[10px] font-mono text-lofi-muted">

@@ -1,5 +1,6 @@
 import { Space_Mono, Work_Sans } from 'next/font/google'
 import { SETTINGS_KEY, THEMES, customTheme, prePaint } from '../lib/settings'
+import { SHAPE_KEY, SK_MAX, TAB_KEY, cleanShape, prePaintShape, shapeAttrs, shapeCss } from '../lib/skeleton'
 import './globals.css'
 
 const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], variable: '--font-space-mono' })
@@ -17,10 +18,12 @@ export const viewport = { themeColor: '#1a1a2e' }
 
 export default function RootLayout({ children }) {
   return (
-    // suppressHydrationWarning: the pre-paint script below sets style / data-motion on <html> before React hydrates
+    // suppressHydrationWarning: the pre-paint scripts below set style / data-motion / data-sk-* on <html> before React hydrates
     <html lang="en" className={`${spaceMono.variable} ${workSans.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(${prePaint})(${JSON.stringify(SETTINGS_KEY)},${JSON.stringify(THEMES)},${customTheme})` }} />
+        {/* the skeletons take the shapes the cards had last time (lib/skeleton.js), before the first paint too */}
+        <script dangerouslySetInnerHTML={{ __html: `(${prePaintShape})(${JSON.stringify(SHAPE_KEY)},${JSON.stringify(TAB_KEY)},${JSON.stringify(SK_MAX)},${cleanShape},${shapeCss},${shapeAttrs})` }} />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"

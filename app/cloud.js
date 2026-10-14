@@ -54,6 +54,8 @@ function writeLocal(doc, keys) {
 // hub has news, app/notify.js pulls); the same stream carries both, so a device keeps one connection
 export function useCloudSync(apply, hold, keep, onLive) {
   const [status, setStatus] = useState('off')
+  const [known, setKnown] = useState(false) // the first answer came (or none can): owner or not is known from here on
+  const [sure, setSure] = useState(false) // ... and it was a real answer (not a network error / 5xx): worth remembering
   const touch = useRef(() => {}) // replaced once the effect runs; a stable function for the page to call
   const liveRef = useRef(() => {})
   const applyRef = useRef(apply)
@@ -109,12 +111,13 @@ export function useCloudSync(apply, hold, keep, onLive) {
         })
         if (!alive) return
         answered = true
-        if (r.type === 'opaqueredirect' || r.status === 401) return (on = false), setStatus('signin')
-        if (r.status === 403 || r.status === 404) return (on = false), setStatus('off')
+        if (r.type === 'opaqueredirect' || r.status === 401) return (on = false), setSure(true), setStatus('signin')
+        if (r.status === 403 || r.status === 404) return (on = false), setSure(true), setStatus('off')
         if (!r.ok) throw new Error(r.status)
         const { doc } = await r.json()
         const first = !on
         on = true
+        setSure(true)
         tries = 0
         if (first && Object.keys(early).length) save(STAMPS, { ...load(STAMPS, {}), ...early })
         // first sync and the cloud is empty: this browser's settings become the cloud copy
@@ -133,6 +136,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
         return
       } finally {
         busy = false
+        if (alive) setKnown(true)
         live() // signed in / out, sync on / off: the stream follows
       }
       if (dirty && alive) later(() => request('PUT'), PUSH_DELAY)
@@ -233,5 +237,5 @@ export function useCloudSync(apply, hold, keep, onLive) {
     }
   }, [hold, keep])
 
-  return { status, touch: (keys) => touch.current(keys), live: () => liveRef.current(), id: () => selfRef.current }
+  return { status, known, sure, touch: (keys) => touch.current(keys), live: () => liveRef.current(), id: () => selfRef.current }
 }
