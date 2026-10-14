@@ -499,7 +499,7 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Weather · Hub · Services
+            phones: one column, Steam · Music · Weather · Habits (owner) · Hub · Services
             lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
@@ -509,10 +509,11 @@ export default function Home() {
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
             <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
-            <HabitsCard hb={habits} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
-            <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
+            {/* the owner's Habits bar sits on top of the Hub (nothing for guests) */}
+            <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1 flex flex-col gap-6">
+              <HabitsCard hb={habits} />
               <Hub status={status} priv={priv} />
             </div>
             <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">

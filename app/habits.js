@@ -14,7 +14,7 @@
 import './habits.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
+  Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronDown, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
   Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
   Timer, Waves, X,
 } from 'lucide-react'
@@ -318,9 +318,13 @@ function Burst() {
   )
 }
 
-// ---- one habit today ----
+// ---- one habit today: a compact tile (the card is a short, wide bar over the Hub) ----
+// [icon] name                [ring]
+//        06:15 · 45 min  chip
+// While held, the second line becomes the identity line; just kept, it asks how it went (three small buttons);
+// tapping the check later opens "take it back" under the tile.
 
-function Row({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
+function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
   const [holding, setHolding] = useState(false)
   const [asking, setAsking] = useState(false)
   // "take it back" opens only for a press that began on the check itself (a finger, a button, Enter / Space): the finger
@@ -339,50 +343,49 @@ function Row({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
   else if (now.min < s - 30) {
     const m = s - now.min
     chip = <span className="hb-chip">in {m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m} min`}</span>
-  } else if (open) chip = <span className="hb-chip now">now · on time till {fmtMin(Math.min(1439, e + GRACE_MIN))}</span>
+  } else if (open) chip = <span className="hb-chip now">now · till {fmtMin(Math.min(1439, e + GRACE_MIN))}</span>
   else chip = <span className="hb-chip late">late · still counts</span>
   const askRate = done && fresh && !entry.rating
   const R = done && entry.rating && rateOf(entry.rating)[1]
+  const line = holding ? 'identity' : askRate ? 'rate' : 'meta'
   return (
-    <li className={`hb-row${holding ? ' is-holding' : ''}${done ? ' is-done' : ''}${!due && !done ? ' is-rest' : ''}${due && !done && open ? ' is-due' : ''}`}>
-      <div className="hb-main">
-        <span className="hb-well" aria-hidden="true"><Glyph name={habit.icon} size={22} /></span>
+    <li className={`hb-tile${holding ? ' is-holding' : ''}${done ? ' is-done' : ''}${!due && !done ? ' is-rest' : ''}${due && !done && open ? ' is-due' : ''}`}>
+      <div className="hb-tile-main">
+        <span className="hb-well" aria-hidden="true"><Glyph name={habit.icon} size={20} /></span>
         <div className="hb-text">
           <div className="hb-name">{habit.name}</div>
-          <div className="hb-meta"><span>{whenText(habit)}</span>{chip}</div>
+          <div className="hb-line" data-show={line}>
+            <div className="hb-meta" aria-hidden={line !== 'meta'}><span>{whenText(habit)}</span>{chip}</div>
+            <p className="hb-quote" aria-hidden={line !== 'identity'}>“{habit.identity || 'I keep my word to myself.'}”</p>
+            <div className="hb-rates" role="group" aria-label="How was it?" aria-hidden={line !== 'rate'}>
+              {askRate && RATINGS.map(([k, I, t]) => (
+                <button key={k} type="button" className={`hb-rate ${k}`} title={t} aria-label={`${t}`} onClick={() => onRate(habit, k, today)}>
+                  <I size={15} strokeWidth={1.9} aria-hidden="true" /><span>{t}</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         {done ? (
-          <button type="button" className={`hb-kept${fresh ? ' is-fresh' : ''}`} aria-label={`${habit.name}: kept. Take it back`} aria-expanded={asking}
+          <button
+            type="button"
+            className={`hb-kept${fresh ? ' is-fresh' : ''}`}
+            aria-label={`${habit.name}: kept. Take it back`}
+            aria-expanded={asking}
             onPointerDown={() => (pressed.current = true)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (pressed.current = true)}
             onClick={() => pressed.current && ((pressed.current = false), setAsking((a) => !a))}
           >
             {fresh && <Burst />}
             <svg className="check" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-            {R && <span className="hb-badge" aria-hidden="true"><R size={13} strokeWidth={2.2} /></span>}
+            {R && <span className="hb-badge" aria-hidden="true"><R size={12} strokeWidth={2.2} /></span>}
           </button>
         ) : (
           <HoldRing habit={habit} onHolding={setHolding} onDone={() => onKeep(habit, today)} />
         )}
       </div>
-      <div className="hb-identity" aria-hidden={!holding}>
+      <div className={`hb-after${asking && done ? ' is-open' : ''}`}>
         <div>
-          <p>“{habit.identity || 'I keep my word to myself.'}”</p>
-          <small>keep holding · let go to cancel</small>
-        </div>
-      </div>
-      <div className={`hb-after${askRate || (asking && done) ? ' is-open' : ''}`}>
-        <div>
-          {askRate && !asking && (
-            <div className="hb-after-in">
-              <span className="q">How was it?</span>
-              {RATINGS.map(([k, I, t]) => (
-                <button key={k} type="button" className={`hb-rate ${k}`} onClick={() => onRate(habit, k, today)}>
-                  <I size={17} strokeWidth={1.75} aria-hidden="true" />{t}
-                </button>
-              ))}
-            </div>
-          )}
           {asking && done && (
             <div className="hb-after-in">
               <p>Take back today's {habit.name.toLowerCase()}?</p>
@@ -694,10 +697,25 @@ function Routines({ hb, dlg }) {
 
 // ---- the card ----
 
-// hb: useHabits(). Nothing at all unless the server said this is the owner and answered
+const WEEK_KEY = 'habitsWeek' // the week strip folded open on this device
+// hb: useHabits(). Nothing at all unless the server said this is the owner and answered. A short, wide bar: today's
+// habits as tiles, the week folded under ▾, the routines behind the sliders.
 export function HabitsCard({ hb }) {
   const dlg = useRef(null)
+  const [week, setWeek] = useState(false)
   const [, tick] = useState(0)
+  useEffect(() => {
+    try {
+      setWeek(localStorage.getItem(WEEK_KEY) === '1')
+    } catch {}
+  }, [])
+  const toggleWeek = () =>
+    setWeek((w) => {
+      try {
+        localStorage.setItem(WEEK_KEY, w ? '0' : '1')
+      } catch {}
+      return !w
+    })
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), hb.undoing ? 200 : 20_000)
     return () => clearInterval(t)
@@ -716,36 +734,37 @@ export function HabitsCard({ hb }) {
   const entry = (id) => todays.get(id)
   const due = habits.filter((h) => h.days.includes(dowOf(today)))
   const kept = due.filter((h) => entry(h.id) && entry(h.id).undoneAt == null).length
-  const C = 2 * Math.PI * 16
+  const C = 2 * Math.PI * 13
   const u = hb.undoing && data.habits.find((h) => h.id === hb.undoing.habitId)
   const left = hb.undoing ? Math.max(0, hb.undoing.until - Date.now()) : 0
   const openRoutines = () => dlg.current?.showModal()
   return (
-    <section aria-labelledby="hb-title" className="glass-panel rounded-3xl p-5 sm:p-6 hb">
+    <section aria-labelledby="hb-title" className="glass-panel rounded-3xl p-4 sm:p-5 hb">
       <div className="hb-head">
         <div className="hb-dayring" aria-hidden="true">
-          <svg viewBox="0 0 40 40">
-            <circle cx="20" cy="20" r="16" fill="none" stroke="rgb(255 255 255 / 0.1)" strokeWidth="3" />
-            <circle cx="20" cy="20" r="16" fill="none" stroke="var(--color-lofi-primary)" strokeWidth="3" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - (due.length ? kept / due.length : 0))} style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)' }} />
+          <svg viewBox="0 0 32 32">
+            <circle cx="16" cy="16" r="13" fill="none" stroke="rgb(255 255 255 / 0.1)" strokeWidth="3" />
+            <circle cx="16" cy="16" r="13" fill="none" stroke="var(--color-lofi-primary)" strokeWidth="3" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C * (1 - (due.length ? kept / due.length : 0))} style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)' }} />
           </svg>
-          <span>{kept}/{due.length}</span>
         </div>
         <div className="hb-title">
           <h2 id="hb-title">Habits</h2>
-          <div className="hb-sub">{!due.length ? 'nothing due today' : kept === due.length ? 'all kept today' : `${kept} of ${due.length} kept today`}</div>
+          <span className="hb-sub">{!due.length ? 'nothing due today' : kept === due.length ? 'all kept today' : `${kept} of ${due.length} kept today`}</span>
         </div>
-        <button type="button" className="hb-iconbtn" aria-haspopup="dialog" aria-label="Edit routines" onClick={openRoutines}><SlidersHorizontal size={18} aria-hidden="true" /></button>
+        {habits.length > 0 && (
+          <button type="button" className={`hb-iconbtn hb-weekbtn${week ? ' is-open' : ''}`} aria-expanded={week} aria-controls="hb-week" aria-label={week ? 'Hide this week' : 'Show this week'} title="This week" onClick={toggleWeek}>
+            <CalendarDays size={16} aria-hidden="true" /><ChevronDown size={14} className="chev" aria-hidden="true" />
+          </button>
+        )}
+        <button type="button" className="hb-iconbtn" aria-haspopup="dialog" aria-label="Edit routines" title="Routines" onClick={openRoutines}><SlidersHorizontal size={16} aria-hidden="true" /></button>
       </div>
 
       {habits.length ? (
-        <div>
-          <p className="hb-label">Today</p>
-          <ul className="hb-rows">
-            {habits.map((h) => (
-              <Row key={h.id} habit={h} today={today} now={now} entry={entry(h.id)} fresh={hb.fresh === h.id} onKeep={hb.keep} onRate={hb.rate} onTakeBack={(x, r, d) => hb.takeBack(x, r, d)} />
-            ))}
-          </ul>
-        </div>
+        <ul className="hb-tiles">
+          {habits.map((h) => (
+            <Tile key={h.id} habit={h} today={today} now={now} entry={entry(h.id)} fresh={hb.fresh === h.id} onKeep={hb.keep} onRate={hb.rate} onTakeBack={(x, r, d) => hb.takeBack(x, r, d)} />
+          ))}
+        </ul>
       ) : (
         <div className="hb-empty">
           <p>Set your first routine</p>
@@ -756,7 +775,7 @@ export function HabitsCard({ hb }) {
 
       {u && (
         <div className="hb-undo" role="status">
-          <span className="ic" aria-hidden="true"><Glyph name={u.icon} size={18} /></span>
+          <span className="ic" aria-hidden="true"><Glyph name={u.icon} size={16} /></span>
           <div className="msg">
             {u.name} kept
             <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'} · undo for {Math.ceil(left / 1000)}s</small>
@@ -767,7 +786,11 @@ export function HabitsCard({ hb }) {
       )}
       {hb.note && <p className="hb-note" role="status">{hb.note}</p>}
 
-      {habits.length > 0 && <Week habits={habits} checkins={data.checkins} streaks={data.streaks} today={today} />}
+      {habits.length > 0 && (
+        <div id="hb-week" className={`hb-fold${week ? ' is-open' : ''}`} aria-hidden={!week}>
+          <div><Week habits={habits} checkins={data.checkins} streaks={data.streaks} today={today} /></div>
+        </div>
+      )}
       <Routines hb={hb} dlg={dlg} />
     </section>
   )

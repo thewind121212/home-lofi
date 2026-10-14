@@ -1,55 +1,70 @@
 /* The Habits card (app/habits.js): a glass-panel card on the dashboard, the routine editor in a .wx-sheet dialog
    (the bottom sheet on phones, the centered panel from sm). The page's own tokens; hb- keeps it to itself. */
-.hb { display: flex; flex-direction: column; gap: 18px; }
+.hb { display: flex; flex-direction: column; gap: 14px; }
 .hb-head { display: flex; align-items: center; gap: 12px; }
-.hb-head .hb-title { flex: 1; min-width: 0; }
-.hb-head h2 { margin: 0; font-size: 1.125rem; font-weight: 500; color: #fff; }
+.hb-head .hb-title { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.hb-head h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
 .hb-sub { margin-top: 2px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
 .hb-iconbtn {
-  width: 40px; height: 40px; flex: none; border-radius: 12px;
+  width: 36px; height: 36px; flex: none; border-radius: 12px;
   background: rgb(26 26 46 / 0.5); border: 1px solid rgb(255 255 255 / 0.06);
   color: var(--color-lofi-text); display: grid; place-items: center; cursor: pointer;
   transition: color 0.2s, border-color 0.2s, transform 0.15s;
 }
 .hb-iconbtn:hover { color: var(--color-lofi-primary); border-color: rgb(255 255 255 / 0.2); }
 .hb-iconbtn:active { transform: scale(0.94); }
-.hb-dayring { position: relative; width: 40px; height: 40px; flex: none; }
-.hb-dayring svg { width: 40px; height: 40px; transform: rotate(-90deg); }
+.hb-dayring { position: relative; width: 32px; height: 32px; flex: none; }
+.hb-dayring svg { width: 32px; height: 32px; transform: rotate(-90deg); }
+.hb-weekbtn { width: auto; padding: 0 8px; gap: 2px; display: inline-flex; align-items: center; }
+.hb-weekbtn .chev { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.hb-weekbtn.is-open { color: var(--color-lofi-primary); }
+.hb-weekbtn.is-open .chev { transform: rotate(180deg); }
+/* today's habits: tiles, as many across as fit (one on phones, two or three over the Hub) */
+.hb-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)); gap: 10px; }
+/* the week, folded under ▾ */
+.hb-fold { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s; }
+.hb-fold > div { overflow: hidden; min-height: 0; }
+.hb-fold.is-open { grid-template-rows: 1fr; opacity: 1; }
+.hb-fold.is-open > div { padding-top: 2px; }
 .hb-dayring span { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: #fff; }
 .hb-label { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--color-lofi-muted); margin: 0 0 8px; }
-.hb-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .hb-empty { border-radius: 18px; border: 1px dashed rgb(255 138 92 / 0.35); padding: 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
 .hb-empty p { margin: 0; font-size: 14px; color: #fff; }
 .hb-empty small { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
 
 /* a habit today */
-.hb-row { position: relative; border-radius: 18px; border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.4); padding: 12px 12px 12px 14px; transition: border-color 0.35s, background-color 0.35s; }
-.hb-row.is-holding { border-color: rgb(255 138 92 / 0.35); }
-.hb-row.is-done { border-color: rgb(255 138 92 / 0.4); background: rgb(255 138 92 / 0.06); }
-.hb-row.is-rest { opacity: 0.62; }
-.hb-main { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+.hb-tile { position: relative; min-width: 0; border-radius: 16px; border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.4); padding: 9px 9px 9px 11px; transition: border-color 0.35s, background-color 0.35s; }
+.hb-tile.is-holding { border-color: rgb(255 138 92 / 0.35); }
+.hb-tile.is-done { border-color: rgb(255 138 92 / 0.4); background: rgb(255 138 92 / 0.06); }
+.hb-tile.is-rest { opacity: 0.62; }
+.hb-tile-main { display: flex; align-items: center; gap: 10px; min-height: 52px; }
+.hb-tile .hb-well { width: 38px; height: 38px; border-radius: 12px; }
 .hb-well {
   width: 44px; height: 44px; flex: none; border-radius: 14px; background: var(--color-lofi-surface);
   border: 1px solid rgb(255 255 255 / 0.05); box-shadow: 0 6px 14px rgb(0 0 0 / 0.25);
   display: grid; place-items: center; color: var(--color-lofi-primary); transition: background-color 0.35s, box-shadow 0.35s;
 }
-.hb-row.is-done .hb-well { background: rgb(255 138 92 / 0.16); box-shadow: 0 0 0 1px rgb(255 138 92 / 0.25), 0 6px 14px rgb(0 0 0 / 0.25); }
-.hb-row.is-rest .hb-well { color: var(--color-lofi-muted); }
+.hb-tile.is-done .hb-well { background: rgb(255 138 92 / 0.16); box-shadow: 0 0 0 1px rgb(255 138 92 / 0.25), 0 6px 14px rgb(0 0 0 / 0.25); }
+.hb-tile.is-rest .hb-well { color: var(--color-lofi-muted); }
 .hb-text { flex: 1; min-width: 0; }
-.hb-name { font-size: 15px; font-weight: 500; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hb-meta { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+.hb-name { font-size: 14px; font-weight: 500; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
 .hb-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 1px 8px; border: 1px solid rgb(255 255 255 / 0.12); font-size: 10px; line-height: 16px; white-space: nowrap; }
 .hb-chip.now { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.4); background: rgb(255 138 92 / 0.1); }
 .hb-chip.now::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-lofi-primary); box-shadow: 0 0 6px var(--color-lofi-primary); animation: hb-breathe 2.4s ease-in-out infinite; }
 .hb-chip.late { color: var(--color-lofi-highlight); border-color: rgb(252 227 138 / 0.3); }
 .hb-chip.kept { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.35); }
 
-/* the identity line, opening under the row while it's held */
-.hb-identity { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s; }
-.hb-identity > div, .hb-after > div { overflow: hidden; min-height: 0; }
-.hb-identity p { margin: 10px 2px 2px; font-size: 14px; font-style: italic; color: #fff; text-wrap: balance; }
-.hb-identity small { display: block; margin: 4px 2px 0; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); }
-.hb-row.is-holding .hb-identity { grid-template-rows: 1fr; opacity: 1; }
+/* the tile's second line: the routine (meta), the identity line while held, the rating right after keeping; one at a
+   time, crossfading in place so the tile keeps its height */
+.hb-line { display: grid; margin-top: 3px; }
+.hb-line > * { grid-area: 1 / 1; min-width: 0; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 0.25s, transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.hb-line[data-show='meta'] > .hb-meta, .hb-line[data-show='identity'] > .hb-quote, .hb-line[data-show='rate'] > .hb-rates { opacity: 1; transform: none; pointer-events: auto; }
+.hb-quote { margin: 0; align-self: center; font-size: 13px; font-style: italic; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-rates { display: flex; align-items: center; gap: 5px; }
+.hb-rates .hb-rate { flex: 0 1 auto; height: 26px; padding: 0 9px; gap: 4px; border-radius: 999px; font-size: 11px; }
+@media (max-width: 380px) { .hb-rates .hb-rate span { display: none; } }
+.hb-tile.is-holding .hb-name { color: var(--color-lofi-primary); transition: color 0.3s; }
 
 /* hold to keep */
 .hb-hold {
@@ -57,7 +72,10 @@
   touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
   transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.hb-hold svg { position: absolute; inset: 0; width: 60px; height: 60px; transform: rotate(-90deg); overflow: visible; }
+.hb-hold svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+.hb-tile .hb-hold, .hb-tile .hb-kept { width: 52px; height: 52px; }
+.hb-tile .hb-hold .ring-label { font-size: 8px; }
+.hb-tile .hb-kept .check { width: 22px; height: 22px; }
 .hb-hold .ring-bg { fill: rgb(26 26 46 / 0.6); stroke: rgb(255 255 255 / 0.12); stroke-width: 3; transition: stroke 0.2s; }
 .hb-hold .ring-fill { fill: none; stroke: var(--color-lofi-primary); stroke-width: 3.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgb(255 138 92 / 0.6)); }
 .hb-hold .ring-label { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-lofi-muted); line-height: 1.15; text-align: center; }
@@ -65,7 +83,7 @@
 .hb-hold.is-holding .ring-label { color: #fff; }
 .hb-hold:not(.is-holding):hover .ring-bg { stroke: rgb(255 138 92 / 0.35); }
 .hb-hold .ring-hint { position: absolute; inset: -4px; border-radius: 50%; border: 1px solid rgb(255 138 92 / 0.35); opacity: 0; }
-.hb-row.is-due .hb-hold:not(.is-holding) .ring-hint { animation: hb-ring-hint 2.6s ease-out infinite; }
+.hb-tile.is-due .hb-hold:not(.is-holding) .ring-hint { animation: hb-ring-hint 2.6s ease-out infinite; }
 
 /* kept: the check that takes the ring's place */
 .hb-kept {
