@@ -74,7 +74,12 @@
 }
 .hb-hold > svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
 .hb-tile .hb-hold, .hb-tile .hb-kept { width: 52px; height: 52px; }
-.hb-tile .hb-hold .ring-label svg { width: 22px; height: 22px; }
+.hb-tile .hb-hold .ring-label svg { width: 24px; height: 24px; }
+.hb-hold .ring-label .check path { stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.hb-hold .ring-label .ghost { opacity: 0.32; }
+.hb-tile.is-due .hb-hold .ring-label .ghost { opacity: 0.6; }
+.hb-hold .ring-label .ink { stroke: var(--color-lofi-primary); filter: drop-shadow(0 0 3px rgb(255 138 92 / 0.7)); }
+.hb-tile.is-due .hb-hold:not(.is-holding) .ring-label { color: var(--color-lofi-primary); animation: hb-beckon 2.6s ease-in-out infinite; }
 .hb-tile .hb-kept .check { width: 22px; height: 22px; }
 .hb-hold .ring-bg { fill: rgb(26 26 46 / 0.6); stroke: rgb(255 255 255 / 0.12); stroke-width: 3; transition: stroke 0.2s; }
 .hb-hold .ring-fill { fill: none; stroke: var(--color-lofi-primary); stroke-width: 3.5; stroke-linecap: round; filter: drop-shadow(0 0 4px rgb(255 138 92 / 0.6)); }
@@ -246,12 +251,16 @@
 
 @keyframes hb-breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 @keyframes hb-ring-hint { 0% { opacity: 0.7; transform: scale(0.92); } 70%, 100% { opacity: 0; transform: scale(1.25); } }
+@keyframes hb-beckon { 0%, 100% { opacity: 0.75; transform: scale(1); } 50% { opacity: 1; transform: scale(1.1); } }
 @keyframes hb-pop { from { transform: scale(0.4); } to { transform: scale(1); } }
 @keyframes hb-draw { to { stroke-dashoffset: 0; } }
 @keyframes hb-burst { 0% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 0; transform: translate(var(--x), var(--y)) scale(0.4); } }
 @keyframes hb-rise { to { opacity: 1; transform: none; } }
 /* Settings › Motion: Reduced, or the OS setting: no movement (the hold still fills: it's the hold's meaning) */
 html[data-motion='reduce'] .hb *, html[data-motion='reduce'] .hb-sheet * { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
+/* (the looping hints just stop: a 1 ms loop would flicker) */
+html[data-motion='reduce'] .hb-tile .hb-hold .ring-hint, html[data-motion='reduce'] .hb-tile .hb-hold .ring-label { animation: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .hb *, .hb-sheet * { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
+  .hb-tile .hb-hold .ring-hint, .hb-tile .hb-hold .ring-label { animation: none !important; }
 }

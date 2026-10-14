@@ -15,7 +15,7 @@ import './habits.css'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronDown, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
-  Fingerprint, Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
+  Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
   Timer, Waves, X,
 } from 'lucide-react'
 import { DEFAULT_ICON, GRACE_MIN, ICONS, REMIND_BEFORE, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, remindAt, spanOf, toMin } from '../lib/habits'
@@ -234,6 +234,8 @@ export function useHabits(owner, clientId) {
 
 // ---- the hold ----
 
+const CHECK = 'M5 12.5l4.5 4.5L19 7.5' // the check: waiting in the ring, drawn by the hold, then the kept one
+
 function HoldRing({ habit, onDone, onHolding }) {
   const [p, setP] = useState(0)
   const [holding, setHolding] = useState(false)
@@ -299,9 +301,13 @@ function HoldRing({ habit, onDone, onHolding }) {
         <circle className="ring-bg" cx="30" cy="30" r="27" />
         <circle className="ring-fill" cx="30" cy="30" r="27" strokeDasharray={C} strokeDashoffset={C * (1 - p)} style={{ opacity: p > 0 ? 1 : 0 }} />
       </svg>
-      {/* a fingerprint: press and hold (it lights up as the ring fills); the label says it for screen readers */}
+      {/* the check that's waiting to be earned: a faint one, and over it the real one drawn in as the ring fills, so it
+          lands as the kept check (the same path); the label says "hold" for screen readers */}
       <span className="ring-label" aria-hidden="true">
-        <Fingerprint size={24} strokeWidth={1.6} style={{ opacity: 0.55 + 0.45 * p }} />
+        <svg className="check" viewBox="0 0 24 24" fill="none">
+          <path className="ghost" d={CHECK} />
+          <path className="ink" d={CHECK} pathLength="1" strokeDasharray="1" strokeDashoffset={1 - p} style={{ opacity: p > 0 ? 1 : 0 }} />
+        </svg>
       </span>
     </button>
   )
@@ -378,7 +384,7 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
             onClick={() => pressed.current && ((pressed.current = false), setAsking((a) => !a))}
           >
             {fresh && <Burst />}
-            <svg className="check" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <svg className="check" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={CHECK} stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
             {R && <span className="hb-badge" aria-hidden="true"><R size={12} strokeWidth={2.2} /></span>}
           </button>
         ) : (
