@@ -499,7 +499,7 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Weather · Habits (owner) · Hub · Services
+            phones: one column, Steam · Music · Weather · Hub · Habits (owner) · Services
             lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
@@ -511,16 +511,16 @@ export default function Home() {
             <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
-            {/* the owner's Habits bar sits on top of the Hub (nothing for guests) */}
-            <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1 flex flex-col gap-6">
-              <HabitsCard hb={habits} />
+            <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
               <Hub status={status} priv={priv} />
             </div>
             <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">
               <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
             </div>
           </div>
-          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1">
+          {/* the owner's Habits bar sits on top of the hosted apps, their width (nothing for guests) */}
+          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
+            <HabitsCard hb={habits} />
             <Services priv={priv} />
           </div>
         </main>

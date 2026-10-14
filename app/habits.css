@@ -19,8 +19,8 @@
 .hb-weekbtn .chev { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .hb-weekbtn.is-open { color: var(--color-lofi-primary); }
 .hb-weekbtn.is-open .chev { transform: rotate(180deg); }
-/* today's habits: tiles, as many across as fit (one on phones, two or three over the Hub) */
-.hb-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15.5rem), 1fr)); gap: 10px; }
+/* today's habits: tiles, as many across as fit, stretched to fill the row (one per row on phones) */
+.hb-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15.5rem), 1fr)); gap: 10px; }
 /* the week, folded under ▾ */
 .hb-fold { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s; }
 .hb-fold > div { overflow: hidden; min-height: 0; }
