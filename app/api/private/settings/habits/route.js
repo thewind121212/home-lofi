@@ -27,8 +27,9 @@ const MAX_BODY = 32_768 // 20 habits are ~6 KB
 const mkId = () => randomBytes(6).toString('hex')
 
 const EMPTY = { tz: DEFAULT_TZ, habits: [] }
-async function state(store, who, ms = Date.now()) {
-  const doc = (await store.getDoc(who)) ?? EMPTY
+// doc: the habits doc when the caller has it already (one read less)
+async function state(store, who, ms = Date.now(), doc) {
+  doc ??= (await store.getDoc(who)) ?? EMPTY
   const now = localNow(ms, doc.tz)
   const [checkins, done] = await Promise.all([store.checkins(who, addDays(now.day, -HISTORY_DAYS)), store.doneDays(who, addDays(now.day, -STREAK_DAYS))])
   // never miss twice, over the whole streak window (the card only gets HISTORY_DAYS of check-ins)
@@ -67,15 +68,17 @@ export async function PUT(request) {
   if (b.status) return json(b.out, b.status)
   try {
     const store = habitsStore()
-    const old = (await store.getDoc(who)) ?? EMPTY
-    // (the zone is checked before it's used: a bad one is the editor's 400, not a 503)
-    const tz = b.value?.tz ?? old.tz
-    if (!validTz(tz)) return json({ error: 'tz: an IANA time zone', field: 'tz' }, 400)
-    const c = cleanDoc(b.value, { old, today: localNow(Date.now(), tz).day, mkId })
+    // checked against the stored list with its row locked: two saves at once go one after the other
+    const c = await store.updateDoc(who, (stored) => {
+      const old = stored ?? EMPTY
+      // (the zone is checked before it's used: a bad one is the editor's 400, not a 503)
+      const tz = b.value?.tz ?? old.tz
+      if (!validTz(tz)) return { error: 'tz: an IANA time zone', field: 'tz' }
+      return cleanDoc(b.value, { old, today: localNow(Date.now(), tz).day, mkId })
+    })
     if (c.error) return json({ error: c.error, field: c.field }, 400)
-    await store.putDoc(who, c.doc)
     tell(who, request)
-    return json(await state(store, who))
+    return json(await state(store, who, Date.now(), c.doc))
   } catch {
     return json({ error: 'database unavailable' }, 503)
   }
@@ -97,24 +100,23 @@ export async function POST(request) {
     const habit = doc.habits.find((h) => h.id === habitId)
     if (!habit) return json({ error: 'habitId: no such habit', field: 'habitId' }, 400)
     const now = localNow(ms, doc.tz)
-    const conflict = async (error) => json({ error, ...(await state(store, who, ms)) }, 409)
+    const conflict = async (error) => json({ error, ...(await state(store, who, ms, doc)) }, 409)
     if (action === 'check') {
       if (!checkable(habit, day, now)) return conflict(`day: today or up to ${BACK_DAYS} days back, while the habit exists`)
-      // already kept (another tab, a stale one): the first record stands, its time and its rating
-      const cur = await store.get(who, habitId, day)
-      if (cur && cur.undoneAt == null) return conflict('already kept that day')
-      await store.check(who, { habitId, day, at: ms, late: isLate(habit, day, now), rating: c.act.rating ?? null })
+      // already kept (another tab, a stale one, two holds at once): the first record stands, its time and its rating
+      if (!(await store.check(who, { habitId, day, at: ms, late: isLate(habit, day, now), rating: c.act.rating ?? null }))) return conflict('already kept that day')
     } else if (action === 'rate') {
       if (!(await store.rate(who, { habitId, day, rating: c.act.rating, note: c.act.note }))) return conflict('not kept that day')
     } else if (action === 'undo') {
       const cur = await store.get(who, habitId, day)
-      if (!cur || cur.undoneAt != null || !canUndo(cur.doneAt, ms)) return conflict('the undo window has passed: take it back with a reason')
-      await store.remove(who, habitId, day)
+      const gone = 'the undo window has passed: take it back with a reason'
+      if (!cur || cur.undoneAt != null || !canUndo(cur.doneAt, ms)) return conflict(gone)
+      if (!(await store.remove(who, habitId, day, cur.doneAt))) return conflict(gone) // it changed meanwhile
     } else {
       if (!(await store.untick(who, { habitId, day, at: ms, reason: c.act.reason }))) return conflict('not kept that day')
     }
     tell(who, request)
-    return json(await state(store, who, ms))
+    return json(await state(store, who, ms, doc))
   } catch {
     return json({ error: 'database unavailable' }, 503)
   }

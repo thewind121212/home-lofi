@@ -82,7 +82,10 @@ export function useHabits(owner, clientId) {
   const skew = useRef(0) // the server's clock minus this device's
   const api = useRef({})
   const seq = useRef({ sent: 0, shown: 0, at: 0 }) // requests numbered as they go: an older answer landing later is out of date
-  const queue = useRef(Promise.resolve()) // changes go one at a time, in order (a rating never overtakes its check)
+  // every request goes one at a time, in order (a rating never overtakes its check; a pull never reads around a change
+  // still on its way), and one that fails doesn't hold up the next
+  const queue = useRef(Promise.resolve())
+  const enqueue = (fn) => (queue.current = queue.current.catch(() => {}).then(fn))
   const dataRef = useRef(data)
   dataRef.current = data
   const ownerRef = useRef(owner)
@@ -123,7 +126,7 @@ export function useHabits(owner, clientId) {
       busy = true
       again = false
       try {
-        await call('GET')
+        await enqueue(() => call('GET'))
       } catch {}
       busy = false
       if (again) pull()
@@ -170,7 +173,7 @@ export function useHabits(owner, clientId) {
       const next = fn(cur)
       return { ...d, checkins: next ? [...rest, next] : rest }
     })
-  const send = (body) => (queue.current = queue.current.then(() => call('POST', body)))
+  const send = (body) => enqueue(() => call('POST', body))
   const fail = (e) => {
     if (e?.status === 409) setNote(e.message.charAt(0).toUpperCase() + e.message.slice(1))
     else {
@@ -188,10 +191,10 @@ export function useHabits(owner, clientId) {
     local,
     // 'habits': another tab changed something; 'hello': the stream (re)connected, a pull unless one just went out
     live: (kind) => (kind === 'habits' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
-    keep(h) {
+    // day: the one the row shows (just after midnight, before the card moves on, that's still yesterday: kept late)
+    keep(h, day) {
       const now = local()
       if (!now) return
-      const day = now.day
       patch(h.id, day, () => ({ habitId: h.id, day, doneAt: Date.now() + skew.current, late: isLate(h, day, now), rating: null, note: null, undoneAt: null, reason: null }))
       setFresh(h.id)
       setUndoing({ habitId: h.id, day, until: Date.now() + UNDO_MS })
@@ -220,7 +223,7 @@ export function useHabits(owner, clientId) {
     // the editor's whole list -> null (saved) or what was wrong
     async save(habits) {
       try {
-        await (queue.current = queue.current.then(() => call('PUT', { tz: dataRef.current?.tz, habits })))
+        await enqueue(() => call('PUT', { tz: dataRef.current?.tz, habits }))
         return null
       } catch (e) {
         return e?.status === 400 ? e.message : "Couldn't save: check the connection and try again"
@@ -359,7 +362,7 @@ function Row({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
             {R && <span className="hb-badge" aria-hidden="true"><R size={13} strokeWidth={2.2} /></span>}
           </button>
         ) : (
-          <HoldRing habit={habit} onHolding={setHolding} onDone={() => onKeep(habit)} />
+          <HoldRing habit={habit} onHolding={setHolding} onDone={() => onKeep(habit, today)} />
         )}
       </div>
       <div className="hb-identity" aria-hidden={!holding}>
@@ -645,9 +648,8 @@ function Routines({ hb, dlg }) {
     if (e) return setError(e)
     setView(null)
   }
-  const strip = ({ isNew, ...h }) => h
   const blank = () => ({ icon: DEFAULT_ICON, name: '', when: { kind: 'time', at: '07:00' }, minutes: 30, days: [1, 2, 3, 4, 5], identity: '', remind: true, archived: false })
-  const put = (draft) => save(draft.id ? habits.map((h) => (h.id === draft.id ? strip(draft) : h)) : [...habits, strip(draft)])
+  const put = (draft) => save(draft.id ? habits.map((h) => (h.id === draft.id ? draft : h)) : [...habits, draft])
   const active = habits.filter((h) => !h.archived)
   const archived = habits.filter((h) => h.archived)
   return (
@@ -710,7 +712,8 @@ export function HabitsCard({ hb }) {
   const now = hb.local()
   const today = data.today
   const habits = data.habits.filter((h) => !h.archived).sort((a, b) => order(a) - order(b))
-  const entry = (id) => data.checkins.find((c) => c.habitId === id && c.day === today)
+  const todays = new Map(data.checkins.filter((c) => c.day === today).map((c) => [c.habitId, c]))
+  const entry = (id) => todays.get(id)
   const due = habits.filter((h) => h.days.includes(dowOf(today)))
   const kept = due.filter((h) => entry(h.id) && entry(h.id).undoneAt == null).length
   const C = 2 * Math.PI * 16
@@ -756,7 +759,7 @@ export function HabitsCard({ hb }) {
           <span className="ic" aria-hidden="true"><Glyph name={u.icon} size={18} /></span>
           <div className="msg">
             {u.name} kept
-            <small>{entry(u.id)?.late ? 'late, still counts' : 'on time'} · undo for {Math.ceil(left / 1000)}s</small>
+            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'} · undo for {Math.ceil(left / 1000)}s</small>
           </div>
           <button type="button" className="hb-ghost warm" onClick={() => hb.undo()}>Undo</button>
           <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />
