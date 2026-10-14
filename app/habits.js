@@ -931,11 +931,12 @@ function HabitsBody({ hb }) {
       )}
 
       {u && (
-        <div className="hb-undo" role="status">
+        <div className="hb-undo">
           <span className="ic" aria-hidden="true"><Glyph name={u.icon} size={16} /></span>
+          {/* (the live region is the line that doesn't change: the countdown ticking isn't read out) */}
           <div className="msg">
-            {u.name} kept
-            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'} · undo for {Math.ceil(left / 1000)}s</small>
+            <span role="status">{u.name} kept</span>
+            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'}<span aria-hidden="true"> · undo for {Math.ceil(left / 1000)}s</span></small>
           </div>
           <button type="button" className="hb-ghost warm" onClick={() => hb.undo()}>Undo</button>
           <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />

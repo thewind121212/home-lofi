@@ -24,6 +24,7 @@ import { motionOff } from './settings'
 const URL_ = '/api/private/settings/reminders'
 const TUCK_MS = 10 * 60_000 // tucked into its pill, the pop-up opens again after this
 const LEAVE_MS = 420 // a row folding away
+const RETRY_MS = [3_000, 10_000, 30_000, 60_000] // a failed first load, tried again (then every minute)
 const still = () => motionOff() || matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 // ---- state: the server's, with the device only drawing it ----
@@ -47,11 +48,20 @@ export function useReminders(owner, clientId) {
   dataRef.current = data
   const ownerRef = useRef(owner)
   ownerRef.current = owner
+  // changes this tab made that the server hasn't answered yet: id -> null (done / deleted) | the item (undone). An
+  // answer to a request that went out before them (a pull queued earlier) still has the old list: these go over it
+  const mine = useRef(new Map())
+  const over = (items) => {
+    if (!mine.current.size) return items
+    const out = items.filter((i) => !mine.current.has(i.id) || mine.current.get(i.id))
+    for (const [id, item] of mine.current) if (item && !out.some((i) => i.id === id)) out.push(item)
+    return out.sort((a, b) => a.at - b.at)
+  }
 
   const take = (s) => {
     if (!s || !Array.isArray(s.items)) return
     if (Number.isFinite(s.at)) skew.current = s.at - Date.now()
-    setData(s)
+    setData({ ...s, items: over(s.items) })
   }
   async function call(method, body) {
     const n = ++seq.current.sent
@@ -76,18 +86,26 @@ export function useReminders(owner, clientId) {
   }
 
   useEffect(() => {
-    let on = true, busy = false, again = false, soon = 0
+    let on = true, busy = false, again = false, soon = 0, retry = 0, fails = 0
     async function pull() {
       if (!on || !ownerRef.current) return
       if (busy) return void (again = true)
       busy = true
       again = false
+      clearTimeout(retry)
+      let failed = false
       try {
         await enqueue(() => call('GET'))
-      } catch {}
+      } catch {
+        failed = true
+      }
       busy = false
       if (on) setTried(true)
-      if (again) pull()
+      if (again) return pull()
+      // the first load failed (the database restarting, say): try again, slower each time, so a tab left open on a
+      // wall still gets the card and the 06:00 pop-up. (No answer for a guest: 404 / 403 turns it off, no retries)
+      if (!failed) fails = 0
+      else if (on && !dataRef.current && ownerRef.current) retry = setTimeout(pull, RETRY_MS[Math.min(fails++, RETRY_MS.length - 1)])
     }
     api.current.pull = pull
     api.current.live = () => {
@@ -106,6 +124,7 @@ export function useReminders(owner, clientId) {
     return () => {
       on = false
       clearTimeout(soon)
+      clearTimeout(retry)
       clearInterval(t)
       document.removeEventListener('visibilitychange', onVis)
     }
@@ -142,6 +161,11 @@ export function useReminders(owner, clientId) {
       api.current.pull?.()
     }
   }
+  // a change of this tab's: drawn now, held over older answers until its own answer (or failure) is in
+  const write = (id, item, method, body) => {
+    mine.current.set(id, item)
+    return enqueue(() => call(method, body).finally(() => mine.current.delete(id)))
+  }
   const items = data?.items ?? []
   const on = Boolean(owner && data && !off)
   // the pop-up: the server says it's due and something is open (or the last one was just done: its Undo, briefly).
@@ -169,18 +193,19 @@ export function useReminders(owner, clientId) {
     done(item) {
       patch((list) => list.filter((i) => i.id !== item.id))
       setUndoing({ item, until: Date.now() + UNDO_MS })
-      enqueue(() => call('POST', { action: 'done', id: item.id })).catch((e) => (setUndoing(null), fail(e)))
+      // (a failure clears only its own Undo, not a newer one's)
+      write(item.id, null, 'POST', { action: 'done', id: item.id }).catch((e) => (setUndoing((u) => (u?.item.id === item.id ? null : u)), fail(e)))
     },
     undo() {
       const u = undoing
       if (!u) return
       setUndoing(null)
       patch((list) => [...list.filter((i) => i.id !== u.item.id), u.item].sort((a, b) => a.at - b.at))
-      enqueue(() => call('POST', { action: 'undo', id: u.item.id })).catch(fail)
+      write(u.item.id, u.item, 'POST', { action: 'undo', id: u.item.id }).catch(fail)
     },
     remove(item) {
       patch((list) => list.filter((i) => i.id !== item.id))
-      enqueue(() => call('DELETE', { id: item.id })).catch(fail)
+      write(item.id, null, 'DELETE', { id: item.id }).catch(fail)
     },
     tuck: () => setTucked(true),
     untuck: () => setTucked(false),
@@ -212,6 +237,7 @@ const ageText = (n) => (n <= 0 ? 'added today' : n === 1 ? 'since yesterday' : `
 
 // One reminder: its text, how long it's been carried, the ring to hold. onRemove: the card's quiet delete (two taps)
 function Row({ item, today, leaving, onDone, onRemove }) {
+  const li = useRef(null)
   const [holding, setHolding] = useState(false)
   const [sure, setSure] = useState(false) // the trash was tapped once: the second tap deletes
   useEffect(() => {
@@ -221,7 +247,7 @@ function Row({ item, today, leaving, onDone, onRemove }) {
   }, [sure])
   const age = carried(item, today)
   return (
-    <li className={`rm-row${holding ? ' is-holding' : ''}${leaving ? ' is-leaving' : ''}${age > 0 ? ' is-carried' : ''}`} aria-hidden={leaving || undefined}>
+    <li ref={li} className={`rm-row${holding ? ' is-holding' : ''}${leaving ? ' is-leaving' : ''}${age > 0 ? ' is-carried' : ''}`} aria-hidden={leaving || undefined}>
       <div className="rm-row-in">
         <div className="rm-text">
           <p title={item.text}>{item.text}</p>
@@ -240,10 +266,20 @@ function Row({ item, today, leaving, onDone, onRemove }) {
             {sure && <span>Delete?</span>}
           </button>
         )}
-        <HoldRing label={`Hold when done: ${item.text}`} onHolding={setHolding} onDone={() => onDone(item)} />
+        <HoldRing label={`Hold when done: ${item.text}`} onHolding={setHolding} onDone={() => (focusOn(li.current), onDone(item))} />
       </div>
     </li>
   )
+}
+
+// a row held done is going: the focus (if it was in it) moves to the next row's ring (else the one before), and with no
+// rows left to the Undo there, so the keyboard isn't dropped back at the top of the page
+function focusOn(row) {
+  if (!row?.contains(document.activeElement)) return
+  const box = row.closest('.rm, .rm-pop')
+  const rows = [...row.parentElement.children].filter((r) => r !== row && !r.classList.contains('is-leaving'))
+  const ring = (rows.find((r) => row.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING) ?? rows.at(-1))?.querySelector('.hb-hold')
+  setTimeout(() => (ring?.isConnected ? ring : box?.querySelector('.rm-undo button'))?.focus({ preventScroll: true }), 60)
 }
 
 function UndoBar({ rm }) {
@@ -257,11 +293,12 @@ function UndoBar({ rm }) {
   if (!u) return null
   const left = Math.max(0, u.until - Date.now())
   return (
-    <div className="hb-undo rm-undo" role="status">
+    <div className="hb-undo rm-undo">
       <span className="ic" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span>
+      {/* (the live region is the line that doesn't change: the countdown ticking isn't read out) */}
       <div className="msg">
-        <span className="rm-undo-text">Done: {u.item.text}</span>
-        <small>undo for {Math.ceil(left / 1000)}s</small>
+        <span className="rm-undo-text" role="status">Done: {u.item.text}</span>
+        <small aria-hidden="true">undo for {Math.ceil(left / 1000)}s</small>
       </div>
       <button type="button" className="hb-ghost warm" onClick={() => rm.undo()}>Undo</button>
       <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />
@@ -369,9 +406,10 @@ function RemindersBody({ rm }) {
     const el = card.current
     if (!el || typeof ResizeObserver === 'undefined') return
     let t = 0
+    // (only its resting height: not with an Undo bar, a note or a row folding away in it, which come and go)
     const ro = new ResizeObserver(() => {
       clearTimeout(t)
-      t = setTimeout(() => rememberShape({ tdH: { w: innerWidth, h: Math.round(el.getBoundingClientRect().height) } }), 600)
+      t = setTimeout(() => el.querySelector('.rm-undo, .hb-note, .rm-row.is-leaving') || rememberShape({ tdH: { w: innerWidth, h: Math.round(el.getBoundingClientRect().height) } }), 600)
     })
     ro.observe(el)
     return () => (ro.disconnect(), clearTimeout(t))
@@ -408,6 +446,11 @@ export function RemindersPopup({ rm, hidden = false }) {
   const want = rm.panel !== 'none' && !hidden
   const [shown, setShown] = useState(want)
   const [leaving, setLeaving] = useState(false)
+  // which one is on screen (the panel or the pill): going away, it's that one that goes, as it was
+  const [kind, setKind] = useState(rm.panel)
+  if (want && kind !== rm.panel) setKind(rm.panel)
+  const box = useRef(null)
+  const moveFocus = useRef(false) // tucked / opened by its own button: the focus follows to the other one
   useEffect(() => {
     if (want) return setShown(true), setLeaving(false)
     if (!shown) return
@@ -416,19 +459,42 @@ export function RemindersPopup({ rm, hidden = false }) {
     const t = setTimeout(() => (setShown(false), setLeaving(false)), 380)
     return () => clearTimeout(t)
   }, [want])
+  useEffect(() => {
+    if (!moveFocus.current || !shown) return
+    moveFocus.current = false
+    const el = box.current
+    ;(el?.matches('.rm-pill') ? el : el?.querySelector('[data-tuck]'))?.focus({ preventScroll: true })
+  }, [kind, shown])
+  // the page pads its bottom by this while it floats there, so the end of the page can be scrolled out from under it
+  // (html[data-rm-pop] in app/reminders.css)
+  useEffect(() => {
+    const el = box.current
+    const html = document.documentElement
+    if (!shown || leaving || !el) return
+    const set = () => {
+      // (offsetTop: its layout box, without the entrance's transform; a fixed box's is from the top of the window)
+      html.style.setProperty('--rm-pop-h', `${Math.max(0, Math.ceil(innerHeight - el.offsetTop))}px`)
+      html.dataset.rmPop = ''
+    }
+    set()
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(set)
+    ro?.observe(el)
+    addEventListener('resize', set)
+    return () => (ro?.disconnect(), removeEventListener('resize', set), delete html.dataset.rmPop, html.style.removeProperty('--rm-pop-h'))
+  }, [shown, leaving, kind])
   if (!shown || !rm.data) return null
   const items = rm.data.items
   const n = items.length
-  if (rm.panel === 'pill' && !leaving)
+  if (kind === 'pill')
     return (
-      <button type="button" className="rm-pill" onClick={rm.untuck} aria-label={`${n} reminder${n === 1 ? '' : 's'} left: show them`}>
+      <button ref={box} type="button" className={`rm-pill${leaving ? ' is-leaving' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`${n} reminder${n === 1 ? '' : 's'} left: show them`}>
         <BellRing size={15} strokeWidth={2} aria-hidden="true" />
         <span>{n} reminder{n === 1 ? '' : 's'}</span>
         <ChevronUp size={15} aria-hidden="true" />
       </button>
     )
   return (
-    <aside className={`rm-pop${leaving ? ' is-leaving' : ''}`} aria-labelledby="rm-pop-title">
+    <aside ref={box} className={`rm-pop${leaving ? ' is-leaving' : ''}`} aria-labelledby="rm-pop-title">
       <div className="rm-pop-head">
         <span className="rm-well is-warm" aria-hidden="true"><BellRing size={17} strokeWidth={1.9} /></span>
         <div className="rm-title">
@@ -436,7 +502,7 @@ export function RemindersPopup({ rm, hidden = false }) {
           <span className="rm-sub">{n ? `${n} left · hold each when done` : 'all clear'}</span>
         </div>
         {n > 0 && (
-          <button type="button" className="hb-iconbtn" aria-label="Tuck away for now (it comes back)" title="Tuck away for now" onClick={rm.tuck}>
+          <button type="button" data-tuck className="hb-iconbtn" aria-label="Tuck away for now (it comes back)" title="Tuck away for now" onClick={() => ((moveFocus.current = true), rm.tuck())}>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
         )}

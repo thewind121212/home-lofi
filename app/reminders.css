@@ -74,12 +74,12 @@ html[data-sk-td-none] .sk-td-list { display: none; }
   position: fixed; z-index: 30; left: 1rem; bottom: max(1rem, env(safe-area-inset-bottom));
 }
 .rm-pop {
-  right: 4.5rem; max-height: min(70svh, 34rem); display: flex; flex-direction: column; gap: 10px; padding: 14px;
+  right: 4.5rem; max-height: 45svh; display: flex; flex-direction: column; gap: 10px; padding: 14px;
   border-radius: 22px; background: rgb(32 32 58 / 0.97); border: 1px solid rgb(255 138 92 / 0.28);
   box-shadow: 0 18px 48px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(0 0 0 / 0.2), 0 0 32px rgb(255 138 92 / 0.08);
   animation: rm-pop-in 0.42s cubic-bezier(0.2, 0.9, 0.2, 1) both;
 }
-@media (min-width: 640px) { .rm-pop { left: 1.5rem; bottom: 1.5rem; right: auto; width: 23rem; } .rm-pill { left: 1.5rem; bottom: 1.5rem; } }
+@media (min-width: 640px) { .rm-pop { left: 1.5rem; bottom: 1.5rem; right: auto; width: 23rem; max-height: min(70svh, 34rem); } .rm-pill { left: 1.5rem; bottom: 1.5rem; } }
 @media (min-width: 1024px) and (pointer: fine) { .rm-pop { background: rgb(36 36 66 / 0.88); backdrop-filter: blur(14px); } }
 .rm-pop.is-leaving { animation: rm-pop-out 0.36s cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
 .rm-pop-head { flex-wrap: nowrap; }
@@ -93,6 +93,10 @@ html[data-sk-td-none] .sk-td-list { display: none; }
   font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; animation: rm-pop-in 0.35s cubic-bezier(0.2, 0.9, 0.2, 1) both;
 }
 .rm-pill:hover { background: rgb(42 42 74 / 0.98); }
+.rm-pill.is-leaving { animation: rm-pop-out 0.36s cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
+/* while it floats over the bottom of the page, the page gets that much more room at its end (app/reminders.js sets
+   --rm-pop-h: the window's bottom up to its top), so the last cards can be scrolled out from under it */
+html[data-rm-pop] body { padding-bottom: var(--rm-pop-h, 0px); }
 .rm-pill svg:first-child { animation: rm-nudge 3.2s ease-in-out infinite; transform-origin: 50% 10%; }
 
 @keyframes rm-pop-in { from { opacity: 0; transform: translateY(18px) scale(0.98); } to { opacity: 1; transform: none; } }
