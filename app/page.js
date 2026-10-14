@@ -19,8 +19,8 @@ import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, mot
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
-import { PinsCard, usePins } from './pins'
-import { RemindersCard, RemindersPopup, useReminders } from './reminders'
+import { PinsBar, PinsSheet, usePins } from './pins'
+import { LockReminders, RemindersBar, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -112,6 +112,8 @@ export default function Home() {
   const setDlg = useRef(null)
   const galDlg = useRef(null)
   const sndDlg = useRef(null)
+  const remDlg = useRef(null) // the Reminders and Pins sheets (their bars under Sounds open them)
+  const pinDlg = useRef(null)
   const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
   const bellRef = useRef(null) // its bell: the inbox hangs under it from sm
   // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
@@ -261,6 +263,8 @@ export default function Home() {
   pinsLive.current = pins.live
   const reminders = useReminders(owner, cloud.id)
   remindersLive.current = reminders.live
+  // today's reminders, due and open: they follow to Ambient (its bar, under its clock) and the lock screen too
+  const remDue = remindersShowing(reminders)
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
   function openInbox() {
     const d = inboxDlg.current
@@ -414,6 +418,15 @@ export default function Home() {
   useEffect(() => cloud.live(), [snd.playing]) // started from the lock screen with the stream shut: open it again
   const setMix = (sounds) => update({ sounds })
   const openSounds = () => sndDlg.current.open || sndDlg.current.showModal() // (the music card's Sounds row, A)
+  // a bar's sheet; 'add': straight on its field (a reminder to type, a link to paste)
+  const openSheet = (dlg, field) => (how) => {
+    const d = dlg.current
+    if (!d) return
+    d.open || d.showModal()
+    if (how === 'add') d.querySelector(field)?.focus()
+  }
+  const openReminders = openSheet(remDlg, '.rm-input')
+  const openPins = openSheet(pinDlg, '.pn-input')
   function update(patch) {
     const next = { ...set, ...patch }
     setSettings(next)
@@ -522,8 +535,9 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Weather · Hub · Habits · Pins (owner) · Services
-            lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
+            phones: one column, Steam · Music · Sounds · Reminders · Pins (owner) · Weather · Hub · Habits (owner) · Services
+            lg (laptops): two columns, Steam + Music + Sounds + Reminders + Pins + Weather on the left, Hub + Habits +
+              Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
               the side columns stay put (sticky) while a long app group scrolls the middle */}
@@ -531,7 +545,13 @@ export default function Home() {
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} stationKnown={stationKnown} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
-            <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
+            {/* Sounds, and the owner's Reminders and Pins: slim bars like Sounds' (their skeletons while they may be on the
+                way), close together as one stack */}
+            <div className="flex flex-col gap-2">
+              <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
+              <RemindersBar rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
+              <PinsBar pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+            </div>
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
@@ -545,16 +565,13 @@ export default function Home() {
           <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
             {/* its skeleton while it may be on its way: the owner not known yet (the owner's browser), or loading */}
             <HabitsCard hb={habits} wait={!cloud.known || (owner && habits.pending)} force={owner} />
-            <RemindersCard rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} />
-            {/* the owner's Pins (links kept with their previews), the same way */}
-            <PinsCard pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} />
             <Services priv={priv} privFailed={privFailed} />
           </div>
         </main>
       </div>
 
       {softLock && (
-        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={lockNote && <LockNotices notes={lockNote} now={tNow} />}>
+        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || lockNote) && <div className="flex flex-col items-center gap-2">{remDue && <LockReminders rm={reminders} />}{lockNote && <LockNotices notes={lockNote} now={tNow} />}</div>}>
           {(set.lockMusic !== 'hide' || snd.on) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
@@ -566,7 +583,13 @@ export default function Home() {
       {/* Ambient: the big clock fades in when the bar fades (Settings > When the bar fades = Scene + clock), and out
           when it comes back; "move to wake" once when Ambient came on by itself */}
       {view.clock !== 'none' && (
-        <ClockScreen now={now} clock={set.clock} look={AMBIENT_LOOK} shown={view.clock === 'shown'} note={places.saver === 'clock' && saverNote && <SaverNote note={saverNote} now={tNow} />} />
+        <ClockScreen
+          now={now}
+          clock={set.clock}
+          look={AMBIENT_LOOK}
+          shown={view.clock === 'shown'}
+          note={<>{places.saver === 'clock' && saverNote && <SaverNote note={saverNote} now={tNow} />}<RemindersLine rm={reminders} /></>}
+        />
       )}
       {places.saver === 'pill' && saverNote && <SaverNote pill note={saverNote} now={tNow} />}
       {view.hint && <WakeHint />}
@@ -574,7 +597,7 @@ export default function Home() {
           shows: the tap that brings the bar back is swallowed (and the bar's guard holds a quick second one) */}
       {view.catcher && <div className={`fixed inset-0 z-[15] ${barSettling ? 'pointer-events-none' : ''}`} onClick={leaveAmbient} aria-hidden="true" />}
       {view.bar !== 'none' && (
-        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
       {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings. In Ambient (the
           dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
@@ -600,6 +623,8 @@ export default function Home() {
       )}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} notify={hub.on} />
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
+      <RemindersSheet rm={reminders} dlg={remDlg} />
+      <PinsSheet pn={pins} dlg={pinDlg} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
       {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
@@ -1041,7 +1066,7 @@ function LockScreen({ onUnlock, set, update, full, screen, notices, children }) 
 // back, it ignores the pointer for a moment. hover: a ref Home reads, true while the mouse rests on it (it stays then)
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
 const FIRST_SEG = 'flex items-center gap-1.5 sm:gap-2 pl-0.5 pr-2.5 sm:pr-4' // the music, first: no divider before it
-function AmbientBar({ now, wx, priv, mini, sounds, notice, calm, settling, barRef, hover }) {
+function AmbientBar({ now, wx, priv, mini, sounds, notice, reminders, calm, settling, barRef, hover }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -1062,6 +1087,7 @@ function AmbientBar({ now, wx, priv, mini, sounds, notice, calm, settling, barRe
 
       {/* the newest unread notification (app/notify.js AmbientChip): only while there is one */}
       {notice && <div className={SEG}>{notice}</div>}
+      {reminders && <div className={SEG}>{reminders}</div>}
 
       {wx && (
         <div className={SEG} title={wx.desc}>

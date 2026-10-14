@@ -2,8 +2,8 @@
 
 // Reminders: the owner's short list of things not to forget, carried from day to day until each is done. Rules in
 // lib/reminders.js; the route is app/api/private/settings/reminders (owner-only: guests get 404 / 403 and see nothing).
-// - The card (the middle column, under Habits): the open ones, an add field, hold to mark one done, and a quiet
-//   two-tap delete for a mistaken entry (not "done": it never was).
+// - A slim bar under Sounds (how many are open); a tap opens the list in a sheet: the open ones, an add field, hold
+//   to mark one done, and a quiet two-tap delete for a mistaken entry (not "done": it never was).
 // - The pop-up: from 06:00 (the server's clock in the owner's zone: its answer says `due`; the page never decides by
 //   the device's clock) while anything is open, a panel floats over the dashboard (bottom left; on a phone beside the
 //   dock). It has no close button: it goes when the last one is held done. It can be tucked into a pill for a while
@@ -13,13 +13,12 @@
 // - The owner's other tabs follow on the live stream ('reminders': pull).
 import './reminders.css'
 import { useEffect, useRef, useState } from 'react'
-import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2 } from 'lucide-react'
+import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } from 'lucide-react'
 import { HoldRing } from './habits'
-import { Bone, rememberShape } from './skeleton'
-import { SK_MAX } from '../lib/skeleton'
+import { MiniBar, MiniBarSkeleton } from './minibar'
 import { localNow } from '../lib/habits'
 import { MAX_TEXT, UNDO_MS, carried } from '../lib/reminders'
-import { motionOff } from './settings'
+import { closeDialog, motionOff, useStillPage } from './settings'
 
 const URL_ = '/api/private/settings/reminders'
 const TUCK_MS = 10 * 60_000 // tucked into its pill, the pop-up opens again after this
@@ -345,89 +344,76 @@ function AddForm({ rm, compact = false }) {
   )
 }
 
-// ---- the card ----
+// ---- the bar and the sheet ----
 
-// The card while it's on its way: its own parts with stand-ins. The pre-paint stylesheet (lib/skeleton.js) shows it
-// only on the owner's browser, with as many rows as were open last time (none: the "nothing left" line) and, at the
-// same window width, the height the card had
-const SK_TD = Array.from({ length: SK_MAX.todos }, (_, i) => i)
-function RemindersSkeleton({ force }) {
+// The dashboard's slim bar (under Sounds, its height): how many are open and the oldest; a tap opens the whole list in a
+// sheet, + opens it on the add field. Nothing at all unless the server said this is the owner and answered.
+// wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the place; force: it
+// surely is the owner's, whatever the remembered shape says
+export function RemindersBar({ rm, wait = false, force = false, onOpen }) {
+  if (!rm.on) return wait ? <MiniBarSkeleton label="Reminders" force={force} /> : null
+  const items = rm.data.items
+  const n = items.length
   return (
-    <section aria-label="Reminders" aria-busy="true" className={`glass-panel rounded-3xl p-4 sm:p-5 rm sk-owner sk-td-card ${force ? 'sk-force' : ''}`}>
-      <span className="sr-only">Loading reminders…</span>
-      <div className="rm-head" aria-hidden="true">
-        <span className="rm-well"><ListTodo size={18} strokeWidth={1.9} /></span>
-        <div className="rm-title">
-          <h2>Reminders</h2>
-          <span className="rm-sub"><Bone w="17ch" /></span>
-        </div>
-        <div className="rm-add">
-          <div className="rm-add-row">
-            <span className="rm-input sk-pulse" />
-            <span className="rm-addbtn sk-pulse"><Plus size={16} strokeWidth={2.2} /><span>Add</span></span>
-          </div>
-        </div>
-      </div>
-      <ul className="rm-list rm-grid sk-td-list" aria-hidden="true">
-        {SK_TD.map((i) => (
-          <li key={i} data-sk-td={i} className="rm-row">
-            <div className="rm-row-in">
-              <div className="rm-text">
-                <p><Bone w="14ch" /></p>
-                <small><Bone w="9ch" /></small>
-              </div>
-              <span className="rm-trash" />
-              <span className="rm-sk-ring sk-pulse" />
-            </div>
-          </li>
-        ))}
-      </ul>
-      <p className="rm-empty sk-td-empty" aria-hidden="true"><Bone w="24ch" /></p>
-    </section>
+    <MiniBar
+      label="Reminders"
+      icon={ListTodo}
+      value={n ? `${n} open` : 'none left'}
+      detail={items[0]?.text}
+      warm={n > 0 && rm.data.due}
+      onOpen={() => onOpen()}
+      onAdd={() => onOpen('add')}
+      openLabel={`Reminders: ${n ? `${n} open` : 'none left'}. Open the list`}
+      addLabel="Add a reminder"
+    />
   )
 }
 
-// rm: useReminders(). Nothing at all unless the server said this is the owner and answered.
-// wait: the owner's card may be on its way (owner not known yet, or the first load), so its skeleton keeps the place;
-// force: it surely is (the owner), whatever the remembered shape says
-export function RemindersCard({ rm, wait = false, force = false }) {
-  if (!rm.on) return wait ? <RemindersSkeleton force={force} /> : null
-  return <RemindersBody rm={rm} />
+// The whole list in a sheet (opened from the bar): the open ones, the add field, hold to mark one done, the two-tap delete
+export function RemindersSheet({ rm, dlg }) {
+  const [open, setOpen] = useState(false)
+  useStillPage(dlg, open)
+  useEffect(() => {
+    const d = dlg.current
+    if (!d) return
+    const seen = new MutationObserver(() => setOpen(d.open))
+    seen.observe(d, { attributes: true, attributeFilter: ['open'] })
+    return () => seen.disconnect()
+  }, [dlg])
+  const close = () => closeDialog(dlg.current)
+  return (
+    <dialog
+      ref={dlg}
+      aria-labelledby="rm-title"
+      onClick={(e) => e.target === dlg.current && close()}
+      onCancel={(e) => (e.preventDefault(), close())}
+      onClose={() => delete dlg.current.dataset.closing}
+      className="wx-sheet sm:max-w-xl glass-panel text-lofi-text overscroll-contain"
+    >
+      {rm.on && <RemindersBody rm={rm} onClose={close} />}
+    </dialog>
+  )
 }
 
-function RemindersBody({ rm }) {
-  const card = useRef(null)
+function RemindersBody({ rm, onClose }) {
   const { data } = rm
   const items = data.items
   const rows = useLeaving(items)
-  // the next visit's skeleton: how many are open, and this card's height at this window width
-  useEffect(() => rememberShape({ todos: items.length }), [items.length])
-  useEffect(() => {
-    const el = card.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    let t = 0
-    // (only its resting height: not with an Undo bar, a note or a row folding away in it, which come and go)
-    const ro = new ResizeObserver(() => {
-      clearTimeout(t)
-      t = setTimeout(() => el.querySelector('.rm-undo, .hb-note, .rm-row.is-leaving') || rememberShape({ tdH: { w: innerWidth, h: Math.round(el.getBoundingClientRect().height) } }), 600)
-    })
-    ro.observe(el)
-    return () => (ro.disconnect(), clearTimeout(t))
-  }, [])
   const n = items.length
   const sub = !n ? 'nothing left' : data.due ? `${n} open · on screen until done` : `${n} open · back on screen at 06:00`
   return (
-    <section ref={card} aria-labelledby="rm-title" className="glass-panel rounded-3xl p-4 sm:p-5 rm">
+    <section aria-labelledby="rm-title" className="p-5 sm:p-6 rm">
       <div className="rm-head">
         <span className="rm-well" aria-hidden="true"><ListTodo size={18} strokeWidth={1.9} /></span>
         <div className="rm-title">
           <h2 id="rm-title">Reminders</h2>
           <span className="rm-sub">{sub}</span>
         </div>
-        <AddForm rm={rm} />
+        <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
+      <AddForm rm={rm} />
       {rows.length ? (
-        <ul className="rm-list rm-grid">
+        <ul className="rm-list">
           {rows.map((r) => <Row key={r.item.id} item={r.item} today={data.today} leaving={r.leaving} onDone={rm.done} onRemove={rm.remove} />)}
         </ul>
       ) : (
@@ -525,5 +511,80 @@ function PopupList({ rm }) {
     <ul className="rm-list rm-pop-list">
       {rows.map((r) => <Row key={r.item.id} item={r.item} today={rm.data.today} leaving={r.leaving} onDone={rm.done} />)}
     </ul>
+  )
+}
+
+// ---- Ambient and the lock screen ----
+// From 06:00 while anything is open (the pop-up's rule; the pop-up itself waits for the dashboard), the reminders follow
+// to the other screens: a chip on Ambient's bar (a tap opens the list), a quiet line under Ambient's big clock, and a
+// small list on the lock screen (not buttons: a swipe over it still unlocks; done is a hold, once unlocked).
+export const remindersShowing = (rm) => Boolean(rm.on && rm.data.due && rm.data.items.length)
+const showing = remindersShowing
+
+export function RemindersChip({ rm, onOpen }) {
+  if (!showing(rm)) return null
+  const items = rm.data.items
+  const n = items.length
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen()}
+      aria-haspopup="dialog"
+      aria-label={`Reminders: ${n} open, ${items[0].text}${n > 1 ? ` and ${n - 1} more` : ''}. Open the list`}
+      title={items[0].text}
+      className="flex items-center gap-2 whitespace-nowrap text-white hover:text-lofi-primary transition-colors"
+    >
+      <ListTodo size={14} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
+      <span className="max-sm:hidden max-w-44 truncate font-sans text-xs">{items[0].text}</span>
+      <span className="text-[10px] text-lofi-muted tabular-nums">{n > 1 ? `+${n - 1}` : ''}</span>
+      <span className="sm:hidden text-xs tabular-nums">{n}</span>
+    </button>
+  )
+}
+
+// under Ambient's big clock (decorative, like the clock: the chip and the list are the way in)
+export function RemindersLine({ rm }) {
+  if (!showing(rm)) return null
+  const items = rm.data.items
+  const n = items.length
+  return (
+    <div className="mt-3 sm:mt-4 flex justify-center font-mono text-xs sm:text-sm text-white/85 whitespace-nowrap" aria-hidden="true">
+      <span className="flex items-center justify-center gap-2.5 min-w-0 motion-safe:animate-[fade-in_1.2s_ease-out]">
+        <ListTodo size={15} strokeWidth={2} className="text-lofi-primary shrink-0" />
+        <span className="min-w-0 truncate max-w-[60vw] sm:max-w-md">{items[0].text}</span>
+        {n > 1 && <span className="text-white/45 tabular-nums">+{n - 1}</span>}
+      </span>
+    </div>
+  )
+}
+
+// the lock screen: up to LOCK_SHOWN of them, then "+N more"; a short screen (a landscape phone): one pill with the count
+const LOCK_SHOWN = 3
+export function LockReminders({ rm }) {
+  if (!showing(rm)) return null
+  const items = rm.data.items
+  const n = items.length
+  return (
+    <div role="group" aria-label="Reminders" className="flex flex-col items-center gap-2 w-[min(22rem,calc(100vw-2rem))]">
+      <div className="short:hidden w-full glass-panel rounded-2xl px-3.5 py-3 text-left motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]">
+        <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-lofi-muted">
+          <ListTodo size={13} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
+          {n} reminder{n === 1 ? '' : 's'} today
+        </p>
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {items.slice(0, LOCK_SHOWN).map((r) => (
+            <li key={r.id} className="flex items-center gap-2 min-w-0 text-sm text-white">
+              <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-lofi-primary/70" aria-hidden="true" />
+              <span className="min-w-0 truncate">{r.text}</span>
+            </li>
+          ))}
+        </ul>
+        {n > LOCK_SHOWN && <p className="mt-1.5 font-mono text-[10px] text-lofi-muted">+{n - LOCK_SHOWN} more</p>}
+      </div>
+      <div className="hidden short:flex glass-panel h-9 px-3.5 rounded-full items-center gap-2 font-mono text-xs text-white">
+        <ListTodo size={13} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
+        {n} reminder{n === 1 ? '' : 's'} today
+      </div>
+    </div>
   )
 }
