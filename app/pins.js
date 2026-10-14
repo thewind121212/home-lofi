@@ -1,6 +1,6 @@
 'use client'
 
-// The Pins card: links the owner keeps, each with its preview, newest first. Rules in lib/pins.js; the route is
+// Pins: links the owner keeps, each with its preview, newest first: a slim bar under Sounds, the pins in a sheet. Rules in lib/pins.js; the route is
 // app/api/private/settings/pins (owner-only: guests get 404 / 403 and never see the card).
 // - One box does both: typing searches the pins as you go (title, description, site, link; no case, no accents), and
 //   a link ("https://…", "www.…") is pinned with Enter or the Pin button. The server fetches its preview meanwhile (a
@@ -12,8 +12,9 @@
 import './pins.css'
 import { useEffect, useRef, useState } from 'react'
 import { Link2, Pin, Plus, RotateCw, Search, Trash2, X } from 'lucide-react'
-import { Bone, rememberShape } from './skeleton'
-import { SK_MAX } from '../lib/skeleton'
+import { MiniBar, MiniBarSkeleton } from './minibar'
+import { Bone } from './skeleton'
+import { closeDialog, useStillPage } from './settings'
 import { REASONS, SHOWN, UNDO_MS, cleanUrl, looksLikeLink, matches } from '../lib/pins'
 
 const URL_ = '/api/private/settings/pins'
@@ -284,47 +285,7 @@ function PendingTile({ url }) {
   )
 }
 
-// ---- the card ----
-
-// The card while it's on its way: its own parts with stand-ins. The pre-paint stylesheet (lib/skeleton.js) shows it
-// only on the owner's browser, with as many tiles as it showed last time (its empty box for none, "Show all" if
-// there was one); every tile is the same height, so that's the card's height at any width
-const SK_PN = Array.from({ length: SK_MAX.pins }, (_, i) => i)
-function PinsSkeleton({ force }) {
-  return (
-    <section aria-label="Pins" aria-busy="true" className={`glass-panel rounded-3xl p-4 sm:p-5 pn sk-owner ${force ? 'sk-force' : ''}`}>
-      <span className="sr-only">Loading pins…</span>
-      <div className="pn-head" aria-hidden="true">
-        <span className="pn-mark"><Pin size={16} /></span>
-        <div className="pn-title">
-          <h2>Pins</h2>
-          <span className="pn-sub"><Bone w="8ch" /></span>
-        </div>
-      </div>
-      <div className="pn-box sk-pulse" aria-hidden="true">
-        <span className="pn-box-ic"><Search size={16} /></span>
-        <span className="pn-input" />
-        <span className="pn-add" data-off=""><Plus size={16} /><span>Pin</span></span>
-      </div>
-      <ul className="pn-grid sk-pn-grid" aria-hidden="true">
-        {SK_PN.map((i) => (
-          <li key={i} data-sk-pin={i} className="pn-tile">
-            <div className="pn-link">
-              <span className="pn-thumb sk-pulse" />
-              <span className="pn-text">
-                <span className="pn-name"><Bone w="14ch" /></span>
-                <span className="pn-desc"><Bone w="90%" /><br /><Bone w="60%" /></span>
-                <span className="pn-dom"><span><Bone w="10ch" /></span></span>
-              </span>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <Empty className="sk-pn-empty" />
-      <span className="pn-more sk-pn-more" aria-hidden="true"><Bone w="11ch" /></span>
-    </section>
-  )
-}
+// ---- the bar and the sheet ----
 
 function Empty({ className = '' }) {
   return (
@@ -335,15 +296,55 @@ function Empty({ className = '' }) {
   )
 }
 
-// pn: usePins(). Nothing at all unless the server said this is the owner and answered.
-// wait: the owner's card may be on its way (owner not known yet, or the first load), so its skeleton keeps the place;
-// force: it surely is (the owner), whatever the remembered shape says
-export function PinsCard({ pn, wait = false, force = false }) {
-  if (!pn.on) return wait ? <PinsSkeleton force={force} /> : null
-  return <PinsBody pn={pn} />
+// The dashboard's slim bar (under Sounds, its height): how many are kept and the newest; a tap opens them in a sheet,
+// + opens it on the box (paste a link). pn: usePins(). Nothing at all unless the server said this is the owner.
+// wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the place; force: it
+// surely is the owner's, whatever the remembered shape says
+export function PinsBar({ pn, wait = false, force = false, onOpen }) {
+  if (!pn.on) return wait ? <MiniBarSkeleton label="Pins" force={force} /> : null
+  const pins = pn.data.pins.filter((p) => !pn.hidden(p.id))
+  const n = pins.length
+  return (
+    <MiniBar
+      label="Pins"
+      icon={Pin}
+      value={n ? `${n} kept` : 'none yet'}
+      detail={pins[0] && (pins[0].title ?? pins[0].domain)}
+      onOpen={() => onOpen()}
+      onAdd={() => onOpen('add')}
+      openLabel={`Pins: ${n ? `${n} kept` : 'none yet'}. Open them`}
+      addLabel="Pin a link"
+    />
+  )
 }
 
-function PinsBody({ pn }) {
+// All of them in a sheet (opened from the bar): the box (paste a link, or search), the tiles, ✕ with Undo
+export function PinsSheet({ pn, dlg }) {
+  const [open, setOpen] = useState(false)
+  useStillPage(dlg, open)
+  useEffect(() => {
+    const d = dlg.current
+    if (!d) return
+    const seen = new MutationObserver(() => setOpen(d.open))
+    seen.observe(d, { attributes: true, attributeFilter: ['open'] })
+    return () => seen.disconnect()
+  }, [dlg])
+  const close = () => closeDialog(dlg.current)
+  return (
+    <dialog
+      ref={dlg}
+      aria-labelledby="pn-title"
+      onClick={(e) => e.target === dlg.current && close()}
+      onCancel={(e) => (e.preventDefault(), close())}
+      onClose={() => delete dlg.current.dataset.closing}
+      className="wx-sheet sm:max-w-2xl glass-panel text-lofi-text overscroll-contain"
+    >
+      {pn.on && <PinsBody pn={pn} onClose={close} />}
+    </dialog>
+  )
+}
+
+function PinsBody({ pn, onClose }) {
   const [q, setQ] = useState('')
   const [all, setAll] = useState(false)
   const box = useRef(null)
@@ -360,8 +361,6 @@ function PinsBody({ pn }) {
   const shown = all ? found : found.slice(0, SHOWN)
   const total = pins.length
   const kept = link ? pins.find((p) => p.url === cleanUrl(q).url) : null
-  // the next visit's skeleton: how many tiles, and whether there's a "Show all"
-  useEffect(() => rememberShape({ pins: Math.min(total, SHOWN), pinsMore: total > SHOWN }), [total])
 
   async function submit(e) {
     e.preventDefault()
@@ -373,13 +372,14 @@ function PinsBody({ pn }) {
   const u = pn.undoing
   const left = u ? Math.max(0, u.until - Date.now()) : 0
   return (
-    <section aria-labelledby="pn-title" className="glass-panel rounded-3xl p-4 sm:p-5 pn">
+    <section aria-labelledby="pn-title" className="p-5 sm:p-6 pn">
       <div className="pn-head">
         <span className="pn-mark" aria-hidden="true"><Pin size={16} /></span>
         <div className="pn-title">
           <h2 id="pn-title">Pins</h2>
           <span className="pn-sub">{total ? `${total} kept` : 'none yet'}</span>
         </div>
+        <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
 
       <form className="pn-box" role="search" onSubmit={submit}>
