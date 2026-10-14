@@ -479,3 +479,5 @@ html[data-sk-one-host] .sk-host-tiles { display: flex !important; }
 /* (collapsed, not removed: the real row keeps an empty span there, so Details stays on the right) */
 html[data-sk-wx-no-aqi] .sk-wx-aqi { flex: 0 0 0 !important; width: 0; overflow: hidden; visibility: hidden; }
 html:not([data-sk-wx-station]) .sk-wx-station { display: none !important; }
+html[data-sk-fixed-vol] .sk-vol { display: none !important; }
+html[data-sk-fixed-vol] .sk-vol-rest { margin-left: auto; }
