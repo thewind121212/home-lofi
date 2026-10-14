@@ -19,6 +19,7 @@ import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, mot
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
+import { PinsCard, usePins } from './pins'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -123,6 +124,7 @@ export default function Home() {
   // the notification hub listens on sync's live stream (one connection per device); set once useNotify has run below
   const notifyLive = useRef(() => {})
   const habitsLive = useRef(() => {}) // the Habits card too ('habits', and 'hello' after a reconnect)
+  const pinsLive = useRef(() => {}) // and Pins ('pins', and 'hello')
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -138,7 +140,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind)))
+  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind)))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -253,6 +255,8 @@ export default function Home() {
   notifyLive.current = hub.live
   const habits = useHabits(owner, cloud.id)
   habitsLive.current = habits.live
+  const pins = usePins(owner, cloud.id)
+  pinsLive.current = pins.live
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
   function openInbox() {
     const d = inboxDlg.current
@@ -514,7 +518,7 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Weather · Hub · Habits (owner) · Services
+            phones: one column, Steam · Music · Weather · Hub · Habits · Pins (owner) · Services
             lg (laptops): two columns, Steam + Music + Weather on the left, Hub + Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
@@ -537,6 +541,8 @@ export default function Home() {
           <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
             {/* its skeleton while it may be on its way: the owner not known yet (the owner's browser), or loading */}
             <HabitsCard hb={habits} wait={!cloud.known || (owner && habits.pending)} force={owner} />
+            {/* the owner's Pins (links kept with their previews), the same way */}
+            <PinsCard pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} />
             <Services priv={priv} privFailed={privFailed} />
           </div>
         </main>
