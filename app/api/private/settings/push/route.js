@@ -1,5 +1,5 @@
 import { notifyOn, sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
-import { cleanName, cleanSubscription, pushNotice } from '../../../../../lib/push.js'
+import { cleanName, cleanSubscription } from '../../../../../lib/push.js'
 import { pushStore } from '../../../../../lib/push-store.js'
 
 // The owner's push devices (app/push.js), in the owner-only zone like the notifications next door (lib/gate.js
@@ -8,7 +8,6 @@ import { pushStore } from '../../../../../lib/push-store.js'
 //   GET                                                   -> { publicKey, devices: [{ endpoint, name, at, fails }] }
 //   POST { action: 'add', subscription, name }            this browser's PushSubscription (toJSON()), turned on
 //        { action: 'remove', endpoint }                   turned off (one of the owner's own)
-//        { action: 'test', endpoint }                     a test push to that device -> { ..., test: { sent, dropped, failed } }
 //   -> the fresh { publicKey, devices }
 // 404 = off, 403 = someone else, 400 = a bad body ({ error, field }), 503 = database unreachable.
 const HEADERS = { 'cache-control': 'no-store, private' }
@@ -44,7 +43,7 @@ export async function POST(request) {
     return json({ error: 'not JSON' }, 400)
   }
   const action = b?.action
-  if (!['add', 'remove', 'test'].includes(action)) return json({ error: 'action: one of add, remove, test', field: 'action' }, 400)
+  if (!['add', 'remove'].includes(action)) return json({ error: 'action: one of add, remove', field: 'action' }, 400)
   const store = pushStore()
   try {
     if (action === 'add') {
@@ -54,17 +53,8 @@ export async function POST(request) {
       return json(await state(store, who))
     }
     if (typeof b.endpoint !== 'string' || !b.endpoint) return json({ error: 'endpoint: one of your devices', field: 'endpoint' }, 400)
-    if (action === 'remove') {
-      await store.remove(who, b.endpoint)
-      return json(await state(store, who))
-    }
-    // test: only to one of the owner's own devices (the sender reads them from the store, never from the body)
-    const mine = (await store.list(who)).filter((s) => s.endpoint === b.endpoint)
-    if (!mine.length) return json({ error: 'endpoint: one of your devices', field: 'endpoint' }, 400)
-    const test = await pushNotice(who, { title: 'Alerts are on', body: 'This device will get your home notifications, also with the page closed.', level: 'success', tag: 'push:test', ttl: 600 }, {
-      store: { ...store, list: async () => mine },
-    })
-    return json({ ...(await state(store, who)), test })
+    await store.remove(who, b.endpoint)
+    return json(await state(store, who))
   } catch {
     return json({ error: 'database unavailable' }, 503)
   }
