@@ -4,4 +4,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
   const { startReminders } = await import('./lib/habits-reminders.js')
   startReminders()
+  // and Reminders' 06:00 notice (lib/reminders-nudge.js)
+  const { startNudges } = await import('./lib/reminders-nudge.js')
+  startNudges()
 }

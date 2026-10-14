@@ -250,7 +250,8 @@ export function useHabits(owner, clientId) {
 
 const CHECK = 'M5 12.5l4.5 4.5L19 7.5' // the check: waiting in the ring, drawn by the hold, then the kept one
 
-function HoldRing({ habit, onDone, onHolding }) {
+// (app/reminders.js holds its reminders done with this same ring: label is its button's name there)
+export function HoldRing({ habit, label = `Hold to keep: ${habit?.name}`, onDone, onHolding = () => {} }) {
   const [p, setP] = useState(0)
   const [holding, setHolding] = useState(false)
   const s = useRef({ p: 0, t0: 0, from: 0, raf: 0, on: false }).current
@@ -299,7 +300,7 @@ function HoldRing({ habit, onDone, onHolding }) {
     <button
       type="button"
       className={`hb-hold${holding ? ' is-holding' : ''}`}
-      aria-label={`Hold to keep: ${habit.name}`}
+      aria-label={label}
       onPointerDown={start}
       onPointerUp={cancel}
       onPointerCancel={cancel}
@@ -930,11 +931,12 @@ function HabitsBody({ hb }) {
       )}
 
       {u && (
-        <div className="hb-undo" role="status">
+        <div className="hb-undo">
           <span className="ic" aria-hidden="true"><Glyph name={u.icon} size={16} /></span>
+          {/* (the live region is the line that doesn't change: the countdown ticking isn't read out) */}
           <div className="msg">
-            {u.name} kept
-            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'} · undo for {Math.ceil(left / 1000)}s</small>
+            <span role="status">{u.name} kept</span>
+            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'}<span aria-hidden="true"> · undo for {Math.ceil(left / 1000)}s</span></small>
           </div>
           <button type="button" className="hb-ghost warm" onClick={() => hb.undo()}>Undo</button>
           <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />

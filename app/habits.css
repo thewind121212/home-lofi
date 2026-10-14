@@ -119,7 +119,7 @@ html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 .hb-rate {
   flex: 1 1 0; min-width: 0; height: 40px; border-radius: 12px; cursor: pointer; border: 1px solid rgb(255 255 255 / 0.12); background: rgb(26 26 46 / 0.5);
   color: var(--color-lofi-text); font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  opacity: 0; transform: translateY(6px); animation: hb-rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; transition: border-color 0.2s;
+  animation: hb-rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both; transition: border-color 0.2s;
 }
 .hb-rate:nth-of-type(2) { animation-delay: 0.06s; }
 .hb-rate:nth-of-type(3) { animation-delay: 0.12s; }
@@ -133,7 +133,7 @@ html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 .hb-ghost.warm:hover { border-color: rgb(255 138 92 / 0.6); color: var(--color-lofi-primary); }
 
 /* the undo bar */
-.hb-undo { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; border-radius: 14px; padding: 10px 10px 10px 12px; background: var(--color-lofi-base); border: 1px solid rgb(255 138 92 / 0.3); animation: hb-rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; opacity: 0; transform: translateY(6px); }
+.hb-undo { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; border-radius: 14px; padding: 10px 10px 10px 12px; background: var(--color-lofi-base); border: 1px solid rgb(255 138 92 / 0.3); animation: hb-rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .hb-undo .ic { width: 32px; height: 32px; flex: none; border-radius: 10px; background: rgb(255 138 92 / 0.14); color: var(--color-lofi-primary); display: grid; place-items: center; }
 .hb-undo .msg { flex: 1; min-width: 0; font-size: 13px; color: #fff; }
 .hb-undo .msg small { display: block; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); margin-top: 1px; }
@@ -278,7 +278,8 @@ html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 @keyframes hb-pop { from { transform: scale(0.4); } to { transform: scale(1); } }
 @keyframes hb-draw { to { stroke-dashoffset: 0; } }
 @keyframes hb-burst { 0% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 0; transform: translate(var(--x), var(--y)) scale(0.4); } }
-@keyframes hb-rise { to { opacity: 1; transform: none; } }
+/* (from only: the resting state is the visible one, so with motion off, animation: none, it still shows) */
+@keyframes hb-rise { from { opacity: 0; transform: translateY(6px); } }
 /* Settings › Motion: Reduced, or the OS setting: no movement (the hold still fills: it's the hold's meaning) */
 html[data-motion='reduce'] .hb *, html[data-motion='reduce'] .hb-sheet * { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
 /* (the looping hints just stop: a 1 ms loop would flicker) */

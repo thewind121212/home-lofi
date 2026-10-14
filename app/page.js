@@ -20,6 +20,7 @@ import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
 import { PinsCard, usePins } from './pins'
+import { RemindersCard, RemindersPopup, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -125,6 +126,7 @@ export default function Home() {
   const notifyLive = useRef(() => {})
   const habitsLive = useRef(() => {}) // the Habits card too ('habits', and 'hello' after a reconnect)
   const pinsLive = useRef(() => {}) // and Pins ('pins', and 'hello')
+  const remindersLive = useRef(() => {}) // and Reminders ('reminders', 'hello')
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -140,7 +142,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind)))
+  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind)))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -257,6 +259,8 @@ export default function Home() {
   habitsLive.current = habits.live
   const pins = usePins(owner, cloud.id)
   pinsLive.current = pins.live
+  const reminders = useReminders(owner, cloud.id)
+  remindersLive.current = reminders.live
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
   function openInbox() {
     const d = inboxDlg.current
@@ -541,6 +545,7 @@ export default function Home() {
           <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
             {/* its skeleton while it may be on its way: the owner not known yet (the owner's browser), or loading */}
             <HabitsCard hb={habits} wait={!cloud.known || (owner && habits.pending)} force={owner} />
+            <RemindersCard rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} />
             {/* the owner's Pins (links kept with their previews), the same way */}
             <PinsCard pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} />
             <Services priv={priv} privFailed={privFailed} />
@@ -598,6 +603,8 @@ export default function Home() {
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
       {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
+      {/* the owner's open reminders from 06:00, floating over the dashboard until each is held done (app/reminders.js) */}
+      <RemindersPopup rm={reminders} hidden={!view.dashboard} />
     </SteamData>
     </Prefs>
   )
