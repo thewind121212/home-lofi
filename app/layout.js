@@ -7,7 +7,7 @@ const spaceMono = Space_Mono({ subsets: ['latin'], weight: ['400', '700'], varia
 const workSans = Work_Sans({ subsets: ['latin'], weight: ['300', '400', '500', '600'], variable: '--font-work-sans' })
 
 export const metadata = {
-  title: 'wliafdew.dev',
+  title: 'Linh Homelab',
   description: 'A lofi home page.',
   // installable (app/manifest.js); on iPhone the Home Screen app gets an opaque status bar, so nothing slides under
   // the notch (the page doesn't pad for safe areas everywhere)

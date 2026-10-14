@@ -3,7 +3,7 @@
 // site added to the Home Screen opens as a web app.
 export default function manifest() {
   return {
-    name: 'Home · wliafdew.dev',
+    name: 'Linh Homelab',
     short_name: 'Home',
     description: 'A lofi home page.',
     start_url: '/',
