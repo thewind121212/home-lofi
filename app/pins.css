@@ -1,0 +1,99 @@
+/* The Pins card (app/pins.js): a glass-panel card on the dashboard, under Habits. The page's own tokens; pn- keeps it
+   to itself. Every tile is the same height (its skeleton's too), so the card's height is known before the data comes. */
+.pn { display: flex; flex-direction: column; gap: 12px; }
+.pn-head { display: flex; align-items: center; gap: 12px; }
+.pn-mark { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
+.pn-mark svg { transform: rotate(30deg); }
+.pn-title { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.pn-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
+.pn-sub { margin-top: 2px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+
+/* the one box: search as you type, Pin a link */
+.pn-box {
+  display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 4px 0 12px; border-radius: 14px;
+  background: rgb(26 26 46 / 0.55); border: 1px solid rgb(255 255 255 / 0.08); transition: border-color 0.2s, box-shadow 0.2s;
+}
+.pn-box:focus-within { border-color: rgb(255 138 92 / 0.6); box-shadow: inset 0 0 0 1px rgb(255 138 92 / 0.35); }
+.pn-box-ic { display: grid; place-items: center; color: var(--color-lofi-muted); flex: none; }
+.pn-box:focus-within .pn-box-ic { color: var(--color-lofi-primary); }
+/* (16 px on phones: iOS zooms into a smaller field) */
+.pn-input { flex: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: none; color: #fff; font-size: 16px; }
+@media (min-width: 640px) { .pn-input { font-size: 14px; } }
+.pn-input::placeholder { color: var(--color-lofi-muted); opacity: 0.85; }
+.pn-input:focus-visible { outline: none; }
+.pn-clear { width: 28px; height: 28px; flex: none; border-radius: 999px; display: grid; place-items: center; color: var(--color-lofi-muted); background: transparent; border: 0; cursor: pointer; }
+.pn-clear:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
+.pn-add {
+  height: 34px; flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px 0 9px; border-radius: 10px; cursor: pointer;
+  border: 1px solid rgb(255 138 92 / 0.45); background: rgb(255 138 92 / 0.14); color: var(--color-lofi-primary);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; transition: background-color 0.2s, opacity 0.2s, transform 0.15s;
+}
+.pn-add:hover:not(:disabled) { background: rgb(255 138 92 / 0.24); }
+.pn-add:active:not(:disabled) { transform: scale(0.96); }
+.pn-add:disabled, .pn-add[data-off] { opacity: 0.4; cursor: default; border-color: rgb(255 255 255 / 0.12); background: transparent; color: var(--color-lofi-muted); }
+
+.pn-note { margin: -2px 0 0; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-highlight); }
+.pn-note.soft { color: var(--color-lofi-muted); }
+.pn-none { margin: 4px 0; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; color: var(--color-lofi-muted); overflow-wrap: anywhere; }
+
+/* the tiles: two across on a laptop's middle column, one on a phone; all the same height */
+.pn-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); gap: 10px; }
+.pn-tile { position: relative; min-width: 0; height: 88px; border-radius: 16px; border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.4); transition: border-color 0.25s, background-color 0.25s; }
+.pn-tile:hover, .pn-tile:focus-within { border-color: rgb(255 138 92 / 0.35); background: rgb(26 26 46 / 0.6); }
+.pn-tile.is-pending { border-style: dashed; border-color: rgb(255 138 92 / 0.35); }
+.pn-link { display: flex; align-items: center; gap: 12px; height: 100%; padding: 8px; border-radius: inherit; color: inherit; text-decoration: none; }
+.pn-link:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+.pn-thumb { position: relative; width: 96px; height: 70px; flex: none; border-radius: 11px; overflow: hidden; background: var(--color-lofi-surface); }
+@media (min-width: 640px) { .pn-thumb { width: 112px; } }
+.pn-thumb:not(.pn-plain) img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pn-tile:hover .pn-thumb:not(.pn-plain) img { transform: scale(1.04); }
+.pn-plain { display: grid; place-items: center; background: linear-gradient(135deg, hsl(var(--pn-h, 20) 45% 34% / 0.55), rgb(42 42 74 / 0.9)); }
+/* icons sit on a light chip: plenty are drawn dark, for a white page */
+.pn-icon { flex: none; object-fit: contain; border-radius: 3px; background: rgb(255 255 255 / 0.92); padding: 1px; }
+.pn-plain .pn-icon, .pn-plain .pn-letter { border-radius: 8px; box-shadow: 0 4px 12px rgb(0 0 0 / 0.3); }
+.pn-plain .pn-icon { padding: 4px; }
+.pn-letter { display: inline-grid; place-items: center; flex: none; border-radius: 4px; background: rgb(26 26 46 / 0.7); color: #fff; font-family: var(--font-space-mono), ui-monospace, monospace; line-height: 1; }
+.pn-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pn-name { font-size: 14px; line-height: 18px; font-weight: 500; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-desc { font-size: 12px; line-height: 16px; height: 32px; color: var(--color-lofi-text); opacity: 0.75; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.pn-tile.is-bare .pn-desc { color: var(--color-lofi-muted); opacity: 1; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; }
+.pn-dom { display: flex; align-items: center; gap: 5px; min-width: 0; height: 14px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; line-height: 14px; color: var(--color-lofi-muted); }
+.pn-dom > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-dom .pn-letter { display: none; } /* (no icon there: the domain says it) */
+
+/* ✕ (and ↻ for one without a preview) on the picture's corner: on hover / focus with a mouse, always on touch */
+.pn-acts { position: absolute; top: 5px; left: 5px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.pn-tile:hover .pn-acts, .pn-tile:focus-within .pn-acts { opacity: 1; }
+@media (hover: none) { .pn-acts { opacity: 1; } }
+.pn-act {
+  position: relative; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; cursor: pointer;
+  background: rgb(26 26 46 / 0.78); border: 1px solid rgb(255 255 255 / 0.14); color: #fff; backdrop-filter: blur(4px); transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+.pn-act::after { content: ''; position: absolute; inset: -6px; } /* a bigger target than it looks */
+.pn-act:hover, .pn-act:focus-visible { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.6); }
+.pn-act:disabled { cursor: default; }
+.pn-spin { animation: pn-spin 0.9s linear infinite; }
+@keyframes pn-spin { to { transform: rotate(360deg); } }
+
+.pn-empty { border-radius: 18px; border: 1px dashed rgb(255 138 92 / 0.35); padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; }
+.pn-empty p { margin: 0; font-size: 14px; color: #fff; }
+.pn-empty small { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+.pn-more {
+  align-self: center; height: 32px; padding: 0 14px; border-radius: 999px; display: inline-flex; align-items: center; cursor: pointer;
+  border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: var(--color-lofi-text);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; transition: border-color 0.2s, color 0.2s;
+}
+.pn-more:hover { border-color: rgb(255 138 92 / 0.6); color: var(--color-lofi-primary); }
+
+/* the undo bar */
+.pn-undo { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; border-radius: 14px; padding: 8px 8px 8px 10px; background: var(--color-lofi-base); border: 1px solid rgb(255 138 92 / 0.3); animation: pn-rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pn-undo .ic { width: 30px; height: 30px; flex: none; border-radius: 10px; background: rgb(255 138 92 / 0.14); color: var(--color-lofi-primary); display: grid; place-items: center; }
+.pn-undo .msg { flex: 1; min-width: 0; font-size: 13px; color: #fff; }
+.pn-undo .msg span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-undo .msg small { display: block; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); margin-top: 1px; }
+.pn-undo .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--color-lofi-primary); transform-origin: left; }
+.pn-ghost { height: 32px; padding: 0 14px; flex: none; border-radius: 999px; cursor: pointer; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: var(--color-lofi-text); font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; transition: border-color 0.2s, color 0.2s; }
+.pn-ghost:hover { border-color: rgb(255 138 92 / 0.6); color: var(--color-lofi-primary); }
+@keyframes pn-rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* (Settings › Motion: Reduced and the OS setting stop all of it: app/globals.css) */
