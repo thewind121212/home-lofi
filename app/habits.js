@@ -250,7 +250,8 @@ export function useHabits(owner, clientId) {
 
 const CHECK = 'M5 12.5l4.5 4.5L19 7.5' // the check: waiting in the ring, drawn by the hold, then the kept one
 
-function HoldRing({ habit, onDone, onHolding }) {
+// (app/reminders.js holds its reminders done with this same ring: label is its button's name there)
+export function HoldRing({ habit, label = `Hold to keep: ${habit?.name}`, onDone, onHolding = () => {} }) {
   const [p, setP] = useState(0)
   const [holding, setHolding] = useState(false)
   const s = useRef({ p: 0, t0: 0, from: 0, raf: 0, on: false }).current
@@ -299,7 +300,7 @@ function HoldRing({ habit, onDone, onHolding }) {
     <button
       type="button"
       className={`hb-hold${holding ? ' is-holding' : ''}`}
-      aria-label={`Hold to keep: ${habit.name}`}
+      aria-label={label}
       onPointerDown={start}
       onPointerUp={cancel}
       onPointerCancel={cancel}
