@@ -28,6 +28,7 @@ import { sceneName } from '../lib/settings'
 import { mainAction, spOn } from '../lib/player'
 import { domainOf } from '../lib/pins'
 import { command, rank, remember, startList, tabHref } from '../lib/quick'
+import { PRESETS as FOCUS_PRESETS, PRESET_IDS, fmtLeft, leftOf, paused } from '../lib/focus'
 import { closeDialog, load, save, useStillPage } from './settings'
 import { tavarianPost } from './player'
 
@@ -46,9 +47,9 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 // scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), snd, mix, setMix,
 // openSounds, music ({ source, tune, station, radio(), sp, spAct(action) (the page's Spotify control), spShow() (the
 // card's Spotify tab), player, tvOn }), wx, openWeather,
-// rm + openReminders, pn + openPins, rd + openReading, priv (/api/private: the internal apps)
+// rm + openReminders, pn + openPins, rd + openReading, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
 export function quickActions(ctx) {
-  return [...basics(ctx), ...music(ctx), ...sounds(ctx), ...owners(ctx), ...scenes(ctx)]
+  return [...basics(ctx), ...music(ctx), ...sounds(ctx), ...focusing(ctx), ...owners(ctx), ...scenes(ctx)]
 }
 
 function basics(c) {
@@ -154,6 +155,32 @@ function owners(c) {
       out.push({ id: `book:${b.id}`, title: b.name, hint: `${b.percent}% · continue in Kavita`, fa: 'fa-book', keywords: ['continue', 'reading', 'book', 'kavita'], run: () => openTab(b.href) })
     }
   }
+  return out
+}
+
+// Focus (the owner's, once its hook is on): the sheet, then what fits now: nothing running, start one (each preset);
+// running, pause or resume, skip, stop. Every device follows (it's the server's session); the header ring shows it
+function focusing(c) {
+  const fc = c.fc
+  if (!c.owner || !fc?.on) return []
+  const s = fc.session
+  const kw = ['focus', 'pomodoro', 'timer', 'tập trung']
+  const now = s ? `${s.phase === 'focus' ? 'Focus' : 'Break'} · ${fmtLeft(leftOf(s, fc.now()))}${paused(s) ? ' · paused' : ' left'}` : null
+  const out = [{ id: 'focus', title: 'Focus', hint: now ?? `🍅 ${fc.today} today`, fa: 'fa-stopwatch', keywords: kw, run: c.openFocus }]
+  if (!s) {
+    for (const p of PRESET_IDS) {
+      const [work, rest] = FOCUS_PRESETS[p]
+      out.push({ id: `focus:${p}`, title: `Start focus ${p}`, hint: `${work} min focus, ${rest} min break`, fa: 'fa-play', keywords: kw, run: () => fc.start(p) })
+    }
+    return out
+  }
+  out.push(
+    paused(s)
+      ? { id: 'focus:resume', title: 'Resume focus', hint: now, fa: 'fa-play', keywords: kw, run: fc.resume }
+      : { id: 'focus:pause', title: 'Pause focus', hint: now, fa: 'fa-pause', keywords: kw, run: fc.pause },
+    { id: 'focus:skip', title: s.phase === 'focus' ? 'Skip to the break' : 'Skip the break', hint: now, fa: 'fa-forward', keywords: kw, run: fc.skip },
+    { id: 'focus:stop', title: 'Stop focus', hint: now, fa: 'fa-stop', keywords: kw, run: fc.stop },
+  )
   return out
 }
 
