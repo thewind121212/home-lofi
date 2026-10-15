@@ -23,6 +23,7 @@ import {
 } from '../lib/player'
 import { claimMediaSession, mediaSessionOwner, silentWav, useMounted } from './radio'
 import { closeDialog, motionOff, useStillPage } from './settings'
+import { SongSheet } from './song-card'
 import { settleFlip, useFlip } from './flip'
 import { coverCache } from '../lib/spotify-cover'
 import { lazyWatcher, scrollRoot } from '../lib/lazy'
@@ -1351,6 +1352,11 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
   const dur = song?.durationSeconds > 0 ? song.durationSeconds : 0
   const pos = drag ?? positionAt(p.state, p.offset)
   const hearing = p.listening && p.phase === 'playing'
+  // the song card (app/song-card.js, as on the Spotify tab): { now: true } (the one playing) or { s, kicker } (a row)
+  const [card, setCard] = useState(null)
+  useEffect(() => {
+    if (card?.now && !song) setCard(null) // the station stopped under it: nothing to show
+  }, [card, song])
   const main = mainOf(p, owner)
   const locked = ctl.busy != null || ops.busy != null // one tap = one action
   const commitSeek = () => {
@@ -1389,7 +1395,13 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
       {song && art && <FadeImg key={art} src={art} aria-hidden="true" className={`absolute inset-0 w-full h-full object-cover blur-2xl scale-125 pointer-events-none transition-opacity duration-700 ${playing ? 'opacity-25' : 'opacity-12'}`} />}
 
       <div className="relative flex gap-4 min-w-0">
-        <Cover song={song} on={playing} />
+        {song ? (
+          <button type="button" data-song-open onClick={() => setCard({ now: true })} aria-haspopup="dialog" aria-label={`${plain(song.title) || 'This song'}: details`} className="shrink-0 rounded-2xl transition-transform duration-300 hover:scale-105">
+            <Cover song={song} on={playing} />
+          </button>
+        ) : (
+          <Cover song={song} on={playing} />
+        )}
         <div className="min-w-0 flex-1 flex flex-col justify-center">
           <p className="flex items-center gap-2 text-[10px] font-mono text-lofi-muted mb-1">
             <span className={`px-1.5 py-0.5 rounded-full border ${playing ? 'text-lofi-primary bg-lofi-primary/10 border-lofi-primary/20' : 'border-white/10'}`} role="status">
@@ -1408,7 +1420,8 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
             {hearing && <EqBars />}
           </p>
           {/* a long title takes two lines; then the line under it gives up its room (the card keeps its height) */}
-          <p ref={title} className="text-base font-medium text-white line-clamp-2 break-words" title={plain(song?.title) || undefined}>
+          {/* (the title opens the card too, for a finger or a mouse; the cover is its button for keys and readers) */}
+          <p ref={title} onClick={song ? () => setCard({ now: true }) : undefined} className={`text-base font-medium text-white line-clamp-2 break-words ${song ? 'cursor-pointer hover:text-lofi-primary transition-colors' : ''}`} title={plain(song?.title) || undefined}>
             {plain(song?.title) || (info.key === 'empty' ? 'Nothing queued' : info.key === 'stopped' ? `${items.length} in the queue` : 'Home station')}
           </p>
           {!(song && twoLines) && <p className="text-xs text-lofi-muted truncate">{song ? 'Tavarian · home station' : owner ? 'Add a song to start' : 'Nothing on the home station right now'}</p>}
@@ -1504,7 +1517,14 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
         {list.rows.length ? (
           <ul>
             {list.rows.map((s) => (
-              <li key={s.id} data-flip-key={s.id} className="flex items-center gap-2 min-w-0 text-[11px] h-[18px]">
+              <li key={s.id} data-flip-key={s.id} className="min-w-0 h-[18px]">
+                <button
+                  type="button"
+                  onClick={() => setCard({ s, kicker: list.kind === 'last' ? 'Last played' : s.pick ? 'Up next · Spotify pick' : 'Up next' })}
+                  aria-haspopup="dialog"
+                  aria-label={`${list.kind === 'last' ? 'Last played' : 'Up next'}: ${plain(s.title)}. Details`}
+                  className="w-full flex items-center gap-2 min-w-0 text-[11px] h-[18px] text-left rounded -mx-1 px-1 hover:bg-white/5 transition-colors"
+                >
                 <Thumb s={s} className="w-[26px] h-4 rounded-sm object-cover shrink-0 bg-lofi-surface" />
                 <span className="text-white/80 truncate" title={s.pick ? `Spotify pick: ${[plain(s.title), s.artists.join(', ')].filter(Boolean).join(' · ')}` : plain(s.title)}>
                   {s.pick && <span className="sr-only">Spotify pick: </span>}
@@ -1513,6 +1533,7 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
                 {/* (one of Spotify's autoplay picks, not a queued song: its small mark) */}
                 {s.pick && <i className="fa-brands fa-spotify text-[10px] text-[#1db954]/70 shrink-0 ml-auto" aria-hidden="true" title="Spotify pick" />}
                 {s.durationSeconds > 0 && <span className={`text-lofi-muted font-mono text-[10px] shrink-0 ${s.pick ? '' : 'ml-auto'}`}>{mmss(s.durationSeconds)}</span>}
+                </button>
               </li>
             ))}
           </ul>
@@ -1530,8 +1551,25 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
         </p>
       )}
       <PlayerSheet dlg={dlg} p={p} owner={owner} ops={ops} picks={picks} view={sheet} setView={setSheet} onClosed={() => setSheet(null)} />
+      {card && (card.now ? song : card.s) && (
+        <PlayerSongCard
+          song={card.now ? song : card.s}
+          kicker={card.now ? (playing ? 'Now playing' : info.key === 'paused' ? 'Paused' : 'Home station') : card.kicker}
+          eq={Boolean(card.now && playing)}
+          onClosed={() => setCard(null)}
+        />
+      )}
     </>
   )
+}
+
+// a Tavarian song in the shared song card: its title, artists, album, its cover (a Spotify song's fetched one too) and
+// its link (the Spotify track or the video)
+function PlayerSongCard({ song, kicker, eq, onClosed }) {
+  const art = useArt(song)
+  const artists = Array.isArray(song.artists) && song.artists.length ? song.artists.map(plain) : song.artist ? [plain(song.artist)] : []
+  const t = { track: plain(song.title) || 'Home station', artists, album: song.album ? plain(song.album) : null, art, url: songLink(song) }
+  return <SongSheet t={t} kicker={kicker} eq={eq} onClosed={onClosed} />
 }
 
 function EqBars() {
