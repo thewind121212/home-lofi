@@ -15,7 +15,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as on
   a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
 - **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading and the 🔔 bell.
-  Reminders have no icon there: their pop-up / pill (bottom left), Ambient's chip and ⌘K open them.
+  Reminders have no icon there: their pop-up / pill (bottom left, the pill at any hour while one is open), Ambient's chip and ⌘K open them.
 - The page scrolls without a scrollbar of its own (panels and lists keep theirs).
 - **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
   too, not over another dialog; the same keys close it) or **/** outside a field. Type a few letters, **Enter** runs
