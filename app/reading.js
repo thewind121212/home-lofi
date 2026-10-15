@@ -100,7 +100,7 @@ export function useReading(owner) {
 export function ReadingBar({ rd, wait = false, force = false, onOpen }) {
   const line = barLine(rd.books)
   if (!line) return wait && !rd.on ? <MiniBarSkeleton label="Reading" force={force} add={false} className="sk-reading" /> : null
-  return <MiniBar label="Reading" icon={BookOpen} value={line.value} detail={line.detail} onOpen={() => onOpen()} openLabel={line.label} />
+  return <MiniBar label="Reading" icon={BookOpen} value={line.value} detail={line.detail} tail={line.tail} onOpen={() => onOpen()} openLabel={line.label} />
 }
 
 // ---- the sheet ----
