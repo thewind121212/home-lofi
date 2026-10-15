@@ -15,7 +15,7 @@ import { useCloudSync } from './cloud'
 import { WAKE_GUARD_MS, eatNextClick, holdScroll } from '../lib/wake'
 import { ambientTick, ambientView, ambientWake, dockLift } from '../lib/ambient'
 import { FULLSCREEN_EVENTS, fullscreenApi, isFullscreenKey } from '../lib/fullscreen'
-import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save } from './settings'
+import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save, useStillPage } from './settings'
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
@@ -1220,6 +1220,7 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
   const box = useRef(null)
   const card = useRef(null)
   const dlg = useRef(null)
+  useStillPage(dlg) // (the weather details sheet)
   const [detail, setDetail] = useState({ state: 'idle' }) // details panel: { key, state, data }
   const { unit } = useContext(Prefs)
   const wait = !w && status !== 'error' // the first answer (or a new city's) is on its way: stand-ins
@@ -3072,7 +3073,7 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
   }, [sp?.playing])
   const ctl = useSpotifyControl(onState)
   const vol = useSpotifyVolume(Boolean(owner && sp?.enabled && sp.track))
-  const [peek, setPeek] = useState(null) // an Up next track shown in the popup
+  const [song, setSong] = useState(null) // the song card: { now: true } (the one playing) or an Up next track
   // first answer on its way: the now-playing row's shape (the card's height is fixed, this is just its look)
   if (sp === undefined) {
     return (
@@ -3097,11 +3098,12 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
       {/* ambient: the cover, blurred and faint, behind the whole card (static) */}
       {sp.art && <div className="absolute inset-0 -z-10 bg-cover bg-center scale-125 blur-2xl opacity-30" style={{ backgroundImage: `url(${sp.art})` }} aria-hidden="true" />}
       <div className="flex items-center gap-4 mb-3">
-        <a
-          href={sp.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${sp.playing ? 'Now playing' : 'Paused'} on Spotify: ${sp.track} by ${artists}`}
+        <button
+          type="button"
+          data-song-open
+          onClick={() => setSong({ now: true })}
+          aria-haspopup="dialog"
+          aria-label={`${sp.playing ? 'Now playing' : 'Paused'} on Spotify: ${sp.track} by ${artists}. Details`}
           className="relative shrink-0 w-20 h-20 rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 transition-transform duration-300 hover:scale-105"
         >
           {sp.art ? (
@@ -3111,7 +3113,7 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
               <i className="fa-solid fa-music text-xl" aria-hidden="true" />
             </span>
           )}
-        </a>
+        </button>
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-1">
             {sp.playing && (
@@ -3126,9 +3128,9 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
               {vol.dev && ` · ${vol.dev.name}`}
             </span>
           </p>
-          <a href={sp.url} target="_blank" rel="noopener noreferrer" title={sp.album ?? undefined} className="block text-base font-medium text-white truncate hover:text-[#1db954] transition-colors">
+          <button type="button" onClick={() => setSong({ now: true })} aria-haspopup="dialog" title={sp.album ?? undefined} className="block max-w-full text-left text-base font-medium text-white truncate hover:text-[#1db954] transition-colors">
             {sp.track}
-          </a>
+          </button>
           <p className="text-xs text-lofi-muted truncate">{artists}</p>
         </div>
       </div>
@@ -3167,7 +3169,7 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
             {next.map((t, i) => (
               <li key={i}>
                 <button
-                  onClick={() => setPeek(t)}
+                  onClick={() => setSong(t)}
                   aria-haspopup="dialog"
                   aria-label={`Up next: ${t.track} by ${t.artists.join(', ')}. Details`}
                   className="w-full flex items-center gap-2 min-w-0 text-[11px] text-left rounded-md -mx-1 px-1 py-0.5 hover:bg-white/5 transition-colors"
@@ -3181,60 +3183,73 @@ function SpotifyPanel({ sp, owner, wasOwner, onState }) {
           </ul>
         </div>
       )}
-      {peek && <TrackPeek t={peek} onClose={() => setPeek(null)} />}
+      {song && <SongSheet t={song.now ? sp : song} now={Boolean(song.now)} playing={sp.playing} onClosed={() => setSong(null)} />}
     </>
   )
 }
 
-// Up next details: a small popup over the card, big cover, title, artists, album and a link to Spotify.
-// Esc, the ✕ or a click outside it closes it.
-function TrackPeek({ t, onClose }) {
-  const close = useRef(null)
+// A song's card (the one playing, or one Up next): the big cover, title, artists, album and Open in Spotify. A sheet
+// like the others (.wx-sheet: the bottom sheet on phones, a small centered panel from sm; ✕, Esc or the backdrop
+// close it, the page stays still). t: { track, artists, album, art, url }; now: it's the one playing.
+function SongSheet({ t, now, playing, onClosed }) {
+  const dlg = useRef(null)
+  useStillPage(dlg, true)
   useEffect(() => {
-    close.current?.focus({ preventScroll: true })
-    const onKey = (e) => e.key === 'Escape' && (e.stopPropagation(), onClose())
-    addEventListener('keydown', onKey, true)
-    return () => removeEventListener('keydown', onKey, true)
-  }, [onClose])
+    const d = dlg.current
+    d?.open || d?.showModal()
+  }, [])
+  const close = () => closeDialog(dlg.current)
+  const artists = t.artists.join(', ')
   return (
-    <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-lofi-base/60 motion-safe:animate-[fade-in_0.2s_ease-out]" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-label={`${t.track} by ${t.artists.join(', ')}`}
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-64 glass-panel rounded-2xl p-4 flex flex-col items-center text-center motion-safe:animate-[panel-in_0.25s_cubic-bezier(0.2,0.8,0.2,1)]"
-      >
+    <dialog
+      ref={dlg}
+      aria-labelledby="song-title"
+      onClick={(e) => e.target === dlg.current && close()}
+      onCancel={(e) => (e.preventDefault(), close())}
+      onClose={() => (delete dlg.current.dataset.closing, onClosed())}
+      className="wx-sheet sm:max-w-sm glass-panel text-lofi-text overscroll-contain"
+    >
+      <div className="relative p-5 sm:p-6 flex flex-col items-center text-center">
         <button
-          ref={close}
-          onClick={onClose}
+          type="button"
+          onClick={close}
           aria-label="Close"
-          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-lofi-base/60 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-lofi-base/60 border border-white/10 flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
         >
           <i className="fa-solid fa-xmark text-xs" aria-hidden="true" />
         </button>
-        <p className="text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-2">Up next</p>
+        <p className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-lofi-muted mb-3">
+          {now && playing && (
+            <span className="flex items-end gap-px h-2.5" aria-hidden="true">
+              {['60%', '100%', '45%'].map((h, i) => (
+                <span key={i} className="w-[2px] rounded-full bg-[#1db954] origin-bottom animate-eq" style={{ height: h, animationDelay: `${i * -0.23}s` }} />
+              ))}
+            </span>
+          )}
+          {now ? (playing ? 'Now playing' : 'Paused') : 'Up next'}
+        </p>
         {t.art ? (
-          <img src={t.art} alt="" width={112} height={112} className="w-28 h-28 rounded-xl object-cover shadow-2xl ring-1 ring-white/10 mb-3" />
+          <img src={t.art} alt="" width={176} height={176} className="w-44 h-44 rounded-2xl object-cover shadow-2xl ring-1 ring-white/10 mb-4" />
         ) : (
-          <span className="w-28 h-28 rounded-xl bg-lofi-surface flex items-center justify-center text-lofi-muted mb-3">
-            <i className="fa-solid fa-music text-2xl" aria-hidden="true" />
+          <span className="w-44 h-44 rounded-2xl bg-lofi-surface flex items-center justify-center text-lofi-muted mb-4">
+            <i className="fa-solid fa-music text-3xl" aria-hidden="true" />
           </span>
         )}
-        <p className="w-full text-sm font-medium text-white truncate">{t.track}</p>
-        <p className="w-full text-xs text-lofi-muted truncate">{t.artists.join(', ')}</p>
-        {t.album && <p className="w-full text-[10px] font-mono text-lofi-muted/80 truncate mt-0.5">{t.album}</p>}
+        <h2 id="song-title" className="w-full text-base font-medium text-white truncate">{t.track}</h2>
+        <p className="w-full text-sm text-lofi-muted truncate">{artists}</p>
+        {t.album && <p className="w-full text-[11px] font-mono text-lofi-muted/80 truncate mt-0.5">{t.album}</p>}
         {t.url && (
           <a
             href={t.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 h-8 px-4 rounded-full bg-[#1db954] text-lofi-base text-xs font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+            className="mt-4 h-9 px-5 rounded-full bg-[#1db954] text-lofi-base text-xs font-bold flex items-center gap-2 hover:scale-105 transition-transform"
           >
             <i className="fa-brands fa-spotify" aria-hidden="true" /> Open in Spotify
           </a>
         )}
       </div>
-    </div>
+    </dialog>
   )
 }
 

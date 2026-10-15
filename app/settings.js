@@ -43,31 +43,57 @@ export function closeDialog(d) {
   t = setTimeout(done, 400) // fallback if animationend never fires
 }
 
-// A sheet that keeps the page still (the Player's, the notifications inbox): only its lists ([data-scroll]) scroll.
+// Every sheet keeps the page still: only the sheet itself (a .wx-sheet scrolls) or its lists ([data-scroll]) scroll.
 // The modal <dialog> makes the page inert, but a wheel or a swipe over the header, the chips, the backdrop, or past a
 // list's end would still scroll the page (iOS above all): while it's open those are cancelled here, with
 // overscroll-behavior: contain on the lists as the first line (and touch-action in globals.css .tv-sheet, .inbox-pop).
+// (the dialog itself counts: a sheet that scrolls as a whole, the weather's, scrolls on a swipe over its header too)
 function canScroll(from, stop, dy) {
-  for (let el = from; el && el !== stop; el = el.parentElement) {
+  for (let el = from; el; el = el.parentElement) {
     const o = getComputedStyle(el).overflowY
     if ((o === 'auto' || o === 'scroll') && el.scrollHeight > el.clientHeight + 1 && (dy < 0 ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1)) return true
+    if (el === stop) break
   }
   return false
 }
+// open: the sheet's open state; left out, it's read off the <dialog> itself (one opened with showModal() alone)
 export function useStillPage(dlg, open) {
+  const [shown, setShown] = useState(false)
+  const watch = open === undefined
   useEffect(() => {
     const d = dlg.current
-    if (!d || !open) return
+    if (!watch || !d) return
+    const sync = () => setShown(d.open)
+    sync()
+    const mo = new MutationObserver(sync)
+    mo.observe(d, { attributes: true, attributeFilter: ['open'] })
+    return () => mo.disconnect()
+  }, [dlg, watch])
+  const on = watch ? shown : open
+  useEffect(() => {
+    const d = dlg.current
+    if (!d || !on) return
     let x0 = 0
     let y0 = 0
+    let off = false // the touch began on the backdrop
+    // the backdrop is the <dialog> too (its events' target), but outside its box: nothing there scrolls
+    const outside = (x, y) => {
+      const b = d.getBoundingClientRect()
+      return x < b.left || x > b.right || y < b.top || y > b.bottom
+    }
     // (on the window while the sheet is open: a wheel over the backdrop doesn't reach the dialog)
     const wheel = (e) => {
       if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // pinch zoom, sideways (the chips)
-      if (!(d.contains(e.target) && canScroll(e.target, d, e.deltaY))) e.preventDefault()
+      if (outside(e.clientX, e.clientY) || !(d.contains(e.target) && canScroll(e.target, d, e.deltaY))) e.preventDefault()
     }
-    const start = (e) => ((x0 = e.touches[0]?.clientX ?? 0), (y0 = e.touches[0]?.clientY ?? 0))
+    const start = (e) => {
+      x0 = e.touches[0]?.clientX ?? 0
+      y0 = e.touches[0]?.clientY ?? 0
+      off = outside(x0, y0)
+    }
     const move = (e) => {
       if (e.touches.length !== 1 || !e.cancelable) return
+      if (off) return e.preventDefault()
       const dx = x0 - e.touches[0].clientX
       const dy = y0 - e.touches[0].clientY
       if (Math.abs(dx) > Math.abs(dy)) return
@@ -82,7 +108,7 @@ export function useStillPage(dlg, open) {
       removeEventListener('touchstart', start, { capture: true })
       removeEventListener('touchmove', move, opts)
     }
-  }, [dlg, open])
+  }, [dlg, on])
 }
 
 const SWATCHES = [
@@ -213,6 +239,7 @@ function SyncStatus({ status }) {
 }
 
 export function Settings({ dlg, set, update, reset, sync, notify = false }) {
+  useStillPage(dlg)
   // Reset all asks first: a warning row with Cancel (focused) and "Yes, reset", which wakes after a moment so a
   // double-click can't confirm; the row gives up after 8 s, or when the panel closes
   const [sure, setSure] = useState(false)
@@ -576,6 +603,7 @@ export function ScenePoster({ base, down, className = '', imgClass = '' }) {
 export function ScenePicker({ set, update, scene, onGallery, className = '' }) {
   const btn = useRef(null)
   const dlg = useRef(null)
+  useStillPage(dlg)
   const name = sceneName(scene.id ?? 'london')
   const wx = wxName(set.weather, scene.want)
   const hint = weatherHint(set, scene)
@@ -719,6 +747,7 @@ export function ScenePicker({ set, update, scene, onGallery, className = '' }) {
 // Full-screen scene picker. Posters come in the wanted weather variant, falling back to the signature poster, then to
 // the night-sky placeholder (scene not uploaded yet).
 export function Gallery({ dlg, scene, variant, onPick }) {
+  useStillPage(dlg)
   const [q, setQ] = useState('')
   const grid = useRef(null)
   const t = q.trim().toLowerCase()
