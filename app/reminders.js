@@ -16,7 +16,6 @@ import './reminders.css'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } from 'lucide-react'
 import { HoldRing } from './habits'
-import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { localNow } from '../lib/habits'
 import { MAX_TEXT, TUCK_KEY, UNDO_MS, carried, tuckHolds } from '../lib/reminders'
 import { closeDialog, motionOff, useStillPage } from './settings'
@@ -363,29 +362,9 @@ function AddForm({ rm, compact = false }) {
   )
 }
 
-// ---- the header icon and the sheet ----
+// ---- the sheet ----
 
-// The header's icon next to the bell: how many are open (its badge, warm once they're due); a tap opens the whole list
-// in a sheet (its add field there). Nothing at all unless the server said this is the owner and answered.
-// wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the place; force: it
-// surely is the owner's, whatever the remembered shape says
-export function RemindersIcon({ rm, wait = false, force = false, onOpen, className = '' }) {
-  if (!rm.on) return wait ? <HeadIconSkeleton force={force} className={className} /> : null
-  const items = rm.data.items
-  const n = items.length
-  return (
-    <HeadIcon
-      className={className}
-      label={n ? `Reminders, ${n} open${items[0] ? `: ${items[0].text}` : ''}` : 'Reminders, none left'}
-      icon={ListTodo}
-      count={n}
-      warm={n > 0 && rm.data.due}
-      onOpen={() => onOpen()}
-    />
-  )
-}
-
-// The whole list in a sheet (opened from its header icon): the open ones, the add field, hold to mark one done, the two-tap delete
+// The whole list in a sheet (opened from Ambient's chip or ⌘K): the open ones, the add field, hold to mark one done, the two-tap delete
 export function RemindersSheet({ rm, dlg }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)

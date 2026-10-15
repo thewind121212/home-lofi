@@ -84,18 +84,15 @@
   --font-mono: var(--font-space-mono), monospace;
 }
 
-/* Always keep the vertical scrollbar track: switching tabs changes page height, and a scrollbar popping in/out
-   shifted the whole layout sideways. (scrollbar-gutter: stable didn't hold on the root in Chrome when the page
-   fits.) overflow-x hidden = safety net, nothing (e.g. the selected bookmark tab) may cause sideways scroll. */
+/* The page scrolls with no scrollbar of its own (the wheel, a swipe, the keys still scroll it): no track to pop in and
+   out either, so a page that grows (switching tabs) never shifts sideways. overflow-x hidden = safety net, nothing
+   (e.g. the selected bookmark tab) may cause sideways scroll. (Panels and lists keep their thin scrollbars, below.) */
 html {
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
-/* 2xl: the dashboard fits a 1080p screen (Sites), so no always-on scrollbar track there; it shows only when a
-   long group (All, Internal) makes the page taller */
-@media (width >= 96rem) {
-  html { overflow-y: auto; }
-}
+html::-webkit-scrollbar { display: none; }
 
 body {
   background-color: var(--color-lofi-base);

@@ -22,10 +22,11 @@ import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, use
 import { HabitsCard, useHabits } from './habits'
 import { PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingIcon, ReadingSheet, useReading } from './reading'
+import { HeadIcon } from './head-icon'
 import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } from './focus'
 import { QuickPalette } from './quick'
 import { isQuickKey } from '../lib/quick'
-import { LockReminders, RemindersChip, RemindersIcon, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
+import { LockReminders, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -449,6 +450,7 @@ export default function Home() {
     if (how === 'add') d.querySelector(field)?.focus()
   }
   const openReminders = openSheet(remDlg, '.rm-input')
+  const openSettings = () => setDlg.current.open || setDlg.current.showModal()
   const openPins = openSheet(pinDlg, '.pn-input')
   const openReading = openSheet(readDlg)
   const openFocus = openSheet(focusDlg)
@@ -506,7 +508,7 @@ export default function Home() {
   // what Quick actions can do (app/quick.js quickActions): handed over fresh on every render, read only while it's open
   const quick = {
     owner, ambient: Boolean(amb.ambient), enterAmbient, leaveAmbient, lock, full,
-    openSettings: () => setDlg.current.open || setDlg.current.showModal(),
+    openSettings,
     scene, openGallery, pickScene, shuffleScene: () => pickScene(randomScene(scene)),
     openInbox: hub.on ? openInbox : null,
     snd, mix: set.sounds, setMix, openSounds,
@@ -565,11 +567,12 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* the owner's Reminders, Pins and Reading (only while a book is in progress), then the bell: one tight
-                group (their stand-ins while they may be on the way; nothing for guests, so the group goes: empty).
-                Phones: a row of its own under the clock, the icons sharing its width (four don't fit beside it) */}
+            {/* ⚙️ Settings (everyone's), the owner's Pins and Reading (only while a book is in progress), then the bell:
+                one tight group (the owner's stand-ins while they may be on the way). Reminders have no icon here: their
+                pop-up / pill bottom left, Ambient's chip and ⌘K open them. Phones: a row of its own under the clock, the
+                icons sharing its width (four don't fit beside it) */}
             <div className="order-3 min-[900px]:order-none flex items-center gap-2 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1">
-              <RemindersIcon rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
+              <HeadIcon label="Settings" fa="fa-gear" onOpen={openSettings} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               {hub.on ? (
@@ -656,8 +659,8 @@ export default function Home() {
       {view.bar !== 'none' && (
         <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} focus={focusOn && <FocusChip fc={focus} onOpen={openFocus} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
-      {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings, 🔍 Quick actions (how a
-          phone opens it: no keyboard there). In Ambient (the
+      {/* The dock, bottom right. On the dashboard: the owner's ⏱ Focus, ⛰ Ambient, 🔒 Lock (⚙️ Settings sits by the
+          header's bell, ⌘K / / open Quick actions, F is full screen). In Ambient (the
           dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
           with the bar (lib/ambient.js), raised above the bar where the two would meet (a phone). Its own key per set:
           it fades in afresh when the set changes */}
@@ -669,7 +672,6 @@ export default function Home() {
               <FocusIcon fc={focus} wait={!cloud.known || (owner && focus.pending)} force={owner} onOpen={openFocus} />
               <DockButton icon="fa-mountain-sun" label="Ambient (H)" title="Ambient: the scene, with music at hand (H)" onClick={enterAmbient} />
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
-              <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
             </>
           ) : (
             <>
@@ -734,7 +736,7 @@ function Clock({ now, clock, tick }) {
   )
 }
 
-// The floating buttons, bottom right (the dashboard's ⛰ / 🔒 / ⚙️, Ambient's 👁 / 🔒). calm: faded out with Ambient's
+// The floating buttons, bottom right (the dashboard's ⏱ / ⛰ / 🔒, Ambient's 👁 / 🔒). calm: faded out with Ambient's
 // bar (and inert: no Tab into invisible buttons), mounted still so it fades back in; settling: just came back, it ignores
 // the pointer for a moment; lift: px to rise above Ambient's bar (useDockLift), liftMoves: a change of it glides (not
 // the first one: the dock opens where it belongs). hover: Ambient's "the mouse rests on the

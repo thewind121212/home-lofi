@@ -314,7 +314,7 @@ export function FocusIcon({ fc, wait = false, force = false, onOpen, className =
       dock
       className={className}
       label={iconLabel(s, ms)}
-      icon={Timer}
+      fa="fa-stopwatch"
       ring={s ? ringOf(s, ms) : null}
       ringClass={s ? ringTone(s) : undefined}
       warm={running(s) && s.phase === 'focus'}

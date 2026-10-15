@@ -352,6 +352,20 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
   // "take it back" opens only for a press that began on the check itself (a finger, a button, Enter / Space): the finger
   // that just finished the hold lifts over the check that took the ring's place, and a touch screen calls that a tap
   const pressed = useRef(false)
+  // opening: every tile in the row keeps the height it has now (min-height), so only this one grows; let go once
+  // none is open and the fold has shut (the row stretches them all alike again)
+  const tile = useRef(null)
+  const ask = (on) => {
+    const list = tile.current?.parentElement
+    if (on && list) for (const t of list.children) t.style.minHeight = `${t.offsetHeight}px`
+    setAsking(on)
+  }
+  useEffect(() => {
+    if (asking) return
+    const list = tile.current?.parentElement
+    const t = setTimeout(() => list && !list.querySelector('.hb-after.is-open') && [...list.children].forEach((c) => (c.style.minHeight = '')), 400)
+    return () => clearTimeout(t)
+  }, [asking])
   const due = habit.days.includes(dowOf(today))
   const done = Boolean(entry && entry.undoneAt == null)
   const [s, e] = spanOf(habit)
@@ -371,7 +385,7 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
   const R = done && entry.rating && rateOf(entry.rating)[1]
   const line = holding ? 'identity' : askRate ? 'rate' : 'meta'
   return (
-    <li className={`hb-tile${holding ? ' is-holding' : ''}${done ? ' is-done' : ''}${!due && !done ? ' is-rest' : ''}${due && !done && open ? ' is-due' : ''}`}>
+    <li ref={tile} className={`hb-tile${holding ? ' is-holding' : ''}${done ? ' is-done' : ''}${!due && !done ? ' is-rest' : ''}${due && !done && open ? ' is-due' : ''}`}>
       <div className="hb-tile-main">
         <span className="hb-well" aria-hidden="true"><Glyph name={habit.icon} size={20} /></span>
         <div className="hb-text">
@@ -396,7 +410,7 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
             aria-expanded={asking}
             onPointerDown={() => (pressed.current = true)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (pressed.current = true)}
-            onClick={() => pressed.current && ((pressed.current = false), setAsking((a) => !a))}
+            onClick={() => pressed.current && ((pressed.current = false), ask(!asking))}
           >
             {fresh && <Burst />}
             <svg className="check" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d={CHECK} stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -406,16 +420,15 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
           <HoldRing habit={habit} onHolding={setHolding} onDone={() => onKeep(habit, today)} />
         )}
       </div>
-      <div className={`hb-after${asking && done ? ' is-open' : ''}`}>
+      {/* always there, folded (inert) till asked: it slides open and shut instead of popping in and out */}
+      <div className={`hb-after${asking && done ? ' is-open' : ''}`} inert={!(asking && done)}>
         <div>
-          {asking && done && (
-            <div className="hb-after-in">
-              <p>Take back today's {habit.name.toLowerCase()}?</p>
-              <button type="button" className="hb-ghost" onClick={() => (setAsking(false), onTakeBack(habit, 'mistake', today))}>Tapped by mistake</button>
-              <button type="button" className="hb-ghost warm" onClick={() => (setAsking(false), onTakeBack(habit, 'not-done', today))}>Didn't really do it</button>
-              <button type="button" className="hb-ghost" onClick={() => setAsking(false)}>Keep it</button>
-            </div>
-          )}
+          <div className="hb-after-in">
+            <p>Take back today's {habit.name.toLowerCase()}?</p>
+            <button type="button" className="hb-ghost" onClick={() => (ask(false), onTakeBack(habit, 'mistake', today))}>Tapped by mistake</button>
+            <button type="button" className="hb-ghost warm" onClick={() => (ask(false), onTakeBack(habit, 'not-done', today))}>Didn't really do it</button>
+            <button type="button" className="hb-ghost" onClick={() => ask(false)}>Keep it</button>
+          </div>
         </div>
       </div>
     </li>
