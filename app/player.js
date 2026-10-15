@@ -1404,8 +1404,9 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
         )}
         <div className="min-w-0 flex-1 flex flex-col justify-center">
           <p className="flex items-center gap-2 text-[10px] font-mono text-lofi-muted mb-1">
-            <span className={`px-1.5 py-0.5 rounded-full border ${playing ? 'text-lofi-primary bg-lofi-primary/10 border-lofi-primary/20' : 'border-white/10'}`} role="status">
-              {playing ? '●' : info.key === 'paused' ? '❚❚' : '○'} {info.label}
+            {/* (one short line, never wrapping: it would push the title down) */}
+            <span className={`shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded-full border ${playing ? 'text-lofi-primary bg-lofi-primary/10 border-lofi-primary/20' : 'border-white/10'}`} role="status">
+              {playing ? '●' : '○'} {info.label}
             </span>
             {/* (a Spotify autoplay pick: the same badge says so, with how many of the round have played) */}
             {song && (auto || p.state?.playingVia === 'spotify') && (

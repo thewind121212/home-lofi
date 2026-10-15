@@ -16,6 +16,7 @@ import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { Bone } from './skeleton'
 import { closeDialog, useStillPage } from './settings'
 import { REASONS, SHOWN, UNDO_MS, cleanUrl, looksLikeLink, matches } from '../lib/pins'
+import { UndoLeft, UndoLine } from './habits'
 
 const URL_ = '/api/private/settings/pins'
 const NOTE_MS = 6000
@@ -336,12 +337,6 @@ function PinsBody({ pn, onClose }) {
   const [q, setQ] = useState('')
   const [all, setAll] = useState(false)
   const box = useRef(null)
-  const [, tick] = useState(0)
-  useEffect(() => {
-    if (!pn.undoing) return
-    const t = setInterval(() => tick((n) => n + 1), 200)
-    return () => clearInterval(t)
-  }, [pn.undoing])
   // (the one being removed stays out while its Undo shows, whatever a pull brings meanwhile)
   const pins = pn.data.pins.filter((p) => !pn.hidden(p.id))
   const link = looksLikeLink(q)
@@ -358,7 +353,6 @@ function PinsBody({ pn, onClose }) {
     if (!(await pn.add(text))) setQ((cur) => cur || text) // (not kept: the link back in the box, to fix or retry)
   }
   const u = pn.undoing
-  const left = u ? Math.max(0, u.until - Date.now()) : 0
   return (
     <section aria-labelledby="pn-title" className="p-5 sm:p-6 pn">
       <div className="pn-head">
@@ -405,10 +399,10 @@ function PinsBody({ pn, onClose }) {
           <span className="ic" aria-hidden="true"><Trash2 size={15} /></span>
           <div className="msg">
             <span>Removed {u.pin.title ?? u.pin.domain}</span>
-            <small aria-hidden="true">undo for {Math.ceil(left / 1000)}s</small>
+            <small aria-hidden="true">undo for <UndoLeft until={u.until} />s</small>
           </div>
           <button type="button" className="pn-ghost" onClick={() => pn.undo()}>Undo</button>
-          <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />
+          <UndoLine key={u.until} until={u.until} total={UNDO_MS} />
         </div>
       )}
 

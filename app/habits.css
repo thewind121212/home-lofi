@@ -142,6 +142,9 @@ html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 .hb-undo .msg { flex: 1; min-width: 0; font-size: 13px; color: #fff; }
 .hb-undo .msg small { display: block; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); margin-top: 1px; }
 .hb-undo .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--color-lofi-primary); transform-origin: left; }
+/* the Undo bars' draining line (UndoLine): from what's left (--from) to nothing over --dur, on the compositor */
+.undo-drain { will-change: transform; animation: undo-drain var(--dur) linear forwards; }
+@keyframes undo-drain { from { transform: scaleX(var(--from, 1)); } to { transform: scaleX(0); } }
 .hb-note { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-highlight); margin: 0; }
 
 /* the week */
@@ -292,3 +295,6 @@ html[data-motion='reduce'] .hb-tile .hb-hold .ring-hint, html[data-motion='reduc
   .hb *, .hb-sheet * { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
   .hb-tile .hb-hold .ring-hint, .hb-tile .hb-hold .ring-label { animation: none !important; }
 }
+/* (reduced motion keeps the Undo line draining: it's the time left, as the hold's ring is the hold) */
+html[data-motion='reduce'] .undo-drain.undo-drain.undo-drain { animation-duration: var(--dur) !important; }
+@media (prefers-reduced-motion: reduce) { .undo-drain.undo-drain.undo-drain { animation-duration: var(--dur) !important; } }
