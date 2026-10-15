@@ -110,6 +110,10 @@ body {
 h2[tabindex="-1"]:focus-visible {
   outline: none;
 }
+/* Quick actions' field (app/quick.js) is the whole top row of its panel and always has the focus: no ring round it */
+.qk-sheet input:focus-visible {
+  outline: none;
+}
 /* text boxes draw their focus ring inside the border, so a scrolling panel can't clip it */
 input:focus-visible,
 textarea:focus-visible {
@@ -318,6 +322,22 @@ textarea:focus-visible {
   .inbox-pop .wx-sticky { position: static; margin: 0; padding: 0; background: none; }
   @media (min-width: 640px) {
     .inbox-pop { width: 26rem; max-height: var(--pop-max, calc(100svh - 8rem)); }
+  }
+
+  /* the Quick actions palette <dialog> (app/quick.js): the .wx-sheet bottom sheet on phones, a fixed height there (it
+     doesn't jump as the list changes under a thumb); from sm a panel near the top, narrower, growing down with its
+     matches. Like .inbox-pop it never scrolls itself: the field and the footer stay put, only the list
+     ([data-scroll]) does, and a swipe anywhere else pans nothing (useStillPage does the rest) */
+  .qk-sheet[open] { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; touch-action: none; }
+  .qk-sheet::backdrop { touch-action: none; }
+  @media (max-width: 639px) {
+    .qk-sheet { height: min(36rem, 85svh); }
+  }
+  @media (min-width: 640px) {
+    .qk-sheet { max-width: 36rem; max-height: min(34rem, calc(100svh - 14vh - 2rem)); margin: 12vh auto auto; }
+  }
+  @media (min-width: 640px) and (max-height: 500px) {
+    .qk-sheet { margin-top: 1rem; max-height: calc(100svh - 2rem); }
   }
 
   /* full-screen scene gallery <dialog>: opaque, fades + scales in, same data-closing exit as .wx-sheet */
