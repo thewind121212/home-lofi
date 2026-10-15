@@ -438,8 +438,9 @@ export function Settings({ dlg, set, update, reset, sync, notify = false }) {
 }
 
 // The owner's daily summaries switch (lib/morning.js: at 06:00, 13:00 and 18:00 one notice with the weather,
-// reminders, routines and servers; off: only Reminders' own 06:00 notice, when some are open). Kept on the server (its ticker reads it), so it's
-// asked for each time the panel opens; hidden when the server says it isn't the owner's or the hub is off (404 / 403).
+// reminders, routines and servers; off: only Reminders' own 06:00 notice, when some are open). Kept on the server (its
+// ticker reads it), so it's asked for each time the panel opens; hidden when the server says it isn't the owner's or
+// the hub is off (404 / 403).
 // The switch flips at once; the server's answer confirms it, a failure puts it back.
 const MORNING_URL = '/api/private/settings/morning'
 async function morningApi(method, body) {
