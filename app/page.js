@@ -20,9 +20,9 @@ import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, mot
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
-import { PinsBar, PinsSheet, usePins } from './pins'
+import { PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingBar, ReadingSheet, useReading } from './reading'
-import { LockReminders, RemindersBar, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
+import { LockReminders, RemindersChip, RemindersIcon, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -520,13 +520,19 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {hub.on ? (
-              <Bell ref={bellRef} className="order-3 sm:order-none" unread={hub.unread} onOpen={openInbox} />
-            ) : (
-              // the bell's place while it's not known yet whether this is the owner (the owner's browser only), or
-              // the owner's inbox is on its way
-              (!cloud.known || (owner && !hub.tried)) && <span aria-hidden="true" className={`sk-owner ${owner ? 'sk-force' : ''} order-3 sm:order-none w-11 h-11 shrink-0 rounded-xl bg-lofi-base/50 border border-white/5 sk-pulse`} />
-            )}
+            {/* the owner's Reminders and Pins, then the bell: one tight group (their stand-ins while they may be on the
+                way; nothing for guests, so the group goes: empty) */}
+            <div className="order-3 sm:order-none flex items-center gap-2 empty:hidden">
+              <RemindersIcon rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
+              <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+              {hub.on ? (
+                <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />
+              ) : (
+                // the bell's place while it's not known yet whether this is the owner (the owner's browser only), or
+                // the owner's inbox is on its way
+                (!cloud.known || (owner && !hub.tried)) && <span aria-hidden="true" className={`sk-owner ${owner ? 'sk-force' : ''} w-11 h-11 shrink-0 rounded-xl bg-lofi-base/50 border border-white/5 sk-pulse`} />
+              )}
+            </div>
             <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               {now ? <Clock now={now} clock={set.clock} /> : <Bone w="5ch" />}
@@ -539,38 +545,33 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Sounds · Reminders · Pins · Reading (owner) · Weather · Hub · Habits (owner) · Services
-            lg (laptops): two columns, Steam + Music + Sounds + Reminders + Pins + Reading + Weather on the left, Hub + Habits +
+            phones: one column, Steam · Music · Sounds · Reading (owner) · Weather · Hub · Habits (owner) · Services
+            lg (laptops): two columns, Steam + Music + Sounds + Reading + Weather on the left, Hub + Habits +
               Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
-            2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music + Sounds | Reminders · Pins · Reading in a row,
-              then Habits + Services | Hub + Weather, so nothing scrolls (the owner's bars under Sounds would end past
-              the fold of a 1080p screen); the side columns stay put (sticky) while a long app group scrolls the middle */}
-        <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_auto_1fr] 2xl:grid-rows-[auto_1fr] gap-6 lg:items-start">
-          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-2 2xl:sticky 2xl:top-8 flex flex-col gap-6">
+            2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
+              the side columns stay put (sticky) while a long app group scrolls the middle */}
+        <main className="grow grid grid-cols-1 lg:grid-cols-12 lg:grid-rows-[auto_auto_1fr] 2xl:grid-rows-1 gap-6 lg:items-start">
+          <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} stationKnown={stationKnown} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
-            <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
+            {/* Sounds, and the owner's Reading: a slim bar like Sounds' (its skeleton while it may be on the way), close
+                together as one stack. Reading only while a book is in progress (Reminders and Pins: icons by the bell) */}
+            <div className="flex flex-col gap-2">
+              <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
+              <ReadingBar rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
+            </div>
           </div>
-          {/* the owner's Reminders, Pins and Reading: slim bars like Sounds' (their skeletons while they may be on the way).
-              Phones and laptops: stacked close under Sounds (-mt-4: the stack's 8 px, not the grid's 24); 2xl: one row on
-              top of the middle column. Reading only while a book is in progress; nothing at all for guests (empty: the
-              middle column then starts at the top, peer-empty) */}
-          <div className="peer -mt-4 flex flex-col gap-2 empty:hidden lg:col-span-4 lg:col-start-1 lg:row-start-3 2xl:mt-0 2xl:flex-row 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:[&>*]:flex-1 2xl:[&>*]:min-w-0">
-            <RemindersBar rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
-            <PinsBar pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
-            <ReadingBar rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
-          </div>
-          <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:row-span-2 2xl:sticky 2xl:top-8">
+          <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
               <Hub status={status} priv={priv} privFailed={privFailed} />
             </div>
-            <div className="lg:col-span-4 lg:col-start-1 lg:row-start-4">
+            <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">
               <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
             </div>
           </div>
           {/* the owner's Habits bar sits on top of the hosted apps, their width (nothing for guests) */}
-          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-3 2xl:col-span-6 2xl:col-start-4 2xl:row-start-2 2xl:peer-empty:row-start-1 2xl:row-span-1 flex flex-col gap-6">
+          <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
             {/* its skeleton while it may be on its way: the owner not known yet (the owner's browser), or loading */}
             <HabitsCard hb={habits} wait={!cloud.known || (owner && habits.pending)} force={owner} />
             <Services priv={priv} privFailed={privFailed} />

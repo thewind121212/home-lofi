@@ -1,6 +1,6 @@
 'use client'
 
-// Pins: links the owner keeps, each with its preview, newest first: a slim bar under Sounds, the pins in a sheet. Rules in lib/pins.js; the route is
+// Pins: links the owner keeps, each with its preview, newest first: an icon next to the header's bell, the pins in a sheet. Rules in lib/pins.js; the route is
 // app/api/private/settings/pins (owner-only: guests get 404 / 403 and never see the card).
 // - One box does both: typing searches the pins as you go (title, description, site, link; no case, no accents), and
 //   a link ("https://…", "www.…") is pinned with Enter or the Pin button. The server fetches its preview meanwhile (a
@@ -12,7 +12,7 @@
 import './pins.css'
 import { useEffect, useRef, useState } from 'react'
 import { Link2, Pin, Plus, RotateCw, Search, Trash2, X } from 'lucide-react'
-import { MiniBar, MiniBarSkeleton } from './minibar'
+import { HeadIcon, HeadIconSkeleton } from './minibar'
 import { Bone } from './skeleton'
 import { closeDialog, useStillPage } from './settings'
 import { REASONS, SHOWN, UNDO_MS, cleanUrl, looksLikeLink, matches } from '../lib/pins'
@@ -285,7 +285,7 @@ function PendingTile({ url }) {
   )
 }
 
-// ---- the bar and the sheet ----
+// ---- the header icon and the sheet ----
 
 function Empty({ className = '' }) {
   return (
@@ -296,29 +296,17 @@ function Empty({ className = '' }) {
   )
 }
 
-// The dashboard's slim bar (under Sounds, its height): how many are kept and the newest; a tap opens them in a sheet,
-// + opens it on the box (paste a link). pn: usePins(). Nothing at all unless the server said this is the owner.
+// The header's icon next to the bell; a tap opens the pins in a sheet (the box there: paste a link). pn: usePins().
+// Nothing at all unless the server said this is the owner.
 // wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the place; force: it
 // surely is the owner's, whatever the remembered shape says
-export function PinsBar({ pn, wait = false, force = false, onOpen }) {
-  if (!pn.on) return wait ? <MiniBarSkeleton label="Pins" force={force} /> : null
-  const pins = pn.data.pins.filter((p) => !pn.hidden(p.id))
-  const n = pins.length
-  return (
-    <MiniBar
-      label="Pins"
-      icon={Pin}
-      value={n ? `${n} kept` : 'none yet'}
-      detail={pins[0] && (pins[0].title ?? pins[0].domain)}
-      onOpen={() => onOpen()}
-      onAdd={() => onOpen('add')}
-      openLabel={`Pins: ${n ? `${n} kept` : 'none yet'}. Open them`}
-      addLabel="Pin a link"
-    />
-  )
+export function PinsIcon({ pn, wait = false, force = false, onOpen, className = '' }) {
+  if (!pn.on) return wait ? <HeadIconSkeleton force={force} className={className} /> : null
+  const n = pn.data.pins.filter((p) => !pn.hidden(p.id)).length
+  return <HeadIcon className={className} label={n ? `Pins, ${n} kept` : 'Pins, none yet'} icon={Pin} onOpen={() => onOpen()} />
 }
 
-// All of them in a sheet (opened from the bar): the box (paste a link, or search), the tiles, ✕ with Undo
+// All of them in a sheet (opened from its header icon): the box (paste a link, or search), the tiles, ✕ with Undo
 export function PinsSheet({ pn, dlg }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)

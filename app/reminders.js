@@ -2,7 +2,7 @@
 
 // Reminders: the owner's short list of things not to forget, carried from day to day until each is done. Rules in
 // lib/reminders.js; the route is app/api/private/settings/reminders (owner-only: guests get 404 / 403 and see nothing).
-// - A slim bar under Sounds (how many are open); a tap opens the list in a sheet: the open ones, an add field, hold
+// - An icon next to the header's bell (how many are open); a tap opens the list in a sheet: the open ones, an add field, hold
 //   to mark one done, and a quiet two-tap delete for a mistaken entry (not "done": it never was).
 // - The pop-up: from 06:00 (the server's clock in the owner's zone: its answer says `due`; the page never decides by
 //   the device's clock) while anything is open, a panel floats over the dashboard (bottom left; on a phone beside the
@@ -16,7 +16,7 @@ import './reminders.css'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } from 'lucide-react'
 import { HoldRing } from './habits'
-import { MiniBar, MiniBarSkeleton } from './minibar'
+import { HeadIcon, HeadIconSkeleton } from './minibar'
 import { localNow } from '../lib/habits'
 import { MAX_TEXT, TUCK_KEY, UNDO_MS, carried, tuckHolds } from '../lib/reminders'
 import { closeDialog, motionOff, useStillPage } from './settings'
@@ -363,32 +363,29 @@ function AddForm({ rm, compact = false }) {
   )
 }
 
-// ---- the bar and the sheet ----
+// ---- the header icon and the sheet ----
 
-// The dashboard's slim bar (under Sounds, its height): how many are open and the oldest; a tap opens the whole list in a
-// sheet, + opens it on the add field. Nothing at all unless the server said this is the owner and answered.
+// The header's icon next to the bell: how many are open (its badge, warm once they're due); a tap opens the whole list
+// in a sheet (its add field there). Nothing at all unless the server said this is the owner and answered.
 // wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the place; force: it
 // surely is the owner's, whatever the remembered shape says
-export function RemindersBar({ rm, wait = false, force = false, onOpen }) {
-  if (!rm.on) return wait ? <MiniBarSkeleton label="Reminders" force={force} /> : null
+export function RemindersIcon({ rm, wait = false, force = false, onOpen, className = '' }) {
+  if (!rm.on) return wait ? <HeadIconSkeleton force={force} className={className} /> : null
   const items = rm.data.items
   const n = items.length
   return (
-    <MiniBar
-      label="Reminders"
+    <HeadIcon
+      className={className}
+      label={n ? `Reminders, ${n} open${items[0] ? `: ${items[0].text}` : ''}` : 'Reminders, none left'}
       icon={ListTodo}
-      value={n ? `${n} open` : 'none left'}
-      detail={items[0]?.text}
+      count={n}
       warm={n > 0 && rm.data.due}
       onOpen={() => onOpen()}
-      onAdd={() => onOpen('add')}
-      openLabel={`Reminders: ${n ? `${n} open` : 'none left'}. Open the list`}
-      addLabel="Add a reminder"
     />
   )
 }
 
-// The whole list in a sheet (opened from the bar): the open ones, the add field, hold to mark one done, the two-tap delete
+// The whole list in a sheet (opened from its header icon): the open ones, the add field, hold to mark one done, the two-tap delete
 export function RemindersSheet({ rm, dlg }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)
