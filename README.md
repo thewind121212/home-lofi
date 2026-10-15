@@ -184,7 +184,7 @@ Change it for your own domain.
 | `NOTIFY_TOKEN` | empty = off | the senders' Bearer token for `/api/notify` (≥ 16 chars; also needs `DATABASE_URL` and `OWNER_USER`), see [Notifications](#notifications-owner-only) |
 | `SERVER_NAME` | `Server` (Coolify: `lenovo`) | this machine's label on the Server card |
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
-| `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://kavita:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
+| `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
 ### Other servers
@@ -446,7 +446,7 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 
 | env | default | what |
 | --- | --- | --- |
-| `KAVITA_URL` | empty = off | where this server reaches Kavita, e.g. `http://kavita:5000` on the same Docker network |
+| `KAVITA_URL` | empty = off | where this server reaches Kavita, e.g. `http://10.10.0.217:5000` (the host's LAN address: Kavita is on its own Coolify network, so its container name doesn't resolve from this one) |
 | `KAVITA_API_KEY` | empty = off | a Kavita user's auth key (Kavita › User settings › API keys). **Only in Coolify's env** (or your `.env`): never in git, a log or a browser |
 | `KAVITA_PUBLIC_URL` | empty = no links | Kavita's address in the owner's browser, e.g. `https://kavita.example.com` (the Continue and Open Kavita links) |
 | `KAVITA_TZ` | `Asia/Ho_Chi_Minh` | Kavita's time zone: it writes read dates in its local time without an offset |
