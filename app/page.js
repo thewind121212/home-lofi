@@ -22,6 +22,7 @@ import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, use
 import { HabitsCard, useHabits } from './habits'
 import { PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingIcon, ReadingSheet, useReading } from './reading'
+import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } from './focus'
 import { QuickPalette } from './quick'
 import { isQuickKey } from '../lib/quick'
 import { LockReminders, RemindersChip, RemindersIcon, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
@@ -117,6 +118,7 @@ export default function Home() {
   const remDlg = useRef(null) // the Reminders, Pins and Reading sheets (their bars under Sounds open them)
   const pinDlg = useRef(null)
   const readDlg = useRef(null)
+  const focusDlg = useRef(null) // the Focus sheet (its header icon, Ambient's chip)
   const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
   const quickDlg = useRef(null) // Quick actions, the ⌘K palette (app/quick.js)
   const weather = useRef(null) // the Weather card's { openDetail } (Quick actions opens its details)
@@ -134,6 +136,7 @@ export default function Home() {
   const habitsLive = useRef(() => {}) // the Habits card too ('habits', and 'hello' after a reconnect)
   const pinsLive = useRef(() => {}) // and Pins ('pins', and 'hello')
   const remindersLive = useRef(() => {}) // and Reminders ('reminders', 'hello')
+  const focusLive = useRef(() => {}) // and Focus ('focus': another device or the server's phase change; 'hello')
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -149,7 +152,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind)))
+  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && kind !== 'focus' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind), focusLive.current(kind)))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -271,6 +274,11 @@ export default function Home() {
   remindersLive.current = reminders.live
   // the books in progress in Kavita (app/reading.js): asked on load, when the tab shows again and when its sheet opens
   const reading = useReading(owner)
+  // the owner's focus session (app/focus.js): the server's, the same on every device; its chip follows to Ambient and
+  // the lock screen while one runs. useFocus's start / pause / resume / skip / stop are the API for anything else
+  const focus = useFocus(owner, cloud.id)
+  focusLive.current = focus.live
+  const focusOn = focusShowing(focus)
   // today's reminders, due and open: they follow to Ambient (its bar, under its clock) and the lock screen too
   const remDue = remindersShowing(reminders)
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
@@ -443,6 +451,7 @@ export default function Home() {
   const openReminders = openSheet(remDlg, '.rm-input')
   const openPins = openSheet(pinDlg, '.pn-input')
   const openReading = openSheet(readDlg)
+  const openFocus = openSheet(focusDlg)
   // Quick actions (app/quick.js): ⌘K / Ctrl+K, "/", the dock's 🔍. Its keys close it again
   // (the field takes the focus inside the key press or tap itself: iOS opens its keyboard only then)
   function toggleQuick() {
@@ -556,12 +565,14 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* the owner's Reminders, Pins and Reading (only while a book is in progress), then the bell: one tight group
-                (their stand-ins while they may be on the way; nothing for guests, so the group goes: empty). Phones: a
-                row of its own under the clock, the icons sharing its width (four don't fit beside the clock) */}
+            {/* the owner's Reminders, Pins, Focus and Reading (only while a book is in progress), then the bell: one tight
+                group (their stand-ins while they may be on the way; nothing for guests, so the group goes: empty).
+                Phones: a row of its own under the clock, the icons sharing its width (five don't fit beside the clock;
+                at 390 px the row has 326 px for 5 × 44 + 4 gaps) */}
             <div className="order-3 min-[900px]:order-none flex items-center gap-2 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1">
               <RemindersIcon rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+              <FocusIcon fc={focus} wait={!cloud.known || (owner && focus.pending)} force={owner} onOpen={openFocus} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               {hub.on ? (
                 <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />
@@ -615,10 +626,15 @@ export default function Home() {
 
       {softLock && (
         <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || lockNote) && <div className="flex flex-col items-center gap-2">{remDue && <LockReminders rm={reminders} />}{lockNote && <LockNotices notes={lockNote} now={tNow} />}</div>}>
-          {(set.lockMusic !== 'hide' || snd.on) && (
+          {(set.lockMusic !== 'hide' || snd.on || focusOn) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
-              {snd.on && <SoundsChip snd={snd} mix={set.sounds} className="glass-panel h-9 px-3.5 rounded-full" />}
+              {(snd.on || focusOn) && (
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {focusOn && <LockFocus fc={focus} />}
+                  {snd.on && <SoundsChip snd={snd} mix={set.sounds} className="glass-panel h-9 px-3.5 rounded-full" />}
+                </div>
+              )}
             </div>
           )}
         </LockScreen>
@@ -640,7 +656,7 @@ export default function Home() {
           shows: the tap that brings the bar back is swallowed (and the bar's guard holds a quick second one) */}
       {view.catcher && <div className={`fixed inset-0 z-[15] ${barSettling ? 'pointer-events-none' : ''}`} onClick={leaveAmbient} aria-hidden="true" />}
       {view.bar !== 'none' && (
-        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} focus={focusOn && <FocusChip fc={focus} onOpen={openFocus} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
       {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings, 🔍 Quick actions (how a
           phone opens it: no keyboard there). In Ambient (the
@@ -671,6 +687,7 @@ export default function Home() {
       <RemindersSheet rm={reminders} dlg={remDlg} />
       <PinsSheet pn={pins} dlg={pinDlg} />
       <ReadingSheet rd={reading} dlg={readDlg} />
+      <FocusSheet fc={focus} dlg={focusDlg} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
       <QuickPalette dlg={quickDlg} ctx={quick} />
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
@@ -1106,14 +1123,14 @@ function LockScreen({ onUnlock, set, update, full, screen, notices, children }) 
   )
 }
 
-// Ambient's slim bar: music (MiniPlayer) | sounds (mute chip, while they play) | notifications (the newest unread) |
-// weather | time | server. Segments without data are left out; 👁 Show panels and 🔒 Lock are on the dock, bottom right.
+// Ambient's slim bar: music (MiniPlayer) | sounds (mute chip, while they play) | focus (its countdown, while one runs) |
+// notifications (the newest unread) | weather | time | server. Segments without data are left out; 👁 Show panels and 🔒 Lock are on the dock, bottom right.
 // Phones: labels (station, place, date) drop, below 375px the equalizer too, and the server stats get their own row.
 // calm: faded out (and inert: no Tab into an invisible bar), mounted still so it fades back in; settling: just came
 // back, it ignores the pointer for a moment. hover: a ref Home reads, true while the mouse rests on it (it stays then)
 const SEG = 'flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 border-l border-white/10'
 const FIRST_SEG = 'flex items-center gap-1.5 sm:gap-2 pl-0.5 pr-2.5 sm:pr-4' // the music, first: no divider before it
-function AmbientBar({ now, wx, priv, mini, sounds, notice, reminders, calm, settling, barRef, hover }) {
+function AmbientBar({ now, wx, priv, mini, sounds, notice, reminders, focus, calm, settling, barRef, hover }) {
   const { unit, clock } = useContext(Prefs)
   const st = priv?.stats
   const ram = pctOf(st?.mem)
@@ -1131,6 +1148,8 @@ function AmbientBar({ now, wx, priv, mini, sounds, notice, reminders, calm, sett
       </div>
 
       {sounds && <div className={SEG}>{sounds}</div>}
+      {/* the focus session's countdown (app/focus.js FocusChip): only while one runs */}
+      {focus && <div className={SEG}>{focus}</div>}
 
       {/* the newest unread notification (app/notify.js AmbientChip): only while there is one */}
       {notice && <div className={SEG}>{notice}</div>}

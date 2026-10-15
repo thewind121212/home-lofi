@@ -8,4 +8,7 @@ export async function register() {
   // lib/reminders-nudge.js)
   const { startMorning } = await import('./lib/morning-summary.js')
   startMorning()
+  // and the focus sessions' phase changes, on the second (lib/focus-ticker.js): the push when a focus phase ends
+  const { startFocus } = await import('./lib/focus-ticker.js')
+  startFocus()
 }
