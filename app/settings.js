@@ -437,9 +437,10 @@ export function Settings({ dlg, set, update, reset, sync, notify = false }) {
   )
 }
 
-// The owner's morning summary switch (lib/morning.js: at 06:00 one notice with the weather, reminders, routines and
-// servers; off: Reminders' own notice, only when some are open). Kept on the server (its ticker reads it), so it's
-// asked for each time the panel opens; hidden when the server says it isn't the owner's or the hub is off (404 / 403).
+// The owner's daily summaries switch (lib/morning.js: at 06:00, 13:00 and 18:00 one notice with the weather,
+// reminders, routines and servers; off: only Reminders' own 06:00 notice, when some are open). Kept on the server (its
+// ticker reads it), so it's asked for each time the panel opens; hidden when the server says it isn't the owner's or
+// the hub is off (404 / 403).
 // The switch flips at once; the server's answer confirms it, a failure puts it back.
 const MORNING_URL = '/api/private/settings/morning'
 async function morningApi(method, body) {
@@ -455,7 +456,7 @@ async function morningApi(method, body) {
   return j
 }
 function MorningSummary({ dlg }) {
-  const [st, setSt] = useState(null) // { morning, at, tz }, null while asking
+  const [st, setSt] = useState(null) // { morning, at, times, tz }, null while asking
   const [off, setOff] = useState(false) // not the owner's / the hub is off: no switch
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
@@ -490,6 +491,8 @@ function MorningSummary({ dlg }) {
     setBusy(false)
   }
   const at = st?.at ?? '06:00'
+  const times = st?.times?.length ? st.times : [at]
+  const when = times.length > 1 ? `${times.slice(0, -1).join(', ')} and ${times.at(-1)}` : times[0]
   return (
     <label className={`flex items-start gap-3 ${st ? 'cursor-pointer' : ''}`} aria-busy={busy || !st}>
       <input type="checkbox" role="switch" checked={Boolean(st?.morning)} disabled={!st || busy} onChange={flip} className="peer sr-only" />
@@ -498,14 +501,14 @@ function MorningSummary({ dlg }) {
         className="relative mt-0.5 w-9 h-5 shrink-0 rounded-full border border-white/10 bg-white/10 transition-colors peer-checked:bg-lofi-primary peer-checked:border-transparent peer-disabled:opacity-60 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-lofi-primary after:absolute after:top-0.5 after:left-0.5 after:w-3.5 after:h-3.5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"
       />
       <span className="text-xs text-lofi-text">
-        Morning summary
+        Daily summaries
         <span className="block text-[11px] text-lofi-muted" aria-live="polite">
           {err ? (
             <span className="text-red-300">{err}</span>
           ) : !st ? (
             'Asking the server…'
           ) : st.morning ? (
-            `Every day at ${at}, one notice: the weather, your reminders, today's routines and the servers.`
+            `Every day at ${when}: the weather, your reminders, the routines left and the servers.`
           ) : (
             `Off: at ${at} only a reminders notice, when some are open.`
           )}

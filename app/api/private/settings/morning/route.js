@@ -1,17 +1,18 @@
 import { notifyOn, sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { fmtMin } from '../../../../../lib/habits.js'
 import { habitsStore } from '../../../../../lib/habits-store.js'
-import { MORNING_AT, cleanPrefs } from '../../../../../lib/morning.js'
+import { MORNING_AT, SLOTS, cleanPrefs } from '../../../../../lib/morning.js'
 import { zoneOf } from '../../../../../lib/reminders.js'
 import { remindersStore } from '../../../../../lib/reminders-store.js'
 
-// The owner's morning summary switch (Settings › Notifications; the summary itself: lib/morning.js and its sender
+// The owner's daily summaries switch (Settings › Notifications; the summaries themselves: lib/morning.js and their sender
 // lib/morning-summary.js), in the owner-only zone like the notifications next door (lib/gate.js ownerOf: the proxy's
 // /api/private/settings location, Authelia login included). It's a notice of the hub, so it's off (404) whenever the
 // hub is (lib/gate.js notifyOn), and the Settings sheet shows no switch then. Kept in the database
-// (lib/reminders-store.js prefs), not in the browser's settings: the server's ticker reads it at 06:00.
-//   GET                   -> { morning (on: the summary; off: Reminders' own notice, only with something open), at
-//                              ('06:00'), tz (the owner's zone: the Habits doc's) }
+// (lib/reminders-store.js prefs), not in the browser's settings: the server's ticker reads it each time.
+//   GET                   -> { morning (on: the three summaries; off: only Reminders' own 06:00 notice, with something
+//                              open), at ('06:00': the morning one), times (['06:00', '13:00', '18:00']), tz (the
+//                              owner's zone: the Habits doc's) }
 //   PUT { morning }       on / off -> the same (another tab's sheet asks again each time it opens)
 // 404 = off / not set up, 403 = someone else, 400 = a bad body ({ error, field }), 503 = database unreachable.
 const HEADERS = { 'cache-control': 'no-store, private' }
@@ -21,7 +22,7 @@ const owner = (request) => (notifyOn() ? syncOwner(request) : 404)
 
 async function state(who, prefs) {
   const [p, doc] = await Promise.all([prefs ?? remindersStore().prefs(who), habitsStore().getDoc(who)])
-  return { morning: p.morning, at: fmtMin(MORNING_AT), tz: zoneOf(doc) }
+  return { morning: p.morning, at: fmtMin(MORNING_AT), times: SLOTS.map((s) => fmtMin(s.at)), tz: zoneOf(doc) }
 }
 
 export async function GET(request) {
