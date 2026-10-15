@@ -472,6 +472,26 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 - `GET /api/private/settings/reading/cover?id=<series>`: the cover through this server (only for a book on the list,
   a picture of 3 MB at most, `private` cache). The key only buys a short-lived token (`lib/kavita.js`), kept in memory.
 
+### Focus (owner only)
+
+A small Pomodoro that is **the same on every device**: a timer icon next to the bell (a ring fills as the phase goes:
+the accent for focus, green for a break, grey while paused). A tap opens a sheet: the big countdown, **25 / 5** or
+**50 / 10** to start, Pause / Resume, Skip, Stop, and 🍅 today. Start it on the PC and the phone's icon is already
+counting; pause it on the phone and the PC pauses. While one runs, a countdown chip sits on Ambient's bar and the lock
+screen. Rounds go on (focus, break, focus, …) until stopped; one forgotten for 12 hours ends at its next change.
+
+- The session lives on the server (Postgres, `DATABASE_URL`; tables `focus_sessions`, `focus_days`, `focus_claims`).
+  Every answer carries the server's clock, and pages count down with it, never with their own, so all devices show the
+  same mm:ss. Each change goes out on the live stream (`focus`), so other open devices follow within a second.
+- The phase changes are the server's (`lib/focus-ticker.js`, a timer to the second plus a check each minute): a focus
+  that runs out counts 🍅, the break starts by itself, and a notice goes to the hub and as a push to your phones
+  (*Focus done · 5 min break*, *Break over · back to focus*), even with every page closed. Each change is claimed once
+  in the database, so a restart or a second server never counts or buzzes twice. Pages on screen chime softly.
+- `GET /api/private/settings/focus` (owner, like the settings next door) → `{ session, today: { day, n }, now, tz,
+  minute, presets }`; `POST { action: 'start', preset: '25/5' | '50/10' }`, `{ action: 'pause' | 'resume' | 'skip' |
+  'stop' }` → the same (409 with it when the action makes no sense now).
+- `FOCUS_TEST_MINUTE_MS` (1000–59999): a minute this long, for checking a phase's end locally. Never set it in production.
+
 ### Tavarian player
 
 Optional, server side of the music card's **Player** tab: a station inside [Tavarian](https://tavarian.wliafdew.dev)

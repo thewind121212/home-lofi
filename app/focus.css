@@ -1,0 +1,55 @@
+/* The Focus sheet (app/focus.js): the big countdown, the phase, the presets or the controls. The page's own tokens;
+   Habits' pieces (.hb-iconbtn, .hb-note) as they are; fc- keeps the rest to itself. A break is a calm green (the
+   emerald the status lines use for "up"), a focus the accent. */
+.fc { display: flex; flex-direction: column; gap: 16px; }
+.fc-head { display: flex; align-items: center; gap: 12px; }
+.fc-mark { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
+.fc-title { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.fc-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
+.fc-sub { margin-top: 2px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+
+/* the countdown: one big line, the phase under it, a thin bar for how far it's gone */
+.fc-clock {
+  --fc-tone: var(--color-lofi-primary);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 16px 16px; border-radius: 20px;
+  border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.45);
+}
+.fc-clock.is-break { --fc-tone: #34d399; }
+.fc-clock.is-paused, .fc-clock.is-idle { --fc-tone: var(--color-lofi-muted); }
+.fc-time {
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-weight: 700; font-size: clamp(3.5rem, 16vw, 4.5rem); line-height: 1;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: #fff;
+}
+.fc-clock.is-idle .fc-time { color: rgb(255 255 255 / 0.35); }
+.fc-clock.is-paused .fc-time { color: rgb(255 255 255 / 0.6); }
+.fc-phase { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; color: var(--fc-tone); }
+.fc-clock.is-idle .fc-phase { color: var(--color-lofi-muted); }
+.fc-track { position: relative; width: 100%; max-width: 16rem; height: 4px; border-radius: 999px; overflow: hidden; background: rgb(255 255 255 / 0.08); }
+.fc-track > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--fc-tone); transition: width 0.7s linear; }
+
+/* idle: the two presets, side by side */
+.fc-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fc-preset {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px; border-radius: 16px; cursor: pointer;
+  border: 1px solid rgb(255 138 92 / 0.35); background: rgb(255 138 92 / 0.1); color: #fff; transition: background-color 0.2s, border-color 0.2s, transform 0.15s;
+}
+.fc-preset:hover { background: rgb(255 138 92 / 0.2); border-color: rgb(255 138 92 / 0.6); }
+.fc-preset:active { transform: scale(0.97); }
+.fc-preset-n { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 22px; font-weight: 700; color: var(--color-lofi-primary); }
+.fc-preset-n small { font-size: 14px; font-weight: 400; color: #34d399; }
+.fc-preset-l { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); }
+
+/* running: Pause / Resume (the main one), Skip, Stop */
+.fc-controls { display: flex; gap: 8px; }
+.fc-main, .fc-btn {
+  height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 14px; cursor: pointer;
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; transition: background-color 0.2s, border-color 0.2s, color 0.2s, transform 0.15s;
+}
+.fc-main { flex: 1.4; border: 1px solid rgb(255 138 92 / 0.5); background: var(--color-lofi-primary); color: var(--color-lofi-base); font-weight: 700; }
+.fc-main:hover { filter: brightness(1.08); }
+.fc-btn { flex: 1; border: 1px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.5); color: var(--color-lofi-text); }
+.fc-btn:hover { border-color: rgb(255 138 92 / 0.45); color: var(--color-lofi-primary); }
+.fc-main:active, .fc-btn:active { transform: scale(0.96); }
+.fc-main:focus-visible, .fc-btn:focus-visible, .fc-preset:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+
+.fc-foot { margin: 0; text-align: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); }
