@@ -494,7 +494,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   // to ask for a Spotify song's cover; it is set again when the cover arrives. No cover (yet): the station's own
   // picture, never an empty list (iOS then shows its blank disc and may keep the last song's picture)
   const art = useArt(listening ? song : null)
-  const who = (Array.isArray(song?.artists) && song.artists.length ? song.artists.map(plain).filter(Boolean).join(', ') : plain(song?.artist)) || 'Home station'
+  const who = artistsOf(song) || 'Home station'
   useEffect(() => {
     const ms = navigator.mediaSession
     if (!ms || !listening || mediaSessionOwner() !== 'tavarian') return
@@ -1425,7 +1425,7 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
           <p ref={title} onClick={song ? () => setCard({ now: true }) : undefined} className={`text-base font-medium text-white line-clamp-2 break-words ${song ? 'cursor-pointer hover:text-lofi-primary transition-colors' : ''}`} title={plain(song?.title) || undefined}>
             {plain(song?.title) || (info.key === 'empty' ? 'Nothing queued' : info.key === 'stopped' ? `${items.length} in the queue` : 'Home station')}
           </p>
-          {!(song && twoLines) && <p className="text-xs text-lofi-muted truncate">{song ? 'Tavarian · home station' : owner ? 'Add a song to start' : 'Nothing on the home station right now'}</p>}
+          {!(song && twoLines) && <p className="text-xs text-lofi-muted truncate">{song ? artistsOf(song) || '\u00a0' : owner ? 'Add a song to start' : 'Nothing on the home station right now'}</p>}
           {song && (
             <div className="mt-1.5 flex items-center gap-2 text-[10px] font-mono text-lofi-muted tabular-nums">
               <span>{mmss(pos)}</span>
@@ -1563,6 +1563,9 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
     </>
   )
 }
+
+// who sings it: its artists, or its one artist ('' when it has none)
+const artistsOf = (song) => (Array.isArray(song?.artists) && song.artists.length ? song.artists.map(plain).filter(Boolean).join(', ') : plain(song?.artist)) || ''
 
 // a Tavarian song in the shared song card: its title, artists, album, its cover (a Spotify song's fetched one too) and
 // its link (the Spotify track or the video)
@@ -1820,7 +1823,7 @@ function QueueView({ p, owner, ops, picks = [], onAdd }) {
     <div ref={scope} className="relative">
       {owner && (
         <button onClick={onAdd} className="w-full h-11 mb-3 rounded-2xl border border-dashed border-lofi-primary/50 bg-lofi-primary/10 text-lofi-primary text-sm font-bold flex items-center justify-center gap-2 hover:bg-lofi-primary/20 transition-colors">
-          <i className="fa-solid fa-plus" aria-hidden="true" /> Add songs <span className="font-normal text-xs text-lofi-muted max-sm:hidden">search · paste a link · import a playlist</span>
+          <i className="fa-solid fa-plus" aria-hidden="true" /> Add songs
         </button>
       )}
       {song && (
@@ -2471,7 +2474,7 @@ export function PlayerMini({ p, owner, lock, box, eq, onQueue }) {
       {mounted && song && art && <FadeImg key={art} src={art} className={`${lock ? 'w-11 h-11 rounded-xl' : 'max-sm:hidden w-8 h-8 rounded-lg'} object-cover shrink-0 ${p.state?.status === 'playing' ? '' : 'opacity-70'}`} />}
       <span className={`min-w-0 font-sans ${lock ? 'max-w-52' : 'max-sm:hidden max-w-40'}`}>
         <span className="block text-xs text-white truncate">{plain(song?.title) || 'Home station'}</span>
-        <span className="block text-[11px] text-lofi-muted truncate">{p.state?.status === 'playing' ? 'Tavarian · home station' : status}</span>
+        <span className="block text-[11px] text-lofi-muted truncate">{p.state?.status === 'playing' ? artistsOf(song) || 'Home station' : status}</span>
       </span>
       {eq}
       {owner && song && (
