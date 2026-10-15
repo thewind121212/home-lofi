@@ -94,6 +94,7 @@ html[data-sk-td-none] .sk-td-list { display: none; }
   font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; animation: rm-pop-in 0.35s cubic-bezier(0.2, 0.9, 0.2, 1) both;
 }
 .rm-pill:hover { background: rgb(42 42 74 / 0.98); }
+.rm-pill.is-glow { animation: rm-glow 0.85s ease-in-out 3; } /* now and then, tucked (NUDGE_EVERY): three soft pulses */
 .rm-pill.is-leaving { animation: rm-pop-out 0.36s cubic-bezier(0.4, 0, 1, 1) forwards; pointer-events: none; }
 /* while it floats over the bottom of the page, the page gets that much more room at its end (app/reminders.js sets
    --rm-pop-h: the window's bottom up to its top), so the last cards can be scrolled out from under it */
@@ -104,6 +105,7 @@ html[data-rm-pop] body { padding-bottom: var(--rm-pop-h, 0px); }
 @keyframes rm-pop-out { to { opacity: 0; transform: translateY(14px) scale(0.98); } }
 @keyframes rm-leave { 0% { opacity: 1; transform: none; } 45% { opacity: 0; transform: translateX(14px); } 100% { opacity: 0; transform: translateX(14px); grid-template-rows: 0fr; } }
 @keyframes rm-leave-col { 0% { opacity: 1; transform: none; } 45% { opacity: 0; transform: translateX(14px); } 100% { opacity: 0; transform: translateX(14px); grid-template-rows: 0fr; margin-bottom: -8px; } }
+@keyframes rm-glow { 50% { box-shadow: 0 10px 28px rgb(0 0 0 / 0.45), 0 0 0 4px rgb(255 138 92 / 0.28), 0 0 30px rgb(255 138 92 / 0.45); border-color: rgb(255 138 92 / 0.8); } }
 @keyframes rm-nudge { 0%, 86%, 100% { transform: rotate(0); } 89% { transform: rotate(14deg); } 93% { transform: rotate(-12deg); } 97% { transform: rotate(6deg); } }
 
 /* reduced motion: no motion (the page's switch, or the system's) */

@@ -6,8 +6,9 @@
 //   to mark one done, and a quiet two-tap delete for a mistaken entry (not "done": it never was).
 // - The pop-up: from 06:00 (the server's clock in the owner's zone: its answer says `due`; the page never decides by
 //   the device's clock) while anything is open, a panel floats over the dashboard (bottom left; on a phone beside the
-//   dock). It has no close button: it goes when the last one is held done. It can be tucked into a pill for a while
-//   (TUCK_MS) or until the next load, never dismissed.
+//   dock). It has no close button: it goes when the last one is held done. It can be tucked into a pill, never dismissed:
+//   tucked, it stays a pill (across reloads, on this device) for the rest of the day, unless a new reminder comes
+//   (lib/reminders.js tuckHolds). The next morning it opens again. The pill glows now and then (NUDGE_EVERY).
 // - Done is a hold (Habits' ring, app/habits.js HoldRing: keyboard Space / Enter held, a buzz, reduced motion kept),
 //   then the row folds away; Undo right after (UNDO_MS).
 // - The owner's other tabs follow on the live stream ('reminders': pull).
@@ -17,11 +18,12 @@ import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } fr
 import { HoldRing } from './habits'
 import { MiniBar, MiniBarSkeleton } from './minibar'
 import { localNow } from '../lib/habits'
-import { MAX_TEXT, UNDO_MS, carried } from '../lib/reminders'
+import { MAX_TEXT, TUCK_KEY, UNDO_MS, carried, tuckHolds } from '../lib/reminders'
 import { closeDialog, motionOff, useStillPage } from './settings'
 
 const URL_ = '/api/private/settings/reminders'
-const TUCK_MS = 10 * 60_000 // tucked into its pill, the pop-up opens again after this
+const NUDGE_EVERY = 60 * 60_000 // tucked into its pill: it glows this often, so it's not forgotten
+const NUDGE_MS = 2_600 // (that glow's length: app/reminders.css rm-glow)
 const LEAVE_MS = 420 // a row folding away
 const RETRY_MS = [3_000, 10_000, 30_000, 60_000] // a failed first load, tried again (then every minute)
 const still = () => motionOff() || matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -36,7 +38,7 @@ export function useReminders(owner, clientId) {
   const [tried, setTried] = useState(false) // a load was tried (so a failed one ends the skeleton)
   const [note, setNote] = useState(null)
   const [undoing, setUndoing] = useState(null) // { item, until }: the Undo bar
-  const [tucked, setTucked] = useState(false) // in memory only: a reload opens it again
+  const [tuck, setTuck] = useState(null) // { day, ids }: tucked that day with those open (kept on this device)
   const skew = useRef(0) // the server's clock minus this device's
   const api = useRef({})
   const seq = useRef({ sent: 0, shown: 0, at: 0 }) // an older answer landing later is out of date
@@ -145,11 +147,27 @@ export function useReminders(owner, clientId) {
     const t = setTimeout(() => setUndoing(null), Math.max(0, undoing.until - Date.now()))
     return () => clearTimeout(t)
   }, [undoing])
+  // the tuck as this device keeps it (and as another tab of it changes it)
   useEffect(() => {
-    if (!tucked) return
-    const t = setTimeout(() => setTucked(false), TUCK_MS)
-    return () => clearTimeout(t)
-  }, [tucked])
+    const read = () => {
+      try {
+        setTuck(JSON.parse(localStorage.getItem(TUCK_KEY)))
+      } catch {
+        setTuck(null)
+      }
+    }
+    read()
+    const onStore = (e) => (e.key === TUCK_KEY || e.key === null) && read()
+    addEventListener('storage', onStore)
+    return () => removeEventListener('storage', onStore)
+  }, [])
+  const keepTuck = (t) => {
+    setTuck(t)
+    try {
+      if (t) localStorage.setItem(TUCK_KEY, JSON.stringify(t))
+      else localStorage.removeItem(TUCK_KEY)
+    } catch {}
+  }
 
   // what this tab shows until the server answers (the answer replaces it)
   const patch = (fn) => setData((d) => d && { ...d, items: fn(d.items) })
@@ -169,6 +187,7 @@ export function useReminders(owner, clientId) {
   const on = Boolean(owner && data && !off)
   // the pop-up: the server says it's due and something is open (or the last one was just done: its Undo, briefly).
   // All done, it shows open (the "all clear" with its Undo) even when tucked
+  const tucked = Boolean(data) && tuckHolds(tuck, items, data.today)
   const panel = !on || !data.due || (!items.length && !undoing) ? 'none' : tucked && items.length ? 'pill' : 'open'
 
   return {
@@ -206,8 +225,8 @@ export function useReminders(owner, clientId) {
       patch((list) => list.filter((i) => i.id !== item.id))
       write(item.id, null, 'DELETE', { id: item.id }).catch(fail)
     },
-    tuck: () => setTucked(true),
-    untuck: () => setTucked(false),
+    tuck: () => data && keepTuck({ day: data.today, ids: items.map((i) => i.id) }),
+    untuck: () => keepTuck(null),
   }
 }
 
@@ -437,6 +456,18 @@ export function RemindersPopup({ rm, hidden = false }) {
   if (want && kind !== rm.panel) setKind(rm.panel)
   const box = useRef(null)
   const moveFocus = useRef(false) // tucked / opened by its own button: the focus follows to the other one
+  const [glow, setGlow] = useState(false) // the pill's now-and-then glow
+  const pill = shown && kind === 'pill' && !leaving
+  useEffect(() => {
+    if (!pill || still()) return
+    let off = 0
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      setGlow(true)
+      off = setTimeout(() => setGlow(false), NUDGE_MS)
+    }, NUDGE_EVERY)
+    return () => (clearInterval(t), clearTimeout(off), setGlow(false))
+  }, [pill])
   useEffect(() => {
     if (want) return setShown(true), setLeaving(false)
     if (!shown) return
@@ -473,7 +504,7 @@ export function RemindersPopup({ rm, hidden = false }) {
   const n = items.length
   if (kind === 'pill')
     return (
-      <button ref={box} type="button" className={`rm-pill${leaving ? ' is-leaving' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`${n} reminder${n === 1 ? '' : 's'} left: show them`}>
+      <button ref={box} type="button" className={`rm-pill${leaving ? ' is-leaving' : glow ? ' is-glow' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`${n} reminder${n === 1 ? '' : 's'} left: show them`}>
         <BellRing size={15} strokeWidth={2} aria-hidden="true" />
         <span>{n} reminder{n === 1 ? '' : 's'}</span>
         <ChevronUp size={15} aria-hidden="true" />
@@ -488,7 +519,7 @@ export function RemindersPopup({ rm, hidden = false }) {
           <span className="rm-sub">{n ? `${n} left · hold each when done` : 'all clear'}</span>
         </div>
         {n > 0 && (
-          <button type="button" data-tuck className="hb-iconbtn" aria-label="Tuck away for now (it comes back)" title="Tuck away for now" onClick={() => ((moveFocus.current = true), rm.tuck())}>
+          <button type="button" data-tuck className="hb-iconbtn" aria-label="Tuck away for today (a new reminder opens it again)" title="Tuck away for today" onClick={() => ((moveFocus.current = true), rm.tuck())}>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
         )}
