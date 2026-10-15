@@ -15,7 +15,7 @@
 import './reminders.css'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } from 'lucide-react'
-import { HoldRing } from './habits'
+import { HoldRing, UndoLeft, UndoLine } from './habits'
 import { localNow } from '../lib/habits'
 import { MAX_TEXT, TUCK_KEY, UNDO_MS, carried, tuckHolds } from '../lib/reminders'
 import { closeDialog, motionOff, useStillPage } from './settings'
@@ -300,25 +300,18 @@ function focusOn(row) {
 }
 
 function UndoBar({ rm }) {
-  const [, tick] = useState(0)
   const u = rm.undoing
-  useEffect(() => {
-    if (!u) return
-    const t = setInterval(() => tick((n) => n + 1), 200)
-    return () => clearInterval(t)
-  }, [u])
   if (!u) return null
-  const left = Math.max(0, u.until - Date.now())
   return (
     <div className="hb-undo rm-undo">
       <span className="ic" aria-hidden="true"><Check size={16} strokeWidth={2.4} /></span>
       {/* (the live region is the line that doesn't change: the countdown ticking isn't read out) */}
       <div className="msg">
         <span className="rm-undo-text" role="status">Done: {u.item.text}</span>
-        <small aria-hidden="true">undo for {Math.ceil(left / 1000)}s</small>
+        <small aria-hidden="true">undo for <UndoLeft until={u.until} />s</small>
       </div>
       <button type="button" className="hb-ghost warm" onClick={() => rm.undo()}>Undo</button>
-      <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />
+      <UndoLine key={u.until} until={u.until} total={UNDO_MS} />
     </div>
   )
 }

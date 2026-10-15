@@ -71,7 +71,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
     were signed in before. See [Spotify now playing](#spotify-now-playing).
   - **Player** (`app/player.js`): the home page's own station inside Tavarian (see [Tavarian player](#tavarian-player)),
     live for every visitor: the song's cover tinting the card, its title, a progress bar on Tavarian's clock, plain states
-    (Playing · Paused on Tavarian · Loading next song · Queue is empty · Stopped · Tavarian unreachable · Disconnected —
+    (Playing · Paused · Loading next song · Queue is empty · Stopped · Tavarian unreachable · Disconnected —
     new link needed / Player unavailable · Player not set up; a long title takes two lines), **Up next** (the first two)
     and the last played; *Queue ›* opens the whole list. **One round ▶ / ⏸ button**: for a visitor it listens to the
     station in this tab (at the radio's volume: the same slider and mute) or stops; starting the radio stops it and

@@ -250,6 +250,28 @@ export function useHabits(owner, clientId) {
 
 const CHECK = 'M5 12.5l4.5 4.5L19 7.5' // the check: waiting in the ring, drawn by the hold, then the kept one
 
+// The Undo bars' countdown (here, app/reminders.js, app/pins.js). UndoLine: the line along the bar's foot, drained by
+// the compositor (a CSS animation from what's left to nothing), so it glides at the screen's own frame rate; it was a
+// scaleX React set 5 times a second, a visible stutter, and each step redrew the card under it. Mounted per Undo
+// (key: until). UndoLeft: the "undo for Ns" seconds, ticking on each second's edge, only itself re-drawn.
+export function UndoLine({ until, total }) {
+  const [style] = useState(() => {
+    const left = Math.max(0, until - Date.now())
+    return { '--from': left / total, '--dur': `${left}ms` }
+  })
+  return <span className="bar undo-drain" style={style} aria-hidden="true" />
+}
+export function UndoLeft({ until }) {
+  const [, tick] = useState(0)
+  const left = Math.max(0, until - Date.now())
+  useEffect(() => {
+    if (left <= 0) return
+    const t = setTimeout(() => tick((n) => n + 1), (left % 1000 || 1000) + 10)
+    return () => clearTimeout(t)
+  })
+  return Math.ceil(left / 1000)
+}
+
 // (app/reminders.js holds its reminders done with this same ring: label is its button's name there)
 export function HoldRing({ habit, label = `Hold to keep: ${habit?.name}`, onDone, onHolding = () => {} }) {
   const [p, setP] = useState(0)
@@ -874,9 +896,9 @@ function HabitsBody({ hb }) {
       return !w
     })
   useEffect(() => {
-    const t = setInterval(() => tick((n) => n + 1), hb.undoing ? 200 : 20_000)
+    const t = setInterval(() => tick((n) => n + 1), 20_000)
     return () => clearInterval(t)
-  }, [hb.undoing])
+  }, [])
   useEffect(() => {
     if (!hb.undoing) return
     const t = setTimeout(hb.endUndo, Math.max(0, hb.undoing.until - Date.now()))
@@ -892,7 +914,6 @@ function HabitsBody({ hb }) {
   const kept = due.filter((h) => entry(h.id) && entry(h.id).undoneAt == null).length
   const C = 2 * Math.PI * 13
   const u = hb.undoing && data.habits.find((h) => h.id === hb.undoing.habitId)
-  const left = hb.undoing ? Math.max(0, hb.undoing.until - Date.now()) : 0
   const openRoutines = () => dlg.current?.showModal()
   // the next visit's skeleton: how many routines, the week strip, and this card's height at this window width
   const count = habits.length
@@ -949,10 +970,10 @@ function HabitsBody({ hb }) {
           {/* (the live region is the line that doesn't change: the countdown ticking isn't read out) */}
           <div className="msg">
             <span role="status">{u.name} kept</span>
-            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'}<span aria-hidden="true"> · undo for {Math.ceil(left / 1000)}s</span></small>
+            <small>{data.checkins.find((c) => c.habitId === u.id && c.day === hb.undoing.day)?.late ? 'late, still counts' : 'on time'}<span aria-hidden="true"> · undo for <UndoLeft until={hb.undoing.until} />s</span></small>
           </div>
           <button type="button" className="hb-ghost warm" onClick={() => hb.undo()}>Undo</button>
-          <span className="bar" style={{ transform: `scaleX(${left / UNDO_MS})` }} />
+          <UndoLine key={hb.undoing.until} until={hb.undoing.until} total={UNDO_MS} />
         </div>
       )}
       {hb.note && <p className="hb-note" role="status">{hb.note}</p>}
