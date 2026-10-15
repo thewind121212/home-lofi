@@ -473,6 +473,7 @@ html[data-fade]:not([data-motion='reduce']) {
    better now (the owner, just signed in for the first time on this browser) */
 html:not([data-sk-owner]) .sk-owner:not(.sk-force) { display: none !important; }
 html:not([data-sk-priv]) .sk-priv { display: none !important; }
+html:not([data-sk-reading]) .sk-reading { display: none !important; }
 html[data-sk-priv] .sk-locked { display: none !important; }
 html[data-sk-one-host] .sk-host-table { display: none !important; }
 html[data-sk-one-host] .sk-host-tiles { display: flex !important; }

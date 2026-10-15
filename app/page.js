@@ -21,6 +21,7 @@ import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
 import { PinsBar, PinsSheet, usePins } from './pins'
+import { ReadingBar, ReadingSheet, useReading } from './reading'
 import { LockReminders, RemindersBar, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
@@ -111,8 +112,9 @@ export default function Home() {
   const setDlg = useRef(null)
   const galDlg = useRef(null)
   const sndDlg = useRef(null)
-  const remDlg = useRef(null) // the Reminders and Pins sheets (their bars under Sounds open them)
+  const remDlg = useRef(null) // the Reminders, Pins and Reading sheets (their bars under Sounds open them)
   const pinDlg = useRef(null)
+  const readDlg = useRef(null)
   const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
   const bellRef = useRef(null) // its bell: the inbox hangs under it from sm
   // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
@@ -262,6 +264,8 @@ export default function Home() {
   pinsLive.current = pins.live
   const reminders = useReminders(owner, cloud.id)
   remindersLive.current = reminders.live
+  // the books in progress in Kavita (app/reading.js): asked on load, when the tab shows again and when its sheet opens
+  const reading = useReading(owner)
   // today's reminders, due and open: they follow to Ambient (its bar, under its clock) and the lock screen too
   const remDue = remindersShowing(reminders)
   // opening the inbox reads everything (on every device); the pop-ups go, the inbox has them
@@ -426,6 +430,7 @@ export default function Home() {
   }
   const openReminders = openSheet(remDlg, '.rm-input')
   const openPins = openSheet(pinDlg, '.pn-input')
+  const openReading = openSheet(readDlg)
   function update(patch) {
     const next = { ...set, ...patch }
     setSettings(next)
@@ -534,8 +539,8 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Sounds · Reminders · Pins (owner) · Weather · Hub · Habits (owner) · Services
-            lg (laptops): two columns, Steam + Music + Sounds + Reminders + Pins + Weather on the left, Hub + Habits +
+            phones: one column, Steam · Music · Sounds · Reminders · Pins · Reading (owner) · Weather · Hub · Habits (owner) · Services
+            lg (laptops): two columns, Steam + Music + Sounds + Reminders + Pins + Reading + Weather on the left, Hub + Habits +
               Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
@@ -544,12 +549,13 @@ export default function Home() {
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} stationKnown={stationKnown} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
-            {/* Sounds, and the owner's Reminders and Pins: slim bars like Sounds' (their skeletons while they may be on the
-                way), close together as one stack */}
+            {/* Sounds, and the owner's Reminders, Pins and Reading: slim bars like Sounds' (their skeletons while they may
+                be on the way), close together as one stack. Reading only while a book is in progress */}
             <div className="flex flex-col gap-2">
               <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
               <RemindersBar rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
               <PinsBar pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+              <ReadingBar rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
             </div>
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
@@ -624,6 +630,7 @@ export default function Home() {
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
       <RemindersSheet rm={reminders} dlg={remDlg} />
       <PinsSheet pn={pins} dlg={pinDlg} />
+      <ReadingSheet rd={reading} dlg={readDlg} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
       {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}

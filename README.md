@@ -184,6 +184,7 @@ Change it for your own domain.
 | `NOTIFY_TOKEN` | empty = off | the senders' Bearer token for `/api/notify` (≥ 16 chars; also needs `DATABASE_URL` and `OWNER_USER`), see [Notifications](#notifications-owner-only) |
 | `SERVER_NAME` | `Server` (Coolify: `lenovo`) | this machine's label on the Server card |
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
+| `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
 ### Other servers
@@ -433,6 +434,29 @@ Next to them, the owner gets the active device's **volume** (a slider + %, its n
 same route reads the device (owner-only, never in the public `/api/spotify`), `POST { action: 'volume', percent: 0-100 }`
 sets it, sent once the slider rests for 300 ms. Devices Spotify won't let anyone else set (an iPhone, some speakers)
 show *Volume on <device>* instead.
+
+### Reading (owner only)
+
+Optional. A slim **Reading** bar under Sounds (with the Reminders and Pins bars) for the books you're partway through
+in [Kavita](https://www.kavitareader.com), several at once: `Reading · Dungeon Crawler Carl · 1%`, or
+`Reading · 2 books · Dungeon Crawler Carl 1%` (the latest first). A tap opens them in a sheet: cover, title, a thin
+progress bar, *last read 2 h ago* and **Continue**, which opens Kavita's reader at that book's continue point (epub,
+PDF or page reader) in a new tab. In progress = Kavita's own *On Deck* (started, not finished), minus books not opened
+for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the last list stays, quietly marked.
+
+| env | default | what |
+| --- | --- | --- |
+| `KAVITA_URL` | empty = off | where this server reaches Kavita, e.g. `http://10.10.0.217:5000` (the host's LAN address: Kavita is on its own Coolify network, so its container name doesn't resolve from this one) |
+| `KAVITA_API_KEY` | empty = off | a Kavita user's auth key (Kavita › User settings › API keys). **Only in Coolify's env** (or your `.env`): never in git, a log or a browser |
+| `KAVITA_PUBLIC_URL` | empty = no links | Kavita's address in the owner's browser, e.g. `https://kavita.example.com` (the Continue and Open Kavita links) |
+| `KAVITA_TZ` | `Asia/Ho_Chi_Minh` | Kavita's time zone: it writes read dates in its local time without an offset |
+
+- `GET /api/private/settings/reading` (owner, like the settings next door: needs [Settings sync](#settings-sync-owner-only))
+  → `{ on, books: [{ id, name, pages, pagesRead, percent, readAt, href, seriesHref, cover }], kavita }`; `{ on: false }`
+  without the two vars; 502 when Kavita can't be reached. Kavita's answer is kept 2 minutes for every tab; the page asks
+  on load, when it shows again or regains focus, and when the sheet opens (never on a timer).
+- `GET /api/private/settings/reading/cover?id=<series>`: the cover through this server (only for a book on the list,
+  a picture of 3 MB at most, `private` cache). The key only buys a short-lived token (`lib/kavita.js`), kept in memory.
 
 ### Tavarian player
 

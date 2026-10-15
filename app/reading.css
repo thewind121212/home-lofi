@@ -1,0 +1,45 @@
+/* The Reading sheet (app/reading.js): the books in progress, one row each. The page's own tokens; rd- keeps it to
+   itself, like Pins' pn-. Every row is the same height (the cover's), whatever the title's length. */
+.rd { display: flex; flex-direction: column; gap: 14px; }
+.rd-head { display: flex; align-items: center; gap: 12px; }
+.rd-mark { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
+.rd-title { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+.rd-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
+.rd-sub { margin-top: 2px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+
+.rd-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rd-row {
+  display: flex; align-items: center; gap: 12px; min-width: 0; padding: 8px 10px 8px 8px; border-radius: 16px;
+  border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.4); transition: border-color 0.25s, background-color 0.25s;
+}
+.rd-row:hover, .rd-row:focus-within { border-color: rgb(255 138 92 / 0.35); background: rgb(26 26 46 / 0.6); }
+
+/* a book's cover, 2 : 3; none or broken: a tile in the book's colour */
+.rd-cover { position: relative; width: 44px; height: 66px; flex: none; border-radius: 8px; overflow: hidden; background: var(--color-lofi-surface); box-shadow: 0 4px 12px rgb(0 0 0 / 0.3); }
+.rd-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rd-plain { display: grid; place-items: center; color: rgb(255 255 255 / 0.85); background: linear-gradient(160deg, hsl(var(--rd-h, 20) 45% 38% / 0.65), rgb(42 42 74 / 0.95)); }
+
+.rd-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.rd-name { font-size: 14px; line-height: 18px; font-weight: 500; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-prog { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.rd-track { position: relative; flex: 1; min-width: 0; height: 4px; border-radius: 999px; overflow: hidden; background: rgb(255 255 255 / 0.1); }
+.rd-track > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--color-lofi-primary); min-width: 4px; }
+.rd-pct { flex: none; min-width: 3.2ch; text-align: right; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-text); }
+.rd-when { height: 14px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; line-height: 14px; color: var(--color-lofi-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Continue: the row's one action (44 px tall on touch) */
+.rd-go {
+  height: 32px; flex: none; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 10px; text-decoration: none;
+  border: 1px solid rgb(255 138 92 / 0.45); background: rgb(255 138 92 / 0.14); color: var(--color-lofi-primary);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; transition: background-color 0.2s, transform 0.15s;
+}
+.rd-go:hover { background: rgb(255 138 92 / 0.24); }
+.rd-go:active { transform: scale(0.96); }
+.rd-go:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+@media (hover: none) { .rd-go { height: 40px; } }
+
+.rd-empty { margin: 0; border-radius: 16px; border: 1px dashed rgb(255 138 92 / 0.35); padding: 14px 16px; font-size: 13px; color: var(--color-lofi-text); }
+.rd-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.rd-note { margin-right: auto; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+.rd-open { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); text-decoration: none; transition: color 0.2s; }
+.rd-open:hover, .rd-open:focus-visible { color: var(--color-lofi-primary); }

@@ -32,6 +32,12 @@ services:
       TAVARIAN_TOKEN: ${TAVARIAN_TOKEN:-}
       # the home WARP proxy: the direct route to Tavarian (OVH) loses packets at times. `off` = direct
       TAVARIAN_PROXY: ${TAVARIAN_PROXY:-http://10.10.0.217:1082}
+      # the owner's Reading bar: books in progress in Kavita, see README "Reading" (off until KAVITA_API_KEY is set).
+      # Kavita is on its own Coolify network (the name `kavita` doesn't resolve from here): the host's LAN address
+      KAVITA_URL: ${KAVITA_URL:-http://10.10.0.217:5000}
+      KAVITA_API_KEY: ${KAVITA_API_KEY:-}
+      KAVITA_PUBLIC_URL: ${KAVITA_PUBLIC_URL:-https://kavita.wliafdew.dev}
+      KAVITA_TZ: ${KAVITA_TZ:-Asia/Ho_Chi_Minh}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)
       DATABASE_URL: ${DATABASE_URL:-}
       OWNER_USER: ${OWNER_USER:-}
