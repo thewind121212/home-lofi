@@ -9,6 +9,7 @@
 //   dock). It has no close button: it goes when the last one is held done. It can be tucked into a pill, never dismissed:
 //   tucked, it stays a pill (across reloads, on this device) for the rest of the day, unless a new reminder comes
 //   (lib/reminders.js tuckHolds). The next morning it opens again. The pill glows now and then (NUDGE_EVERY).
+//   Before 06:00 anything still open shows as the pill (a tap opens the panel on this tab; it doesn't open by itself).
 // - Done is a hold (Habits' ring, app/habits.js HoldRing: keyboard Space / Enter held, a buzz, reduced motion kept),
 //   then the row folds away; Undo right after (UNDO_MS).
 // - The owner's other tabs follow on the live stream ('reminders': pull).
@@ -38,6 +39,7 @@ export function useReminders(owner, clientId) {
   const [note, setNote] = useState(null)
   const [undoing, setUndoing] = useState(null) // { item, until }: the Undo bar
   const [tuck, setTuck] = useState(null) // { day, ids }: tucked that day with those open (kept on this device)
+  const [peek, setPeek] = useState(false) // before 06:00: the pill opened by hand on this tab
   const skew = useRef(0) // the server's clock minus this device's
   const api = useRef({})
   const seq = useRef({ sent: 0, shown: 0, at: 0 }) // an older answer landing later is out of date
@@ -184,10 +186,11 @@ export function useReminders(owner, clientId) {
   }
   const items = data?.items ?? []
   const on = Boolean(owner && data && !off)
-  // the pop-up: the server says it's due and something is open (or the last one was just done: its Undo, briefly).
-  // All done, it shows open (the "all clear" with its Undo) even when tucked
+  // the pop-up: something is open (or the last one was just done: its Undo, briefly). Once the server says it's due
+  // (06:00) it opens by itself; all done, it shows open (the "all clear" with its Undo) even when tucked. Before
+  // 06:00 it's the pill, open only when tapped here
   const tucked = Boolean(data) && tuckHolds(tuck, items, data.today)
-  const panel = !on || !data.due || (!items.length && !undoing) ? 'none' : tucked && items.length ? 'pill' : 'open'
+  const panel = !on || (!items.length && !undoing) ? 'none' : !data.due ? (peek ? 'open' : items.length ? 'pill' : 'none') : tucked && items.length ? 'pill' : 'open'
 
   return {
     on,
@@ -224,8 +227,9 @@ export function useReminders(owner, clientId) {
       patch((list) => list.filter((i) => i.id !== item.id))
       write(item.id, null, 'DELETE', { id: item.id }).catch(fail)
     },
-    tuck: () => data && keepTuck({ day: data.today, ids: items.map((i) => i.id) }),
-    untuck: () => keepTuck(null),
+    // (before 06:00 a tuck isn't kept: the morning still opens it)
+    tuck: () => data && (data.due ? keepTuck({ day: data.today, ids: items.map((i) => i.id) }) : setPeek(false)),
+    untuck: () => (setPeek(true), keepTuck(null)),
   }
 }
 
