@@ -1,7 +1,7 @@
 'use client'
 
 // Reading: the books the owner is partway through in Kavita (several at once). An icon next to the header's bell, with
-// Reminders' and Pins' (its badge: how many books); a tap opens them in a sheet: cover, title, how far, when last read, and Continue (Kavita's reader at that book's continue point,
+// Reminders' and Pins' (a ring round it: how far the latest one is); a tap opens them in a sheet: cover, title, how far, when last read, and Continue (Kavita's reader at that book's continue point,
 // in a new tab). Rules in lib/reading.js; the route is app/api/private/settings/reading (owner-only: guests get
 // 404 / 403 and never see the icon), covers come through /reading/cover (Kavita's key never reaches the browser).
 // - Nothing in progress, or Kavita not set up: no icon at all. Kavita unreachable: the last list stays (the sheet says
@@ -93,13 +93,14 @@ export function useReading(owner) {
 
 // ---- the header icon ----
 
-// The header's icon next to the bell: how many books are in progress (its badge); a tap opens them all. Nothing in
+// The header's icon next to the bell: a ring around it for how far the latest book is (no badge: a count of books
+// never wants doing; its label says how many); a tap opens them all. Nothing in
 // progress: nothing. wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the
 // place (where it showed last time); force: it surely is the owner's
 export function ReadingIcon({ rd, wait = false, force = false, onOpen, className = '' }) {
   const label = iconLabel(rd.books)
   if (!label) return wait && !rd.on ? <HeadIconSkeleton force={force} className={`sk-reading ${className}`} /> : null
-  return <HeadIcon className={className} label={label} icon={BookOpen} count={rd.books.length} onOpen={() => onOpen()} />
+  return <HeadIcon className={className} label={label} icon={BookOpen} ring={rd.books[0].percent} onOpen={() => onOpen()} />
 }
 
 // ---- the sheet ----
