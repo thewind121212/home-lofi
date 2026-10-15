@@ -22,6 +22,8 @@ import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, use
 import { HabitsCard, useHabits } from './habits'
 import { PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingIcon, ReadingSheet, useReading } from './reading'
+import { QuickPalette } from './quick'
+import { isQuickKey } from '../lib/quick'
 import { LockReminders, RemindersChip, RemindersIcon, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
@@ -116,6 +118,8 @@ export default function Home() {
   const pinDlg = useRef(null)
   const readDlg = useRef(null)
   const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
+  const quickDlg = useRef(null) // Quick actions, the ⌘K palette (app/quick.js)
+  const weather = useRef(null) // the Weather card's { openDetail } (Quick actions opens its details)
   const bellRef = useRef(null) // its bell: the inbox hangs under it from sm
   // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
   // .current, so this hands it whichever of the two is open
@@ -182,7 +186,8 @@ export default function Home() {
     document.documentElement.dataset.motion = st.motion === 'reduce' || mq.matches ? 'reduce' : ''
     setNow(new Date())
     const t = setInterval(() => setNow(new Date()), 1000)
-    const onKey = (e) => e.key === 'Escape' && !lockRef.current && leaveAmbient()
+    // (not while a dialog is open: its Esc closes just it, Ambient stays)
+    const onKey = (e) => e.key === 'Escape' && !lockRef.current && !document.querySelector('dialog[open]') && leaveAmbient()
     addEventListener('keydown', onKey)
     return () => {
       clearInterval(t)
@@ -338,7 +343,7 @@ export default function Home() {
   }, [cloud.sure, owner])
 
   function lock() {
-    ;[setDlg.current, galDlg.current, sndDlg.current, inboxDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
+    ;[setDlg.current, galDlg.current, sndDlg.current, inboxDlg.current, quickDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
     document.activeElement?.blur()
     setSoftLock(true)
   }
@@ -386,11 +391,15 @@ export default function Home() {
     // H toggles Ambient, L locks, A opens Sounds, N the notifications (the owner's), Space three times quickly locks too
     // (not while typing, not with a dialog open, not while locked; Space also not on a focused button / link / tab /
     // slider, where it presses that control).
-    // F toggles full screen by the same rules, but on the lock screen too (lib/fullscreen.js: never an unlock)
+    // F toggles full screen by the same rules, but on the lock screen too (lib/fullscreen.js: never an unlock).
+    // ⌘K / Ctrl+K opens Quick actions (or closes it), in a text field too but not over another dialog; "/" opens it
+    // outside a field (lib/quick.js isQuickKey); neither while locked
     let spaces = [] // times of the last Space presses
     const onKey = (e) => {
       const typing = Boolean(e.target.closest?.('input, textarea, select, [contenteditable="true"]'))
-      if (isFullscreenKey(e, { typing, dialog: Boolean(document.querySelector('dialog[open]')) })) return e.preventDefault(), fullscreenApi(document).toggle()
+      const open = document.querySelector('dialog[open]')
+      if (isFullscreenKey(e, { typing, dialog: Boolean(open) })) return e.preventDefault(), fullscreenApi(document).toggle()
+      if (isQuickKey(e, { typing, dialog: Boolean(open), open: open === quickDlg.current, locked: lockRef.current })) return e.preventDefault(), toggleQuick()
       const k = e.key.toLowerCase()
       const space = e.code === 'Space'
       if (k !== 'h' && k !== 'l' && k !== 'a' && k !== 'n' && !space) return
@@ -431,6 +440,12 @@ export default function Home() {
   const openReminders = openSheet(remDlg, '.rm-input')
   const openPins = openSheet(pinDlg, '.pn-input')
   const openReading = openSheet(readDlg)
+  // Quick actions (app/quick.js): ⌘K / Ctrl+K, "/", the dock's 🔍. Its keys close it again
+  function toggleQuick() {
+    const d = quickDlg.current
+    if (!d || lockRef.current) return
+    d.open ? closeDialog(d) : d.showModal()
+  }
   function update(patch) {
     const next = { ...set, ...patch }
     setSettings(next)
@@ -472,6 +487,20 @@ export default function Home() {
     document.addEventListener('visibilitychange', onVis)
     return () => document.removeEventListener('visibilitychange', onVis)
   }, [reduced])
+
+  // what Quick actions can do (app/quick.js quickActions): handed over fresh on every render, read only while it's open
+  const spCtl = useSpotifyControl(applySpotify)
+  const quick = {
+    owner, ambient: Boolean(amb.ambient), enterAmbient, leaveAmbient, lock, full,
+    openSettings: () => setDlg.current.open || setDlg.current.showModal(),
+    scene, openGallery, pickScene, shuffleScene: () => pickScene(randomScene(scene)),
+    openInbox: hub.on ? openInbox : null,
+    snd, mix: set.sounds, setMix, openSounds,
+    music: { source, tune, station, radio: () => music.current?.toggle(), sp: spotify, spAct: spCtl.act, player, tvOn },
+    wx, openWeather: () => weather.current?.openDetail(),
+    rm: reminders, openReminders, pn: pins, openPins, rd: reading, openReading,
+    priv,
+  }
 
   const hour = now?.getHours()
   const [greeting, icon, iconBg] =
@@ -566,7 +595,7 @@ export default function Home() {
               <Hub status={status} priv={priv} privFailed={privFailed} />
             </div>
             <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">
-              <Weather status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
+              <Weather ctl={weather} status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
             </div>
           </div>
           {/* the owner's Habits bar sits on top of the hosted apps, their width (nothing for guests) */}
@@ -607,7 +636,8 @@ export default function Home() {
       {view.bar !== 'none' && (
         <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
-      {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings. In Ambient (the
+      {/* The dock, bottom right. On the dashboard: ⛰ Ambient, 🔒 Lock, ⛶ Full screen, ⚙️ Settings, 🔍 Quick actions (how a
+          phone opens it: no keyboard there). In Ambient (the
           dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
           with the bar (lib/ambient.js), raised above the bar where the two would meet (a phone). Its own key per set:
           it fades in afresh when the set changes */}
@@ -619,6 +649,7 @@ export default function Home() {
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
               {full.ok && <DockButton {...fullButton(full)} />}
               <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
+              <DockButton icon="fa-magnifying-glass" label="Quick actions (⌘K)" title="Quick actions (⌘K or /)" onClick={toggleQuick} />
             </>
           ) : (
             <>
@@ -635,6 +666,7 @@ export default function Home() {
       <PinsSheet pn={pins} dlg={pinDlg} />
       <ReadingSheet rd={reading} dlg={readDlg} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
+      <QuickPalette dlg={quickDlg} ctx={quick} />
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
       {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
       {/* the owner's open reminders from 06:00, floating over the dashboard until each is held done (app/reminders.js) */}
@@ -1217,7 +1249,7 @@ function Music({ ctl, onTune, spotify, onSpotify, owner, wasOwner, tab, pick, st
   )
 }
 
-function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
+function Weather({ ctl, status, setStatus, setWx, cloudLoc, onPick }) {
   const [loc, setLoc] = useState(null)
   const [w, setW] = useState(null)
   const [q, setQ] = useState('')
@@ -1339,6 +1371,9 @@ function Weather({ status, setStatus, setWx, cloudLoc, onPick }) {
   }
 
   const closeDetail = () => closeDialog(dlg.current)
+  useEffect(() => {
+    ctl.current = { openDetail } // (Quick actions)
+  })
 
   function onKeyDown(e) {
     const items = open && res.state === 'ok' ? res.items : []

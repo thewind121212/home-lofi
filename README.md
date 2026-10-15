@@ -11,9 +11,19 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
   the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
   Some scenes have a **day** version that plays from sunrise to sunset at the Weather card's location (see [Scenes](#scenes)).
-- **Dock** (bottom right): on the dashboard ⛰ Ambient (**H**), 🔒 Lock (**L**), ⛶ Full screen (**F**) and ⚙️ Settings;
-  in Ambient 👁 Show panels, 🔒 Lock and ⛶, fading and coming back with Ambient's bar (and raised above the bar where the
+- **Dock** (bottom right): on the dashboard ⛰ Ambient (**H**), 🔒 Lock (**L**), ⛶ Full screen (**F**), ⚙️ Settings and
+  🔍 Quick actions (**⌘K** / **Ctrl+K**); in Ambient 👁 Show panels, 🔒 Lock and ⛶, fading and coming back with Ambient's bar (and raised above the bar where the
   two would meet, as on a phone).
+- **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
+  too, not over another dialog; the same keys close it), **/** outside a field, or 🔍 on the dock (phones). Type a few
+  letters, **Enter** runs the top match, **↑ ↓** move, a click / tap runs a row, **Esc** or the backdrop closes it.
+  Accents and case don't matter ("nhac" finds "nhắc"), a word's start ranks above the inside of a word, actions above
+  apps. Actions: Ambient, Lock, Settings, Full screen, Weather details, play / pause the music (the radio; the owner's
+  Spotify or home station, with ⏭), Sounds (the panel, play / pause, each sound on / off, each preset), the scene
+  gallery, a random scene or any scene by name; the owner also gets Notifications, Reminders, Pins and the books in
+  Reading (Continue in Kavita). Then every app on the Services card (the internal ones when signed in), opening in a
+  new tab. The owner can type **remind buy milk** (or **nhắc mua sữa**) to add a reminder and **pin example.com** to
+  pin a link. Nothing typed: the last few run (this browser), then the most useful. Never while locked.
 - **Full screen**: ⛶ on the dock, beside 🎨 on the lock screen, or **F** anywhere (also locked, where it never counts as
   an unlock; not while typing or with a dialog open). The whole page through the Fullscreen API (webkit's on iPadOS);
   no button where the browser has none (iPhone Safari). Going full screen doesn't wake Ambient's bar.
