@@ -478,7 +478,8 @@ A small Pomodoro that is **the same on every device**: a timer icon next to the 
 the accent for focus, green for a break, grey while paused). A tap opens a sheet: the big countdown, **25 / 5** or
 **50 / 10** to start, Pause / Resume, Skip, Stop, and 🍅 today. Start it on the PC and the phone's icon is already
 counting; pause it on the phone and the PC pauses. While one runs, a countdown chip sits on Ambient's bar and the lock
-screen. Rounds go on (focus, break, focus, …) until stopped; one forgotten for 12 hours ends at its next change.
+screen. Rounds go on (focus, break, focus, …) until stopped; one left alone for 12 hours (no pause, resume or skip)
+ends at its next change.
 
 - The session lives on the server (Postgres, `DATABASE_URL`; tables `focus_sessions`, `focus_days`, `focus_claims`).
   Every answer carries the server's clock, and pages count down with it, never with their own, so all devices show the
@@ -490,7 +491,9 @@ screen. Rounds go on (focus, break, focus, …) until stopped; one forgotten for
 - `GET /api/private/settings/focus` (owner, like the settings next door) → `{ session, today: { day, n }, now, tz,
   minute, presets }`; `POST { action: 'start', preset: '25/5' | '50/10' }`, `{ action: 'pause' | 'resume' | 'skip' |
   'stop' }` → the same (409 with it when the action makes no sense now).
-- `FOCUS_TEST_MINUTE_MS` (1000–59999): a minute this long, for checking a phase's end locally. Never set it in production.
+- `FOCUS_TEST_MINUTE_MS` (1000–59999): a minute this long, for checking a phase's end locally (e.g. `FOCUS_TEST_MINUTE_MS=2000
+  npm run dev`, two browsers signed in as the owner: a 25 / 5 is 50 s / 10 s). A production server (`NODE_ENV=production`)
+  ignores it unless `FOCUS_TEST_IN_PRODUCTION=1` is set as well, and logs a warning when it's on.
 
 ### Tavarian player
 

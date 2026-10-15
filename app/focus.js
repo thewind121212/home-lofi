@@ -9,23 +9,26 @@
 //   Resume, Skip, Stop, and 🍅 today. Every button draws its result at once (lib/focus.js act, the server's own rule)
 //   and the server's answer then stands.
 // - While one runs, a small countdown chip on Ambient's bar (a tap opens the sheet) and on the lock screen.
-// - Sync: the state lives on the server. Every answer carries the server's clock; this page keeps the difference and
-//   counts down from phaseEndsAt with it (never by its own clock), re-drawing on each second's edge, so every device
-//   shows the same mm:ss. Another device's change, or the server's phase change, comes as 'focus' on the live stream
+// - Sync: the state lives on the server. Every answer carries the server's clock; this page keeps the difference (the
+//   quickest recent trip's: lib/focus.js addSkew) and counts down from phaseEndsAt with it (never by its own clock),
+//   re-drawing on each second's edge, so every device shows the same mm:ss. One timer per page does that (useFocus's
+//   beat; the pieces showing the countdown listen), and none while the page is hidden: shown again, it draws the right
+//   value at once and pulls. Another device's change, or the server's phase change, comes as 'focus' on the live stream
 //   (app/cloud.js): a pull. Pulls also on load, when the page shows again and when the window regains focus.
-// - A soft chime (WebAudio, no file) when a phase runs out, on a device whose page is on screen; the phone in a pocket
-//   gets the server's push instead. No music is touched.
+// - A soft chime (WebAudio, no file) when a phase runs out, on a device whose page is on screen (once per device: two
+//   tabs on screen don't both ring); the phone in a pocket gets the server's push instead. No music is touched.
 import './focus.css'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Pause, Play, SkipForward, Square, Timer, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, useStillPage } from './settings'
-import { DEFAULT_PRESET, MINUTE, PRESETS, PRESET_IDS, act, cleanSession, countText, fmtLeft, iconLabel, leftOf, nextTickIn, paused, phaseLen, phaseLine, phaseName, ringOf, running } from '../lib/focus'
+import { DEFAULT_PRESET, MINUTE, PRESETS, PRESET_IDS, act, addSkew, cleanSession, countText, fmtLeft, iconLabel, leftOf, nextTickIn, paused, phaseLen, phaseLine, phaseName, ringOf, running, skewOf, transitionKey } from '../lib/focus'
 
 const URL_ = '/api/private/settings/focus'
 const RETRY_MS = [3_000, 10_000, 30_000, 60_000] // a failed first load, tried again (then every minute)
 const END_PULL_MS = 1_500 // a phase ran out here: the server's change should be in by then (the live event usually is)
 const CHIME_LATE = 3_000 // a phase that ran out longer ago than this (the page was asleep): no chime, just the new state
+const CHIMED = 'focus-chimed' // localStorage: the last phase end this device chimed for (its transitionKey)
 
 // ---- the chime ----
 
@@ -42,8 +45,13 @@ function audio() {
   }
 }
 // Two soft bell notes (a sine and a quiet octave, a quick rise, a long fade): rising when a focus ends (a break),
-// falling when a break ends (back to it). ~2 s, quiet
-export function chime(ended = 'focus') {
+// falling when a break ends (back to it). ~2 s, quiet. key: the phase that ended (transitionKey): a second tab of this
+// browser on screen at the same moment stays quiet
+export function chime(ended = 'focus', key = null) {
+  try {
+    if (key && localStorage.getItem(CHIMED) === key) return
+    if (key) localStorage.setItem(CHIMED, key)
+  } catch {}
   const c = audio()
   if (!c) return
   const notes = ended === 'focus' ? [659.25, 987.77] : [987.77, 659.25] // E5, B5
@@ -77,6 +85,7 @@ export function useFocus(owner, clientId) {
   const [tried, setTried] = useState(false)
   const [note, setNote] = useState(null)
   const skew = useRef(0) // the server's clock minus this device's
+  const samples = useRef([]) // the trips it's taken from (lib/focus.js addSkew)
   const api = useRef({})
   const seq = useRef({ sent: 0, shown: 0, at: 0 }) // an older answer landing later is out of date
   const writing = useRef(0) // actions on their way: a pull's answer (from before them) mustn't undo what they drew
@@ -88,6 +97,12 @@ export function useFocus(owner, clientId) {
   const ownerRef = useRef(owner)
   ownerRef.current = owner
   const now = () => Date.now() + skew.current
+  // the page's one countdown timer: the pieces that show mm:ss listen (useLeft), and it re-draws them on each second's
+  // edge of the phase while one runs, someone listens and the page is on screen
+  const beat = (useRef(null).current ??= makeBeat(() => {
+    const s = dataRef.current?.session
+    return running(s) ? leftOf(s, now()) : 0
+  }))
 
   async function call(method, body) {
     const n = ++seq.current.sent
@@ -96,19 +111,22 @@ export function useFocus(owner, clientId) {
     const id = clientId?.()
     if (id) headers['x-home-client'] = id
     if (body !== undefined) headers['content-type'] = 'application/json'
-    const t0 = Date.now()
+    const t0 = Date.now(), p0 = performance.now()
     const r = await fetch(URL_, { method, cache: 'no-store', redirect: 'manual', headers, body: body === undefined ? undefined : JSON.stringify(body) })
+    const t1 = Date.now(), p1 = performance.now() // (the headers are in: the body's download is no part of the trip)
     if (r.status === 404 || r.status === 403) {
       setOff(true)
       setData(null)
       return null
     }
     const j = await r.json().catch(() => null)
-    const t1 = Date.now()
+    // the server's clock, at the middle of the trip (its `now` was read somewhere in there); the quickest trip wins
+    if (Number.isFinite(j?.now)) {
+      samples.current = addSkew(samples.current, { skew: j.now - (t0 + t1) / 2, rtt: p1 - p0, at: p1 })
+      skew.current = skewOf(samples.current)
+    }
     if (j && 'session' in j && n >= seq.current.shown && (body !== undefined || !writing.current)) {
       seq.current.shown = n
-      // the server's clock, at the middle of the trip (its `now` was read somewhere in there)
-      if (Number.isFinite(j.now)) skew.current = j.now - (t0 + t1) / 2
       setData({ ...j, session: cleanSession(j.session) })
     }
     if (!r.ok) throw Object.assign(new Error(j?.error ?? 'failed'), { status: r.status })
@@ -140,7 +158,11 @@ export function useFocus(owner, clientId) {
       clearTimeout(soon)
       soon = setTimeout(pull, ms)
     }
-    const wake = () => document.visibilityState === 'visible' && pull()
+    // shown again: the countdown's right value at once (the beat slept while hidden), then what's new
+    const wake = () => {
+      beat.arm()
+      if (document.visibilityState === 'visible') pull()
+    }
     document.addEventListener('visibilitychange', wake)
     window.addEventListener('focus', wake)
     return () => {
@@ -164,6 +186,9 @@ export function useFocus(owner, clientId) {
     return () => clearTimeout(t)
   }, [note])
 
+  // a new state or a new skew: the beat re-aims at the new second's edges and re-draws now
+  useEffect(() => beat.arm(), [data, beat])
+
   // A phase running out on this device's (corrected) clock: the chime, if the page is on screen, then a pull for the
   // server's next phase (the live event usually brings it first). Not for a phase that ran out long ago (the page slept)
   const s = data?.session ?? null
@@ -172,8 +197,9 @@ export function useFocus(owner, clientId) {
     if (endsAt == null) return
     let t2 = 0
     const ended = s.phase
+    const key = transitionKey(s)
     const t = setTimeout(() => {
-      if (document.visibilityState === 'visible' && now() - endsAt < CHIME_LATE) chime(ended)
+      if (document.visibilityState === 'visible' && now() - endsAt < CHIME_LATE) chime(ended, key)
       t2 = setTimeout(() => api.current.pull?.(), END_PULL_MS)
     }, Math.max(0, endsAt - now()))
     return () => (clearTimeout(t), clearTimeout(t2))
@@ -188,22 +214,24 @@ export function useFocus(owner, clientId) {
     return () => (removeEventListener('pointerdown', wakeAudio, { capture: true }), removeEventListener('keydown', wakeAudio, { capture: true }))
   }, [live])
 
-  // an action: drawn now by the same rule the server runs, then sent; the answer (or a 409's fresh state) replaces it
+  // an action: drawn now by the same rule the server runs, then sent; the answer (or a 409's fresh state) replaces it.
+  // Failed otherwise (offline, 503): what was on screen before it comes back at once (unless a newer answer has been
+  // drawn meanwhile), then a pull for what's true
   function send(action, preset) {
     const d = dataRef.current
     if (!d || !ownerRef.current) return
     audio() // (inside the tap: this device may chime later)
     const r = act(d.session, { action, preset }, now(), { id: d.session?.id ?? 'pending', minute: d.minute ?? MINUTE })
     if (r.error) return void api.current.pull?.() // (out of date here: what's true now)
+    const shown = seq.current.shown
     setData({ ...d, session: r.session })
     writing.current++
     enqueue(() => call('POST', preset ? { action, preset } : { action }))
       .catch((e) => {
-        if (e?.status === 409) setNote(e.message.charAt(0).toUpperCase() + e.message.slice(1))
-        else {
-          setNote("Couldn't reach the server: check the connection and try again")
-          api.current.pull?.()
-        }
+        if (e?.status === 409) return setNote(e.message.charAt(0).toUpperCase() + e.message.slice(1))
+        if (seq.current.shown === shown) setData((cur) => (cur?.session === r.session ? d : cur))
+        setNote("Couldn't reach the server: check the connection and try again")
+        api.current.pull?.()
       })
       .finally(() => writing.current--)
   }
@@ -217,6 +245,7 @@ export function useFocus(owner, clientId) {
     minute: data?.minute ?? MINUTE,
     note,
     now,
+    beat,
     // 'focus': another device (or the server's ticker) changed it; 'hello': the stream (re)connected
     live: (kind) => (kind === 'focus' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
     pull: () => api.current.pull?.(),
@@ -228,19 +257,42 @@ export function useFocus(owner, clientId) {
   }
 }
 
-// The time left now, re-drawn on each second's edge while it runs (every device turns over together). Each piece that
-// shows it has its own, so only it re-draws, not the page
+// The page's one countdown timer (useFocus's beat): a tiny store the pieces showing mm:ss listen to. left(): the
+// running phase's time left (0: none running). It fires just after each second's edge of the phase (every device turns
+// over together), only while someone listens and the page is on screen; arm() re-aims it (a new state, the page shown
+// again) and re-draws at once
+function makeBeat(left) {
+  const subs = new Set()
+  let n = 0, t = 0
+  const draw = () => {
+    n++
+    for (const f of subs) f()
+  }
+  function arm() {
+    clearTimeout(t)
+    if (!subs.size || document.visibilityState === 'hidden') return
+    draw()
+    const wait = nextTickIn(left())
+    if (wait != null) t = setTimeout(arm, wait + 15)
+  }
+  return {
+    arm,
+    get: () => n,
+    sub(f) {
+      subs.add(f)
+      if (subs.size === 1) arm()
+      return () => {
+        subs.delete(f)
+        if (!subs.size) clearTimeout(t)
+      }
+    },
+  }
+}
+
+// The time left now, re-drawn on the beat while it runs. Only the piece that shows it re-draws, not the page
 export function useLeft(fc) {
-  const [, redraw] = useState(0)
-  const s = fc.session
-  const left = leftOf(s, fc.now())
-  const wait = running(s) ? nextTickIn(left) : null
-  useEffect(() => {
-    if (wait == null) return
-    const t = setTimeout(() => redraw((n) => n + 1), wait + 15)
-    return () => clearTimeout(t)
-  })
-  return left
+  useSyncExternalStore(fc.beat.sub, fc.beat.get, () => 0)
+  return leftOf(fc.session, fc.now())
 }
 
 export const focusShowing = (fc) => Boolean(fc.on && fc.session)
@@ -319,7 +371,7 @@ function FocusBody({ fc, onClose }) {
 
       <div className={`fc-clock ${tone}${paused(s) ? ' is-paused' : ''}`}>
         <span className="fc-time" role="timer" aria-label={s ? iconLabel(s, ms) : 'No focus session'}>
-          {s ? fmtLeft(left) : fmtLeft(phaseLen(DEFAULT_PRESET, 'focus'))}
+          {s ? fmtLeft(left) : fmtLeft(phaseLen(DEFAULT_PRESET, 'focus', fc.minute))}
         </span>
         <span className="fc-phase">{phaseLine(s)}</span>
         <span className="fc-track" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
