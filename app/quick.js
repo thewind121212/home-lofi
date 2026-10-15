@@ -1,7 +1,8 @@
 'use client'
 
-// Quick actions: a ⌘K / Ctrl+K palette over the dashboard (also "/" outside a text field, and the dock's 🔍, which is
-// how a phone opens it). Type a few letters, Enter runs the top match; ↑ / ↓ move, a click or a tap runs a row.
+// Quick actions: a ⌘K / Ctrl+K palette over the dashboard (also "/" outside a text field). Type a few letters, Enter
+// runs the top match; ↑ / ↓ or Tab / Shift+Tab move (the typing stays in the field, as in Spotlight), a click runs a
+// row. Last, while something's typed: a Google search for it in a new tab (Enter's when nothing here matches).
 // - Actions first, then the hosted apps (the Services card's: the public ones, the internal ones too when signed in),
 //   each opening in a new tab. Matching and ranking are lib/quick.js (accents and case don't matter: "nhac" finds
 //   "nhắc"; a word's start beats the inside of a word).
@@ -27,7 +28,7 @@ import { LAYERS, PRESETS, applyPreset, audibleLayers, setLayer, soundsLabel } fr
 import { sceneName } from '../lib/settings'
 import { mainAction, spOn } from '../lib/player'
 import { domainOf } from '../lib/pins'
-import { command, rank, remember, startList, tabHref } from '../lib/quick'
+import { command, googleUrl, rank, remember, startList, tabHref } from '../lib/quick'
 import { PRESETS as FOCUS_PRESETS, PRESET_IDS, fmtLeft, leftOf, paused } from '../lib/focus'
 import { closeDialog, load, save, useStillPage } from './settings'
 import { tavarianPost } from './player'
@@ -265,7 +266,10 @@ export function QuickPalette({ dlg, ctx }) {
   const items = open ? [...quickActions(ctx), ...quickServices(ctx.priv)] : []
   const typed = q.trim()
   const cmd = open && typed ? commandItem(q, ctx) : null
-  const rows = !open ? [] : typed ? [...(cmd ? [cmd] : []), ...rank(items, q)] : startList(items, recent)
+  // something typed: the matches, then a Google search for it (the only row when nothing here matches: Enter's)
+  const web = typed ? { id: 'cmd:web', title: `Search Google for “${typed}”`, hint: 'google.com', fa: 'fa-brands fa-google', run: () => openTab(googleUrl(typed)) } : null
+  const found = !open || !typed ? [] : [...(cmd ? [cmd] : []), ...rank(items, q)]
+  const rows = !open ? [] : typed ? [...found, web] : startList(items, recent)
   const at = Math.max(0, Math.min(active, rows.length - 1))
   useEffect(() => keepInView(list.current, list.current?.querySelector(`[data-i="${at}"]`)), [at, typed])
 
@@ -297,9 +301,11 @@ export function QuickPalette({ dlg, ctx }) {
   function onKeyDown(e) {
     if (e.nativeEvent.isComposing || e.keyCode === 229) return // (a Vietnamese / CJK input method is composing: its Enter)
     const n = rows.length
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    // ↓ / ↑, and Tab / Shift+Tab as in Spotlight: the row moves, the typing stays in the field (round at the ends)
+    const step = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || e.key === 'Tab' ? -1 : 0
+    if (step) {
       e.preventDefault()
-      if (n) setActive((at + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+      if (n) setActive((at + step + n) % n)
     } else if (e.key === 'Enter') {
       e.preventDefault()
       go(rows[at])
@@ -352,7 +358,7 @@ export function QuickPalette({ dlg, ctx }) {
           {err ?? busy ?? ''}
         </p>
         <p id="qk-head" className="shrink-0 px-5 pt-3 pb-1 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
-          {typed ? (rows.length ? 'Best matches' : `Nothing matches “${typed}”`) : 'Suggested'}
+          {typed ? (found.length ? 'Best matches' : `Nothing here matches “${typed}”: ↵ searches Google`) : 'Suggested'}
         </p>
         <ul
           ref={list}
@@ -390,7 +396,7 @@ export function QuickPalette({ dlg, ctx }) {
           ))}
         </ul>
         <p aria-hidden="true" className="max-sm:hidden shrink-0 px-5 py-2.5 border-t border-white/5 text-[10px] font-mono text-lofi-muted flex items-center gap-4">
-          <span>↑ ↓ move</span>
+          <span>↑ ↓ / tab move</span>
           <span>↵ run</span>
           <span>esc close</span>
           {(ctx.owner && (ctx.rm?.on || ctx.pn?.on)) && <span className="ml-auto">{[ctx.rm?.on && 'remind …', ctx.pn?.on && 'pin <link>'].filter(Boolean).join(' · ')}</span>}

@@ -565,14 +565,12 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* the owner's Reminders, Pins, Focus and Reading (only while a book is in progress), then the bell: one tight
+            {/* the owner's Reminders, Pins and Reading (only while a book is in progress), then the bell: one tight
                 group (their stand-ins while they may be on the way; nothing for guests, so the group goes: empty).
-                Phones: a row of its own under the clock, the icons sharing its width (five don't fit beside the clock;
-                at 390 px the row has 326 px for 5 × 44 + 4 gaps) */}
+                Phones: a row of its own under the clock, the icons sharing its width (four don't fit beside it) */}
             <div className="order-3 min-[900px]:order-none flex items-center gap-2 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1">
               <RemindersIcon rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
-              <FocusIcon fc={focus} wait={!cloud.known || (owner && focus.pending)} force={owner} onOpen={openFocus} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               {hub.on ? (
                 <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />
@@ -667,17 +665,16 @@ export default function Home() {
         <Dock key={view.dockSet} calm={view.dock === 'faded'} settling={dockSettling} lift={lift} liftMoves={liftMoves} dockRef={dockRef} hover={view.dockSet === 'ambient' ? barHover : null}>
           {view.dockSet === 'dashboard' ? (
             <>
+              {/* the owner's Focus on top, over ⛰ (its ring while a session runs; nothing for guests) */}
+              <FocusIcon fc={focus} wait={!cloud.known || (owner && focus.pending)} force={owner} onOpen={openFocus} />
               <DockButton icon="fa-mountain-sun" label="Ambient (H)" title="Ambient: the scene, with music at hand (H)" onClick={enterAmbient} />
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
-              {full.ok && <DockButton {...fullButton(full)} />}
               <DockButton icon="fa-gear" label="Settings" onClick={() => setDlg.current.open || setDlg.current.showModal()} />
-              <DockButton icon="fa-magnifying-glass" label="Quick actions (⌘K)" title="Quick actions (⌘K or /)" onClick={toggleQuick} />
             </>
           ) : (
             <>
               <DockButton icon="fa-eye" label="Show panels" title="Show panels (Esc)" onClick={leaveAmbient} />
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
-              {full.ok && <DockButton {...fullButton(full)} />}
             </>
           )}
         </Dock>
@@ -799,7 +796,7 @@ function useFullscreen() {
   }, [])
   return { ...st, toggle: () => fullscreenApi(document).toggle() }
 }
-// ⛶ / its way back, for a DockButton or the lock screen's corner
+// ⛶ / its way back, for the lock screen's corner (the dock has none: F)
 const fullButton = (full) => ({
   icon: full.on ? 'fa-compress' : 'fa-expand',
   label: full.on ? 'Exit full screen (F)' : 'Full screen (F)',

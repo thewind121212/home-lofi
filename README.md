@@ -15,8 +15,10 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   🔍 Quick actions (**⌘K** / **Ctrl+K**); in Ambient 👁 Show panels, 🔒 Lock and ⛶, fading and coming back with Ambient's bar (and raised above the bar where the
   two would meet, as on a phone).
 - **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
-  too, not over another dialog; the same keys close it), **/** outside a field, or 🔍 on the dock (phones). Type a few
-  letters, **Enter** runs the top match, **↑ ↓** move, a click / tap runs a row, **Esc** or the backdrop closes it.
+  too, not over another dialog; the same keys close it) or **/** outside a field. Type a few letters, **Enter** runs
+  the top match, **↑ ↓** or **Tab / Shift+Tab** move (the typing stays in the field, as in Spotlight), a click runs a
+  row, **Esc** or the backdrop closes it. While something's typed the last row searches Google for it in a new tab: the
+  only row, so Enter's, when nothing here matches.
   Accents and case don't matter ("nhac" finds "nhắc"), but typed with accents the item with those accents comes first
   ("nhạc" the music, "nhắc" the reminders). The title starting with what's typed ranks first, then a word's start, a
   keyword's, the inside of a word, the initials ("hn" Hacker News); at the same kind of match actions come before apps,
@@ -28,7 +30,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   pin a link (when one parses it's the top row). Nothing typed: in Ambient 👁 Show panels first, then the last few run
   (this browser), then the most useful. Never while locked. Esc in any sheet opened over Ambient (this one, Sounds,
   the inbox, Reminders…) closes just that sheet, like its ✕ or a tap outside; Esc with nothing open leaves Ambient.
-- **Full screen**: ⛶ on the dock, beside 🎨 on the lock screen, or **F** anywhere (also locked, where it never counts as
+- **Full screen**: **F** anywhere, or ⛶ beside 🎨 on the lock screen (also locked, where it never counts as
   an unlock; not while typing or with a dialog open). The whole page through the Fullscreen API (webkit's on iPadOS);
   no button where the browser has none (iPhone Safari). Going full screen doesn't wake Ambient's bar.
 - **Ambient, Lock**: two ways to see just the scene, each with one job.
@@ -145,7 +147,7 @@ Sites (the Hub turns compact in the narrow column). A long group like All scroll
 
 ## Settings
 
-⚙️ (on the dock, bottom right, under ⛰ and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
+⚙️ (on the dock, bottom right, under ⏱, ⛰ and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
 (`home-lofi:settings`); **Reset all** goes back to the defaults, after a confirm (Cancel is focused, *Yes, reset* wakes after a moment, and the question gives up after 8 s). For visitors nothing is sent to the server.
 The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 
@@ -474,7 +476,7 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 
 ### Focus (owner only)
 
-A small Pomodoro that is **the same on every device**: a timer icon next to the bell (a ring fills as the phase goes:
+A small Pomodoro that is **the same on every device**: ⏱ at the top of the dock, over ⛰ (a ring fills as the phase goes:
 the accent for focus, green for a break, grey while paused). A tap opens a sheet: the big countdown, **25 / 5** or
 **50 / 10** to start, Pause / Resume, Skip, Stop, and 🍅 today. Start it on the PC and the phone's icon is already
 counting; pause it on the phone and the PC pauses. While one runs, a countdown chip sits on Ambient's bar and the lock
