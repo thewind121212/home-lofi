@@ -385,6 +385,7 @@ export function Settings({ dlg, set, update, reset, sync, notify = false }) {
                 <p className="mt-2 text-[11px] text-lofi-muted">Titles leave the message out: anyone walking past can see the lock screen.</p>
               )}
             </div>
+            <MorningSummary dlg={dlg} />
           </section>
         )}
 
@@ -433,6 +434,84 @@ export function Settings({ dlg, set, update, reset, sync, notify = false }) {
         </div>
       </div>
     </dialog>
+  )
+}
+
+// The owner's morning summary switch (lib/morning.js: at 06:00 one notice with the weather, reminders, routines and
+// servers; off: Reminders' own notice, only when some are open). Kept on the server (its ticker reads it), so it's
+// asked for each time the panel opens; hidden when the server says it isn't the owner's or the hub is off (404 / 403).
+// The switch flips at once; the server's answer confirms it, a failure puts it back.
+const MORNING_URL = '/api/private/settings/morning'
+async function morningApi(method, body) {
+  const r = await fetch(MORNING_URL, {
+    method,
+    cache: 'no-store',
+    redirect: 'manual',
+    headers: body ? { 'content-type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const j = await r.json().catch(() => null)
+  if (!r.ok || typeof j?.morning !== 'boolean') throw Object.assign(new Error(j?.error ?? 'failed'), { status: r.status })
+  return j
+}
+function MorningSummary({ dlg }) {
+  const [st, setSt] = useState(null) // { morning, at, tz }, null while asking
+  const [off, setOff] = useState(false) // not the owner's / the hub is off: no switch
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  useEffect(() => {
+    const d = dlg.current
+    if (!d) return
+    let alive = true
+    const ask = () =>
+      d.open &&
+      morningApi('GET').then(
+        (j) => alive && (setSt(j), setOff(false), setErr(null)),
+        (e) => alive && (e.status === 404 || e.status === 403 || e.status === 0 ? setOff(true) : setErr("Couldn't ask the server.")),
+      )
+    ask()
+    const seen = new MutationObserver(ask) // the panel opening (its open attribute)
+    seen.observe(d, { attributes: true, attributeFilter: ['open'] })
+    return () => ((alive = false), seen.disconnect())
+  }, [dlg])
+  if (off) return null
+  const flip = async () => {
+    if (busy || !st) return
+    const was = st.morning
+    setSt((s) => ({ ...s, morning: !was }))
+    setBusy(true)
+    try {
+      setSt(await morningApi('PUT', { morning: !was }))
+      setErr(null)
+    } catch {
+      setSt((s) => s && { ...s, morning: was })
+      setErr("Couldn't save: try again.")
+    }
+    setBusy(false)
+  }
+  const at = st?.at ?? '06:00'
+  return (
+    <label className={`flex items-start gap-3 ${st ? 'cursor-pointer' : ''}`} aria-busy={busy || !st}>
+      <input type="checkbox" role="switch" checked={Boolean(st?.morning)} disabled={!st || busy} onChange={flip} className="peer sr-only" />
+      <span
+        aria-hidden="true"
+        className="relative mt-0.5 w-9 h-5 shrink-0 rounded-full border border-white/10 bg-white/10 transition-colors peer-checked:bg-lofi-primary peer-checked:border-transparent peer-disabled:opacity-60 peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-lofi-primary after:absolute after:top-0.5 after:left-0.5 after:w-3.5 after:h-3.5 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"
+      />
+      <span className="text-xs text-lofi-text">
+        Morning summary
+        <span className="block text-[11px] text-lofi-muted" aria-live="polite">
+          {err ? (
+            <span className="text-red-300">{err}</span>
+          ) : !st ? (
+            'Asking the server…'
+          ) : st.morning ? (
+            `Every day at ${at}, one notice: the weather, your reminders, today's routines and the servers.`
+          ) : (
+            `Off: at ${at} only a reminders notice, when some are open.`
+          )}
+        </span>
+      </span>
+    </label>
   )
 }
 
