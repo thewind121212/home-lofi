@@ -22,8 +22,8 @@
 /* today's habits: tiles, as many across as fit, stretched to fill the row (one per row on phones) */
 .hb-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15.5rem), 1fr)); gap: 10px; }
 /* a tile that opens "take it back" grows alone: the ones beside it keep the height they had (Tile pins each one's
-   min-height as it opens; the row stops stretching while one is open) */
-.hb-tiles:has(.hb-after.is-open) { align-items: start; }
+   min-height as it opens, and data-pinned stops the row stretching till the fold has shut) */
+.hb-tiles[data-pinned] { align-items: start; }
 /* the week, folded under ▾ */
 .hb-fold { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s; }
 .hb-fold > div { overflow: hidden; min-height: 0; }

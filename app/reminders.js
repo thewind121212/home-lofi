@@ -388,7 +388,7 @@ function RemindersBody({ rm, onClose }) {
   const items = data.items
   const rows = useLeaving(items)
   const n = items.length
-  const sub = !n ? 'nothing left' : data.due ? `${n} open · on screen until done` : `${n} open · back on screen at 06:00`
+  const sub = n ? `${n} open` : 'nothing left'
   return (
     <section aria-labelledby="rm-title" className="p-5 sm:p-6 rm">
       <div className="rm-head">
@@ -485,7 +485,7 @@ export function RemindersPopup({ rm, hidden = false }) {
         <span className="rm-well is-warm" aria-hidden="true"><BellRing size={17} strokeWidth={1.9} /></span>
         <div className="rm-title">
           <h2 id="rm-pop-title">Today&apos;s reminders</h2>
-          <span className="rm-sub">{n ? `${n} left · hold each when done` : 'all clear'}</span>
+          <span className="rm-sub">{n ? `${n} left` : 'all clear'}</span>
         </div>
         {n > 0 && (
           <button type="button" data-tuck className="hb-iconbtn" aria-label="Tuck away for today (a new reminder opens it again)" title="Tuck away for today" onClick={() => ((moveFocus.current = true), rm.tuck())}>

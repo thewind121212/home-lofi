@@ -374,18 +374,27 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
   // "take it back" opens only for a press that began on the check itself (a finger, a button, Enter / Space): the finger
   // that just finished the hold lifts over the check that took the ring's place, and a touch screen calls that a tap
   const pressed = useRef(false)
-  // opening: every tile in the row keeps the height it has now (min-height), so only this one grows; let go once
-  // none is open and the fold has shut (the row stretches them all alike again)
+  // opening: every tile in the row keeps the height it has now (min-height) and the row stops stretching
+  // (data-pinned), so only this one grows; both let go together once none is open and the fold has shut. (Not
+  // :has(.is-open): that let go the moment it began to shut, and the row stretched the tile beside it to the still
+  // tall one, a flash at the end)
   const tile = useRef(null)
   const ask = (on) => {
     const list = tile.current?.parentElement
-    if (on && list) for (const t of list.children) t.style.minHeight = `${t.offsetHeight}px`
+    if (on && list && !list.dataset.pinned) {
+      for (const t of list.children) t.style.minHeight = `${t.offsetHeight}px`
+      list.dataset.pinned = ''
+    }
     setAsking(on)
   }
   useEffect(() => {
     if (asking) return
     const list = tile.current?.parentElement
-    const t = setTimeout(() => list && !list.querySelector('.hb-after.is-open') && [...list.children].forEach((c) => (c.style.minHeight = '')), 400)
+    const t = setTimeout(() => {
+      if (!list || list.querySelector('.hb-after.is-open')) return
+      ;[...list.children].forEach((c) => (c.style.minHeight = ''))
+      delete list.dataset.pinned
+    }, 400)
     return () => clearTimeout(t)
   }, [asking])
   const due = habit.days.includes(dowOf(today))

@@ -553,11 +553,8 @@ export default function Home() {
             <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} ${icon ? '' : 'sk-pulse'} flex items-center justify-center text-xl shadow-lg`}>
               {icon && <i className={`fa-solid ${icon} text-white`} aria-hidden="true" />}
             </div>
-            <div>
-              {/* (the hour is the browser's: a stand-in until the page runs) */}
-              <h1 className="text-2xl font-semibold tracking-tight text-white">{hour == null ? <Bone w="9.5ch" /> : greeting}</h1>
-              <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
-            </div>
+            {/* (the hour is the browser's: a stand-in until the page runs) */}
+            <h1 className="text-2xl font-semibold tracking-tight text-white">{hour == null ? <Bone w="9.5ch" /> : greeting}</h1>
           </div>
           <div className="flex max-sm:flex-wrap items-center gap-2 min-[900px]:gap-4 shrink-0">
             <ScenePicker
@@ -3098,7 +3095,7 @@ function SpVolume({ v }) {
     return (
       <p className="min-w-0 flex-1 flex items-center gap-1.5 text-[10px] font-mono text-lofi-muted" title="Each listener sets their own volume in the Player tab">
         <i className="fa-solid fa-house-signal text-xs w-7 text-center shrink-0 text-lofi-primary" aria-hidden="true" />
-        <span className="truncate">On your home station · volume in the Player tab</span>
+        <span className="truncate">Home station</span>
       </p>
     )
   if (!dev.supportsVolume)

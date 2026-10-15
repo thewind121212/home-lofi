@@ -280,7 +280,7 @@ export function Settings({ dlg, set, update, reset, sync, notify = false }) {
         closeDialog(dlg.current)
       }}
       onClose={() => delete dlg.current.dataset.closing}
-      className="wx-sheet sm:max-w-xl glass-panel text-lofi-text overscroll-contain"
+      className="wx-sheet sm:max-w-xl glass-panel text-lofi-text overscroll-contain scrollbar-none"
     >
       <div className="p-5 sm:p-7 flex flex-col gap-6">
         <div className="wx-sticky flex items-center justify-between gap-4">
@@ -357,7 +357,7 @@ export function Settings({ dlg, set, update, reset, sync, notify = false }) {
             the bar fades after a few seconds, leaving the scene, or the scene + the big clock */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-6">
           {radio('idle', 'Ambient after', [[0, 'Off'], [30, '30s'], [60, '1m'], [120, '2m'], [300, '5m']],
-            <p className="mt-2 text-[11px] text-lofi-muted">The scene with a slim bar (music, weather, clock). By hand: the <i className="fa-solid fa-mountain-sun" aria-hidden="true" /> Ambient button or H (Off: only by hand).</p>
+            <p className="mt-2 text-[11px] text-lofi-muted">Off: only by hand (<i className="fa-solid fa-mountain-sun" aria-hidden="true" /> or H)</p>
           )}
           {radio('idleShow', 'When the bar fades', [['scene', 'Scene only'], ['clock', 'Scene + clock']])}
         </div>
