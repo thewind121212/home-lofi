@@ -2,7 +2,7 @@
 
 import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
-import { AUTH_URL, DAY_SCENES, SCENES, SCENES_URL, SERVICES } from '../lib/data'
+import { AUTH_URL, DAY_SCENES, DEFAULT_LOC, SCENES, SCENES_URL, SERVICES } from '../lib/data'
 import { STATIONS, stationById } from '../lib/stations'
 import { privateAnswer, retryIn } from '../lib/private-poll'
 import { RadioPanel, StationList, coverOf, useMounted, useRadio, useRadioInfo } from './radio'
@@ -26,8 +26,6 @@ import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
 
-// a browser with no saved location starts in Đà Lạt
-const DEFAULT_LOC = { id: 1584071, name: 'Da Lat', region: 'Lam Dong', country: 'Vietnam', lat: 11.94646, lon: 108.44193, tz: 'Asia/Ho_Chi_Minh' }
 const ACCENTS = ['text-lofi-primary', 'text-blue-400', 'text-lofi-secondary', 'text-lofi-highlight', 'text-purple-400', 'text-emerald-400']
 const ICON_COLOR = {
   'fa-sun': 'text-lofi-highlight',
