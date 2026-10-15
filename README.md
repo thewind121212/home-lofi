@@ -11,9 +11,12 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   The scene button in the header (a mini picture of the scene as shown, with its weather) opens the scene picker:
   the scene's weather, and a big preview that opens the full-screen gallery (saved per browser).
   Some scenes have a **day** version that plays from sunrise to sunset at the Weather card's location (see [Scenes](#scenes)).
-- **Dock** (bottom right): on the dashboard ⛰ Ambient (**H**), 🔒 Lock (**L**), ⛶ Full screen (**F**), ⚙️ Settings and
-  🔍 Quick actions (**⌘K** / **Ctrl+K**); in Ambient 👁 Show panels, 🔒 Lock and ⛶, fading and coming back with Ambient's bar (and raised above the bar where the
-  two would meet, as on a phone).
+- **Dock** (bottom right): on the dashboard the owner's ⏱ Focus, ⛰ Ambient (**H**) and 🔒 Lock (**L**); in Ambient 👁 Show
+  panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as on
+  a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
+- **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading and the 🔔 bell.
+  Reminders have no icon there: their pop-up / pill (bottom left), Ambient's chip and ⌘K open them.
+- The page scrolls without a scrollbar of its own (panels and lists keep theirs).
 - **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
   too, not over another dialog; the same keys close it) or **/** outside a field. Type a few letters, **Enter** runs
   the top match, **↑ ↓** or **Tab / Shift+Tab** move (the typing stays in the field, as in Spotlight), a click runs a
@@ -147,7 +150,7 @@ Sites (the Hub turns compact in the narrow column). A long group like All scroll
 
 ## Settings
 
-⚙️ (on the dock, bottom right, under ⏱, ⛰ and 🔒) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
+⚙️ (in the header, by the bell) opens Settings. Changes apply live and are stored **per browser** in one localStorage key
 (`home-lofi:settings`); **Reset all** goes back to the defaults, after a confirm (Cancel is focused, *Yes, reset* wakes after a moment, and the question gives up after 8 s). For visitors nothing is sent to the server.
 The owner can also sync them across devices, see [Settings sync](#settings-sync-owner-only).
 

@@ -21,6 +21,9 @@
 .hb-weekbtn.is-open .chev { transform: rotate(180deg); }
 /* today's habits: tiles, as many across as fit, stretched to fill the row (one per row on phones) */
 .hb-tiles { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15.5rem), 1fr)); gap: 10px; }
+/* a tile that opens "take it back" grows alone: the ones beside it keep the height they had (Tile pins each one's
+   min-height as it opens; the row stops stretching while one is open) */
+.hb-tiles:has(.hb-after.is-open) { align-items: start; }
 /* the week, folded under ▾ */
 .hb-fold { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s; }
 .hb-fold > div { overflow: hidden; min-height: 0; }
@@ -111,8 +114,9 @@ html[data-sk-hb-week] .hb-fold.sk-hb-fold > div { padding-top: 2px; }
 .hb-burst i:nth-child(3n) { background: var(--color-lofi-highlight); }
 
 /* after keeping it: how was it / take it back */
-.hb-after { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.hb-after.is-open { grid-template-rows: 1fr; }
+.hb-after { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.25s; }
+.hb-after > div { overflow: hidden; min-height: 0; }
+.hb-after.is-open { grid-template-rows: 1fr; opacity: 1; }
 .hb-after-in { padding-top: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .hb-after-in .q { flex-basis: 100%; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
 .hb-after-in p { flex-basis: 100%; margin: 0 0 2px; font-size: 13px; color: #fff; }
