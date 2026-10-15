@@ -513,7 +513,7 @@ export default function Home() {
     // (spShow: the card turns to Spotify, not saved, like startedTab, so the change and any no from Spotify show there)
     music: { source, tune, station, radio: () => music.current?.toggle(), sp: spotify, spAct: spCtl.act, spShow: () => amb.ambient || setAudioTab('spotify'), player, tvOn },
     wx, openWeather: () => weather.current?.openDetail(),
-    rm: reminders, openReminders, pn: pins, openPins, rd: reading, openReading,
+    rm: reminders, openReminders, pn: pins, openPins, rd: reading, openReading, fc: focus, openFocus,
     priv,
   }
 
