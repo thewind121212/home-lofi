@@ -13,7 +13,7 @@ import {
 } from '../lib/sounds'
 import { SLEEP_TAU, TAU, buildVoice, createEngine, loadFile, pump, ramp } from '../lib/sound-engine'
 import { claimMediaSession, mediaSessionOwner } from './radio'
-import { Choice, closeDialog } from './settings'
+import { Choice, closeDialog, useStillPage } from './settings'
 
 const PUMP_MS = 20_000 // top up the envelopes (lib/sound-engine.js AHEAD = 90 s: plenty for a throttled hidden tab)
 
@@ -269,6 +269,7 @@ const pct = (x) => Math.round(x * 100)
 // The panel: ▶ / ⏸ with what plays and the volume, the presets, a tile per sound (tap: on / off; slider: its level),
 // the sleep timer, Reset. Same dialog pattern as Settings (.wx-sheet). setMix(mix) saves (and syncs, for the owner).
 export function SoundsPanel({ dlg, snd, mix, setMix, now, synced }) {
+  useStillPage(dlg)
   const preset = presetOf(mix)
   const on = audibleLayers(mix)
   const left = minutesLeft(snd.endsAt, +(now ?? Date.now()))
