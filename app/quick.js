@@ -7,17 +7,19 @@
 //   "nhắc"; a word's start beats the inside of a word).
 // - Only what makes sense for whoever looks: Notifications, Reminders, Pins, Reading and the music's ⏭ are the
 //   owner's (each only once its hook says it's on), full screen only where the browser can.
-// - Typed commands (the owner's): "remind buy milk" / "nhắc mua sữa" adds a reminder, "pin example.com" pins a link.
-//   The palette stays open until the server has it, and says so when it can't.
-// - Nothing typed: the few run last (kept in this browser), then the most useful.
+// - Typed commands (the owner's): "remind buy milk" / "nhắc mua sữa" adds a reminder, "pin example.com" pins a link;
+//   when one parses it's the top row. The palette stays open until the server has it, and says so when it can't.
+// - Nothing typed: in Ambient Show panels first (the way back), then the few run last (kept in this browser), then the
+//   most useful.
 // - A <dialog> like every sheet here (.wx-sheet: a bottom sheet on phones, from sm a panel near the top: .qk-sheet in
 //   globals.css): Esc / the backdrop close it (closeDialog's exit), the page stays still behind it (useStillPage).
 //   Running a row closes it at once (what it opens comes up in its place).
 // - The combobox pattern: focus stays in the field, the rows are a listbox it points into (aria-activedescendant).
 //
 // Adding actions (Focus sessions, …): build them in quickActions() below from what the page hands over in ctx; an
-// action is { id, title, hint?, kbd?, fa | img, keywords?, home?, run }. `home` (1 first) puts it on the list the
-// palette opens on; `wait` keeps the palette open while run()'s promise is out (it may resolve to what went wrong).
+// action is { id, title, hint?, kbd?, fa | img, keywords?, home?, first?, wait?, run }. `home` (1 first) puts it on the
+// list the palette opens on, `first` on top of it whatever was run last; `wait` (what to say meanwhile: 'Adding…')
+// keeps the palette open while run()'s promise is out (it may resolve to what went wrong, shown in the palette).
 import { useEffect, useRef, useState } from 'react'
 import { CornerDownLeft, Search, X } from 'lucide-react'
 import { SCENES, SERVICES } from '../lib/data'
@@ -25,19 +27,25 @@ import { LAYERS, PRESETS, applyPreset, audibleLayers, setLayer, soundsLabel } fr
 import { sceneName } from '../lib/settings'
 import { mainAction, spOn } from '../lib/player'
 import { domainOf } from '../lib/pins'
-import { command, rank, remember, startList } from '../lib/quick'
+import { command, rank, remember, startList, tabHref } from '../lib/quick'
 import { closeDialog, load, save, useStillPage } from './settings'
 import { tavarianPost } from './player'
 
 const RECENT_KEY = 'quickRecent'
-const openTab = (href) => window.open(href, '_blank', 'noopener,noreferrer')
+// a new tab, cut off from this page (noopener: it can't reach back through window.opener), and only for an http(s)
+// link (lib/quick.js tabHref: never a javascript: one, whatever /api/private or Kavita hands over)
+const openTab = (href) => {
+  const url = tabHref(href)
+  if (url) window.open(url, '_blank', 'noopener,noreferrer')
+}
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 // ---- the actions ----
 
 // ctx (from the page): owner, ambient, enterAmbient, leaveAmbient, lock, openSettings, full ({ ok, on, toggle }),
 // scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), snd, mix, setMix,
-// openSounds, music ({ source, tune, station, radio(), sp, spAct(action), player, tvOn }), wx, openWeather,
+// openSounds, music ({ source, tune, station, radio(), sp, spAct(action) (the page's Spotify control), spShow() (the
+// card's Spotify tab), player, tvOn }), wx, openWeather,
 // rm + openReminders, pn + openPins, rd + openReading, priv (/api/private: the internal apps)
 export function quickActions(ctx) {
   return [...basics(ctx), ...music(ctx), ...sounds(ctx), ...owners(ctx), ...scenes(ctx)]
@@ -46,7 +54,7 @@ export function quickActions(ctx) {
 function basics(c) {
   return [
     c.ambient
-      ? { id: 'ambient', title: 'Show panels', kbd: 'Esc', fa: 'fa-eye', keywords: ['ambient', 'dashboard', 'back'], home: 5, run: c.leaveAmbient }
+      ? { id: 'ambient', title: 'Show panels', kbd: 'Esc', fa: 'fa-eye', keywords: ['ambient', 'dashboard', 'back'], first: true, run: c.leaveAmbient }
       : { id: 'ambient', title: 'Ambient mode', kbd: 'H', fa: 'fa-mountain-sun', keywords: ['hide panels', 'calm', 'scene only'], home: 5, run: c.enterAmbient },
     { id: 'lock', title: 'Lock screen', kbd: 'L', fa: 'fa-lock', keywords: ['clock', 'away', 'sleep'], home: 7, run: c.lock },
     c.openInbox && { id: 'inbox', title: 'Notifications', kbd: 'N', fa: 'fa-bell', keywords: ['inbox', 'alerts', 'thông báo'], home: 4, run: c.openInbox },
@@ -57,7 +65,13 @@ function basics(c) {
 }
 
 // play / pause what the music card plays now (the radio for everyone; the owner's Spotify or home station), and ⏭
-// where that player has one for this viewer
+// where that player has one for this viewer. Through the page's own controls, so the music card and Ambient's bar show
+// it as if their buttons were pressed:
+// - Spotify: the page's one Spotify control (the card's and the bar's ⏯ / ⏭ are the same): its button spins, a no from
+//   Spotify shows under it as always, and the card turns to its Spotify tab (not saved) so there's something to see.
+//   The palette closes at once (Spotify takes a few seconds to confirm a change)
+// - the home station: the owner's press goes to Tavarian, which answers at once: the palette waits for it and says so
+//   when it's a no (a guest's Listen / Stop only plays here: at once, inside the key press or tap)
 const STATION_TITLE = { listen: 'Listen to the home station', stop: 'Stop listening', pause: 'Pause the home station', resume: 'Resume the home station', play: 'Play the home station' }
 function music(c) {
   const m = c.music
@@ -65,15 +79,22 @@ function music(c) {
   const kw = ['music', 'play', 'pause', 'nhạc']
   if (m.source === 'spotify' && c.owner && spOn(m.sp)) {
     return [
-      { id: 'music', title: m.sp.playing ? 'Pause Spotify' : 'Play Spotify', hint: m.sp.track, fa: m.sp.playing ? 'fa-pause' : 'fa-play', keywords: kw, home: 1, run: () => m.spAct(m.sp.playing ? 'pause' : 'play') },
-      { id: 'next', title: 'Next track', hint: 'Spotify', fa: 'fa-forward-step', keywords: ['skip', 'music', 'song'], run: () => m.spAct('next') },
+      { id: 'music', title: m.sp.playing ? 'Pause Spotify' : 'Play Spotify', hint: m.sp.track, fa: m.sp.playing ? 'fa-pause' : 'fa-play', keywords: kw, home: 1, run: () => (m.spShow(), m.spAct(m.sp.playing ? 'pause' : 'play')) },
+      { id: 'next', title: 'Next track', hint: 'Spotify', fa: 'fa-forward-step', keywords: ['skip', 'music', 'song'], run: () => (m.spShow(), m.spAct('next')) },
     ]
   }
   if (m.source === 'tavarian' && m.tvOn && m.player?.state?.song) {
     const p = m.player
-    const kind = mainAction({ owner: c.owner, listening: p.listening, phase: p.phase, status: p.state.status, queued: p.queue?.items?.length ?? 0 }).kind
-    const out = [{ id: 'music', title: STATION_TITLE[kind], hint: p.state.song.title, fa: p.listening ? 'fa-pause' : 'fa-play', keywords: [...kw, 'tavarian', 'station'], home: 1, run: () => p.press() }]
-    if (c.owner) out.push({ id: 'next', title: 'Skip song', hint: 'Home station', fa: 'fa-forward-step', keywords: ['next', 'skip', 'music', 'song'], run: () => tavarianPost({ action: 'skip' }).then((r) => r.ok && p.takeState(r.data.state)) })
+    const a = mainAction({ owner: c.owner, listening: p.listening, phase: p.phase, status: p.state.status, queued: p.queue?.items?.length ?? 0 })
+    const told = (r) => (r.ok ? (p.takeState(r.data.state), null) : r.error) // -> what went wrong, or null
+    const press = () => {
+      let sent = null
+      p.press((k) => (sent = tavarianPost({ action: k }).then(told)))
+      return sent
+    }
+    const wait = c.owner && a.posts ? 'Asking the home station…' : undefined
+    const out = [{ id: 'music', title: STATION_TITLE[a.kind], hint: p.state.song.title, fa: p.listening ? 'fa-pause' : 'fa-play', keywords: [...kw, 'tavarian', 'station'], home: 1, wait, run: press }]
+    if (c.owner) out.push({ id: 'next', title: 'Skip song', hint: 'Home station', fa: 'fa-forward-step', keywords: ['next', 'skip', 'music', 'song'], wait: 'Skipping…', run: () => tavarianPost({ action: 'skip' }).then(told) })
     return out
   }
   const on = m.tune.playing || m.tune.loading
@@ -170,11 +191,11 @@ export function quickServices(priv) {
 function commandItem(q, c) {
   const cmd = c.owner ? command(q) : null
   if (cmd?.kind === 'remind' && c.rm?.on) {
-    return { id: 'cmd:remind', title: `Remind me: ${cmd.text}`, hint: 'add a reminder', fa: 'fa-bell', wait: true, run: () => c.rm.add(cmd.text) }
+    return { id: 'cmd:remind', title: `Remind me: ${cmd.text}`, hint: 'add a reminder', fa: 'fa-bell', wait: 'Adding…', run: () => c.rm.add(cmd.text) }
   }
   if (cmd?.kind === 'pin' && c.pn?.on) {
     const run = async () => ((await c.pn.add(cmd.url)) ? null : "Couldn't pin that: check the connection and try again")
-    return { id: 'cmd:pin', title: `Pin ${domainOf(cmd.url) || cmd.url}`, hint: cmd.url, fa: 'fa-thumbtack', wait: true, run }
+    return { id: 'cmd:pin', title: `Pin ${domainOf(cmd.url) || cmd.url}`, hint: cmd.url, fa: 'fa-thumbtack', wait: 'Pinning…', run }
   }
   return null
 }
@@ -195,7 +216,7 @@ export function QuickPalette({ dlg, ctx }) {
   useStillPage(dlg, open)
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState(null) // what the row run waits for says (its `wait`), till it's done
   const [err, setErr] = useState(null)
   const [recent, setRecent] = useState([])
   const field = useRef(null)
@@ -234,7 +255,7 @@ export function QuickPalette({ dlg, ctx }) {
       d?.close() // at once: what it opens takes its place
       return item.run()
     }
-    setBusy(true)
+    setBusy(item.wait)
     setErr(null)
     let why = null
     try {
@@ -242,8 +263,8 @@ export function QuickPalette({ dlg, ctx }) {
     } catch {
       why = "That didn't work: try again"
     }
-    setBusy(false)
-    if (why) return setErr(why)
+    setBusy(null)
+    if (why) return d?.open && setErr(why) // (closed meanwhile: not kept for the next time it opens)
     closeDialog(d)
   }
   function onKeyDown(e) {
@@ -265,7 +286,7 @@ export function QuickPalette({ dlg, ctx }) {
       aria-label="Quick actions"
       onClick={(e) => e.target === dlg.current && close()}
       onCancel={(e) => (e.preventDefault(), close())}
-      onClose={() => (delete dlg.current.dataset.closing, setQ(''), setActive(0), setErr(null), setBusy(false))}
+      onClose={() => (delete dlg.current.dataset.closing, setQ(''), setActive(0), setErr(null), setBusy(null))}
       className="wx-sheet qk-sheet glass-panel text-lofi-text"
     >
       <div className="flex flex-col min-h-0 grow">
@@ -299,11 +320,10 @@ export function QuickPalette({ dlg, ctx }) {
             <X size={16} aria-hidden="true" />
           </button>
         </div>
-        {(busy || err) && (
-          <p role="status" className={`shrink-0 px-5 pt-2.5 text-xs font-mono ${err ? 'text-red-400' : 'text-lofi-muted'}`}>
-            {err ?? 'Adding…'}
-          </p>
-        )}
+        {/* (always there, empty when there's nothing to say: a live region added with its text isn't always read out) */}
+        <p role="status" className={busy || err ? `shrink-0 px-5 pt-2.5 text-xs font-mono ${err ? 'text-red-400' : 'text-lofi-muted'}` : 'sr-only'}>
+          {err ?? busy ?? ''}
+        </p>
         <p id="qk-head" className="shrink-0 px-5 pt-3 pb-1 text-[10px] font-mono uppercase tracking-widest text-lofi-muted">
           {typed ? (rows.length ? 'Best matches' : `Nothing matches “${typed}”`) : 'Suggested'}
         </p>

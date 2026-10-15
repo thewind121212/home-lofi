@@ -17,13 +17,17 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
   too, not over another dialog; the same keys close it), **/** outside a field, or 🔍 on the dock (phones). Type a few
   letters, **Enter** runs the top match, **↑ ↓** move, a click / tap runs a row, **Esc** or the backdrop closes it.
-  Accents and case don't matter ("nhac" finds "nhắc"), a word's start ranks above the inside of a word, actions above
-  apps. Actions: Ambient, Lock, Settings, Full screen, Weather details, play / pause the music (the radio; the owner's
+  Accents and case don't matter ("nhac" finds "nhắc"), but typed with accents the item with those accents comes first
+  ("nhạc" the music, "nhắc" the reminders). The title starting with what's typed ranks first, then a word's start, a
+  keyword's, the inside of a word, the initials ("hn" Hacker News); at the same kind of match actions come before apps,
+  and letters merely in order ("grfn" Grafana) show only when nothing else fits. Actions: Ambient, Lock, Settings, Full screen, Weather details, play / pause the music (the radio; the owner's
   Spotify or home station, with ⏭), Sounds (the panel, play / pause, each sound on / off, each preset), the scene
   gallery, a random scene or any scene by name; the owner also gets Notifications, Reminders, Pins and the books in
   Reading (Continue in Kavita). Then every app on the Services card (the internal ones when signed in), opening in a
   new tab. The owner can type **remind buy milk** (or **nhắc mua sữa**) to add a reminder and **pin example.com** to
-  pin a link. Nothing typed: the last few run (this browser), then the most useful. Never while locked.
+  pin a link (when one parses it's the top row). Nothing typed: in Ambient 👁 Show panels first, then the last few run
+  (this browser), then the most useful. Never while locked. Esc in any sheet opened over Ambient (this one, Sounds,
+  the inbox, Reminders…) closes just that sheet, like its ✕ or a tap outside; Esc with nothing open leaves Ambient.
 - **Full screen**: ⛶ on the dock, beside 🎨 on the lock screen, or **F** anywhere (also locked, where it never counts as
   an unlock; not while typing or with a dialog open). The whole page through the Fullscreen API (webkit's on iPadOS);
   no button where the browser has none (iPhone Safari). Going full screen doesn't wake Ambient's bar.
