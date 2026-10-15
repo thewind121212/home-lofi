@@ -21,7 +21,7 @@ import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
 import { PinsIcon, PinsSheet, usePins } from './pins'
-import { ReadingBar, ReadingSheet, useReading } from './reading'
+import { ReadingIcon, ReadingSheet, useReading } from './reading'
 import { LockReminders, RemindersChip, RemindersIcon, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
@@ -500,8 +500,9 @@ export default function Home() {
       <div
         className={`relative z-10 max-w-7xl 2xl:max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-44 2xl:pb-8 min-h-screen flex flex-col transition-[opacity,filter,visibility] duration-700 ${view.dashboard ? '' : 'opacity-0 invisible'} ${view.blur ? 'blur-md' : ''} ${settling ? 'pointer-events-none' : ''}`}
       >
-        {/* phones: greeting, then clock | scene on one row. sm+: one row (also landscape phones) */}
-        <header className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
+        {/* phones and small tablets: greeting, then clock | scene, the owner's icons, the bell on one row (under 640 px the
+            icons get a row of their own). From 900 px: all one row (narrower, the four icons squeeze the greeting) */}
+        <header className="flex flex-col min-[900px]:flex-row justify-between items-stretch min-[900px]:items-center gap-4 mb-8 glass-panel rounded-2xl p-4 sm:p-6">
           <div className="flex items-center gap-4 min-w-0">
             <div className={`w-12 h-12 shrink-0 rounded-full bg-linear-to-tr ${iconBg} ${icon ? '' : 'sk-pulse'} flex items-center justify-center text-xl shadow-lg`}>
               {icon && <i className={`fa-solid ${icon} text-white`} aria-hidden="true" />}
@@ -512,19 +513,21 @@ export default function Home() {
               <p className="text-sm text-lofi-muted font-mono text-balance">Welcome to your space.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <div className="flex max-sm:flex-wrap items-center gap-2 min-[900px]:gap-4 shrink-0">
             <ScenePicker
-              className="order-2 sm:order-none ml-auto sm:ml-0"
+              className="order-2 min-[900px]:order-none ml-auto min-[900px]:ml-0"
               set={set}
               update={update}
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* the owner's Reminders and Pins, then the bell: one tight group (their stand-ins while they may be on the
-                way; nothing for guests, so the group goes: empty) */}
-            <div className="order-3 sm:order-none flex items-center gap-2 empty:hidden">
+            {/* the owner's Reminders, Pins and Reading (only while a book is in progress), then the bell: one tight group
+                (their stand-ins while they may be on the way; nothing for guests, so the group goes: empty). Phones: a
+                row of its own under the clock, the icons sharing its width (four don't fit beside the clock) */}
+            <div className="order-3 min-[900px]:order-none flex items-center gap-2 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1">
               <RemindersIcon rm={reminders} wait={!cloud.known || (owner && reminders.pending)} force={owner} onOpen={openReminders} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+              <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               {hub.on ? (
                 <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />
               ) : (
@@ -533,7 +536,7 @@ export default function Home() {
                 (!cloud.known || (owner && !hub.tried)) && <span aria-hidden="true" className={`sk-owner ${owner ? 'sk-force' : ''} w-11 h-11 shrink-0 rounded-xl bg-lofi-base/50 border border-white/5 sk-pulse`} />
               )}
             </div>
-            <div className="order-1 sm:order-none shrink-0 text-left sm:text-right">
+            <div className="order-1 min-[900px]:order-none shrink-0 text-left min-[900px]:text-right">
             <div className="text-3xl font-mono font-bold text-white neon-text">
               {now ? <Clock now={now} clock={set.clock} /> : <Bone w="5ch" />}
             </div>
@@ -545,8 +548,8 @@ export default function Home() {
         </header>
 
         {/* Each block is mounted once (the radio never restarts) and placed by the grid:
-            phones: one column, Steam · Music · Sounds · Reading (owner) · Weather · Hub · Habits (owner) · Services
-            lg (laptops): two columns, Steam + Music + Sounds + Reading + Weather on the left, Hub + Habits +
+            phones: one column, Steam · Music · Sounds · Weather · Hub · Habits (owner) · Services
+            lg (laptops): two columns, Steam + Music + Sounds + Weather on the left, Hub + Habits +
               Services on the right
               (the Hub + Weather wrapper is display: contents there, so each one is its own grid item)
             2xl (≥1536 px, e.g. 1920×1080): three columns, Steam + Music | Services | Hub + Weather, so nothing scrolls;
@@ -555,12 +558,8 @@ export default function Home() {
           <div className="lg:col-span-4 lg:col-start-1 lg:row-start-1 lg:row-span-2 2xl:col-span-3 2xl:row-span-1 2xl:sticky 2xl:top-8 flex flex-col gap-6">
             <SteamCard d={steam} />
             <Music ctl={music} onTune={setTune} spotify={spotify} onSpotify={applySpotify} owner={owner} wasOwner={wasOwner} tab={musicTab} pick={pickAudio} station={station} stationKnown={stationKnown} info={info} onStation={pickStation} invite={invite} player={player} openQueue={openQueue} />
-            {/* Sounds, and the owner's Reading: a slim bar like Sounds' (its skeleton while it may be on the way), close
-                together as one stack. Reading only while a book is in progress (Reminders and Pins: icons by the bell) */}
-            <div className="flex flex-col gap-2">
-              <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
-              <ReadingBar rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
-            </div>
+            {/* (the owner's Reminders, Pins and Reading: icons by the header's bell) */}
+            <SoundsCard snd={snd} mix={set.sounds} onOpen={openSounds} />
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">

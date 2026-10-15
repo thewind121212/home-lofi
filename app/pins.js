@@ -12,7 +12,7 @@
 import './pins.css'
 import { useEffect, useRef, useState } from 'react'
 import { Link2, Pin, Plus, RotateCw, Search, Trash2, X } from 'lucide-react'
-import { HeadIcon, HeadIconSkeleton } from './minibar'
+import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { Bone } from './skeleton'
 import { closeDialog, useStillPage } from './settings'
 import { REASONS, SHOWN, UNDO_MS, cleanUrl, looksLikeLink, matches } from '../lib/pins'

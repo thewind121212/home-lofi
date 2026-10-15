@@ -1,22 +1,21 @@
 'use client'
 
-// Reading: the books the owner is partway through in Kavita (several at once). A slim bar under Sounds, with the
-// Reminders and Pins bars ("Reading · Dungeon Crawler Carl · 1%", or "Reading · 2 books · <latest> 1%"); a tap opens
-// them in a sheet: cover, title, how far, when last read, and Continue (Kavita's reader at that book's continue point,
+// Reading: the books the owner is partway through in Kavita (several at once). An icon next to the header's bell, with
+// Reminders' and Pins' (its badge: how many books); a tap opens them in a sheet: cover, title, how far, when last read, and Continue (Kavita's reader at that book's continue point,
 // in a new tab). Rules in lib/reading.js; the route is app/api/private/settings/reading (owner-only: guests get
-// 404 / 403 and never see a bar), covers come through /reading/cover (Kavita's key never reaches the browser).
-// - Nothing in progress, or Kavita not set up: no bar at all. Kavita unreachable: the last list stays (the sheet says
-//   so quietly); never loaded, no bar.
+// 404 / 403 and never see the icon), covers come through /reading/cover (Kavita's key never reaches the browser).
+// - Nothing in progress, or Kavita not set up: no icon at all. Kavita unreachable: the last list stays (the sheet says
+//   so quietly); never loaded, no icon.
 // - Asked when the owner's known, then when the page shows again or the window regains focus (MIN_GAP apart: the
 //   server keeps Kavita's answer 2 minutes anyway) and when the sheet opens. Never on a timer.
-// - Its skeleton only where the bar showed last time (lib/skeleton.js `reading`): most visits may have no bar.
+// - Its skeleton only where the icon showed last time (lib/skeleton.js `reading`): most visits may have no icon.
 import './reading.css'
 import { useEffect, useRef, useState } from 'react'
 import { BookOpen, ExternalLink, X } from 'lucide-react'
-import { MiniBar, MiniBarSkeleton } from './minibar'
+import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { rememberShape } from './skeleton'
 import { closeDialog, useStillPage } from './settings'
-import { barLine, readAgo } from '../lib/reading'
+import { iconLabel, readAgo } from '../lib/reading'
 import { privateAnswer } from '../lib/private-poll'
 
 const URL_ = '/api/private/settings/reading'
@@ -44,7 +43,7 @@ export function useReading(owner) {
         const r = await fetch(URL_, { cache: 'no-store', redirect: 'manual' })
         const j = await r.json().catch(() => null)
         if (!on) return
-        // not the owner (or not set up), or Kavita isn't: no bar
+        // not the owner (or not set up), or Kavita isn't: no icon
         if (privateAnswer(r.status, r.type) === 'locked' || (r.ok && j?.on === false)) {
           setOff(true)
           setData(null)
@@ -92,15 +91,15 @@ export function useReading(owner) {
   }
 }
 
-// ---- the bar ----
+// ---- the header icon ----
 
-// The dashboard's slim bar (under Pins, its height): the book in progress, or how many and the latest; a tap opens
-// them all. Nothing in progress: nothing. wait: it may be on its way (owner not known yet, or the first load), so its
-// skeleton keeps the place (where it showed last time); force: it surely is the owner's
-export function ReadingBar({ rd, wait = false, force = false, onOpen }) {
-  const line = barLine(rd.books)
-  if (!line) return wait && !rd.on ? <MiniBarSkeleton label="Reading" force={force} add={false} className="sk-reading" /> : null
-  return <MiniBar label="Reading" icon={BookOpen} value={line.value} detail={line.detail} tail={line.tail} onOpen={() => onOpen()} openLabel={line.label} />
+// The header's icon next to the bell: how many books are in progress (its badge); a tap opens them all. Nothing in
+// progress: nothing. wait: it may be on its way (owner not known yet, or the first load), so its skeleton keeps the
+// place (where it showed last time); force: it surely is the owner's
+export function ReadingIcon({ rd, wait = false, force = false, onOpen, className = '' }) {
+  const label = iconLabel(rd.books)
+  if (!label) return wait && !rd.on ? <HeadIconSkeleton force={force} className={`sk-reading ${className}`} /> : null
+  return <HeadIcon className={className} label={label} icon={BookOpen} count={rd.books.length} onOpen={() => onOpen()} />
 }
 
 // ---- the sheet ----
@@ -149,7 +148,7 @@ function Book({ book, now }) {
   )
 }
 
-// All of them in a sheet (opened from the bar). Its open state is followed here: opening it asks for a fresh list
+// All of them in a sheet (opened from the header icon). Its open state is followed here: opening it asks for a fresh list
 export function ReadingSheet({ rd, dlg }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)
