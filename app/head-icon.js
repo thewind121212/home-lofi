@@ -1,14 +1,19 @@
 'use client'
 
-// The owner's icons next to the header's bell (Reminders, Pins, Focus, Reading): the bell's square, a Lucide icon, a count badge
+// The owner's icons next to the header's bell (Reminders, Pins, Reading), and Focus on the dock: the bell's square, a Lucide icon, a count badge
 // when there's something to count; a tap opens its sheet (wx-sheet: a bottom sheet on phones, a centered panel from
 // sm). warm: tinted (something wants doing). ring: 0–100, a thin progress ring around the icon instead of a badge
 // (Reading: how far the latest book is; a started book shows at least a sliver; Focus: how far this phase has gone).
-// ringClass: the ring's colour (the accent unless said: Focus's break is a calm green). Its skeleton is the bell's stand-in
-// square (className: more skeleton classes, e.g. Reading's sk-reading)
+// ringClass: the ring's colour (the accent unless said: Focus's break is a calm green). dock: the dock's round glass
+// button instead of the bell's square (Focus sits on top of the dock). Its skeleton is the bell's stand-in square, or
+// the dock's circle (className: more skeleton classes, e.g. Reading's sk-reading)
 const R = 13
 const ROUND = 2 * Math.PI * R
-export function HeadIcon({ label, icon: Icon, count = 0, warm = false, ring = null, ringClass = 'stroke-lofi-primary', onOpen, className = '' }) {
+const SHAPE = {
+  head: 'rounded-xl bg-lofi-base/50 border border-white/5 hover:border-white/20 transition-colors',
+  dock: 'glass-panel rounded-full hover:scale-105 transition',
+}
+export function HeadIcon({ label, icon: Icon, count = 0, warm = false, ring = null, ringClass = 'stroke-lofi-primary', dock = false, onOpen, className = '' }) {
   const arc = Number.isFinite(ring) && ring > 0 ? Math.max(4, Math.min(100, ring)) : 0
   return (
     <button
@@ -17,7 +22,7 @@ export function HeadIcon({ label, icon: Icon, count = 0, warm = false, ring = nu
       aria-haspopup="dialog"
       aria-label={label}
       title={label}
-      className={`${className} relative w-11 h-11 shrink-0 rounded-xl bg-lofi-base/50 border border-white/5 flex items-center justify-center hover:text-lofi-primary hover:border-white/20 transition-colors ${warm ? 'text-lofi-primary' : 'text-lofi-text'}`}
+      className={`${className} relative w-11 h-11 shrink-0 ${SHAPE[dock ? 'dock' : 'head']} flex items-center justify-center hover:text-lofi-primary ${warm ? 'text-lofi-primary' : 'text-lofi-text'}`}
     >
       {ring != null && (
         <svg viewBox="0 0 30 30" className="absolute w-[30px] h-[30px] -rotate-90" aria-hidden="true">
@@ -37,6 +42,6 @@ export function HeadIcon({ label, icon: Icon, count = 0, warm = false, ring = nu
     </button>
   )
 }
-export function HeadIconSkeleton({ force, className = '' }) {
-  return <span aria-hidden="true" className={`sk-owner ${force ? 'sk-force' : ''} ${className} w-11 h-11 shrink-0 rounded-xl bg-lofi-base/50 border border-white/5 sk-pulse`} />
+export function HeadIconSkeleton({ force, dock = false, className = '' }) {
+  return <span aria-hidden="true" className={`sk-owner ${force ? 'sk-force' : ''} ${className} w-11 h-11 shrink-0 ${dock ? 'glass-panel rounded-full' : 'rounded-xl bg-lofi-base/50 border border-white/5'} sk-pulse`} />
 }

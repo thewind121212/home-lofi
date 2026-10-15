@@ -22,7 +22,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Pause, Play, SkipForward, Square, Timer, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, useStillPage } from './settings'
-import { DEFAULT_PRESET, MINUTE, PRESETS, PRESET_IDS, act, addSkew, cleanSession, countText, fmtLeft, iconLabel, leftOf, nextTickIn, paused, phaseLen, phaseLine, phaseName, ringOf, running, skewOf, transitionKey } from '../lib/focus'
+import { DEFAULT_PRESET, MINUTE, PRESETS, PRESET_IDS, act, addSkew, cleanSession, countText, fmtLeft, iconLabel, leftOf, nextTickIn, paused, phaseLen, phaseLine, phaseName, ringOf, ringWords, running, skewOf, transitionKey } from '../lib/focus'
 
 const URL_ = '/api/private/settings/focus'
 const RETRY_MS = [3_000, 10_000, 30_000, 60_000] // a failed first load, tried again (then every minute)
@@ -301,16 +301,17 @@ const iconTone = (s) => (paused(s) ? 'text-lofi-muted' : s.phase === 'break' ? '
 
 // ---- the header icon ----
 
-// The header's icon next to the bell: a timer; while a session runs, a ring for how far this phase has gone, the label
-// what's left. Nothing at all unless the server said this is the owner and answered. wait: it may be on its way (owner
+// Its button on top of the dock (over ⛰): a timer; while a session runs, a ring for how far this phase has gone, the
+// label what's left. Nothing at all unless the server said this is the owner and answered. wait: it may be on its way (owner
 // not known yet, or the first load), so its skeleton keeps the place; force: it surely is the owner's
 export function FocusIcon({ fc, wait = false, force = false, onOpen, className = '' }) {
   useLeft(fc)
-  if (!fc.on) return wait ? <HeadIconSkeleton force={force} className={className} /> : null
+  if (!fc.on) return wait ? <HeadIconSkeleton force={force} dock className={className} /> : null
   const s = fc.session
   const ms = fc.now()
   return (
     <HeadIcon
+      dock
       className={className}
       label={iconLabel(s, ms)}
       icon={Timer}
@@ -352,61 +353,71 @@ export function FocusSheet({ fc, dlg }) {
   )
 }
 
+// The sheet: a timer, not a form. A big ring round the countdown (it fills as the phase goes: the accent for focus,
+// green for a break, grey while paused), what it is over the time and where it's at under it; then the controls as a
+// player has them: the big round Pause / Resume in the middle, Stop and Skip either side. Nothing running: the two
+// lengths as one switch (the ring shows the one picked) and one big Start. Today's 🍅 in the head
+const RING_R = 92
+const RING_C = 2 * Math.PI * RING_R
 function FocusBody({ fc, onClose }) {
   const left = useLeft(fc)
+  const [pick, setPick] = useState(DEFAULT_PRESET)
   const s = fc.session
   const ms = fc.now()
-  const tone = s ? (s.phase === 'break' ? 'is-break' : 'is-focus') : 'is-idle'
+  const tone = !s ? 'is-idle' : paused(s) ? 'is-paused' : s.phase === 'break' ? 'is-break' : 'is-focus'
   const pct = s ? ringOf(s, ms) : 0
+  const words = ringWords(s, pick)
   return (
-    <section aria-labelledby="fc-title" className="p-5 sm:p-6 fc">
+    <section aria-labelledby="fc-title" className={`p-5 sm:p-6 fc ${tone}`}>
       <div className="fc-head">
-        <span className="fc-mark" aria-hidden="true"><Timer size={17} strokeWidth={1.9} /></span>
-        <div className="fc-title">
-          <h2 id="fc-title">Focus</h2>
-          <span className="fc-sub">{countText(fc.today)}</span>
-        </div>
+        <h2 id="fc-title">Focus</h2>
+        <span className="fc-count">{countText(fc.today)}</span>
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
 
-      <div className={`fc-clock ${tone}${paused(s) ? ' is-paused' : ''}`}>
-        <span className="fc-time" role="timer" aria-label={s ? iconLabel(s, ms) : 'No focus session'}>
-          {s ? fmtLeft(left) : fmtLeft(phaseLen(DEFAULT_PRESET, 'focus', fc.minute))}
-        </span>
-        <span className="fc-phase">{phaseLine(s)}</span>
-        <span className="fc-track" aria-hidden="true"><span style={{ width: `${pct}%` }} /></span>
+      <div className="fc-dial">
+        <svg viewBox="0 0 200 200" className="fc-ring" aria-hidden="true">
+          <circle cx="100" cy="100" r={RING_R} className="fc-ring-track" />
+          <circle cx="100" cy="100" r={RING_R} className="fc-ring-fill" strokeDasharray={RING_C} strokeDashoffset={RING_C * (1 - pct / 100)} />
+        </svg>
+        <div className="fc-face">
+          <span className="fc-label">{words.label}</span>
+          <span className="fc-time" role="timer" aria-label={s ? iconLabel(s, ms) : 'No focus session'}>
+            {s ? fmtLeft(left) : fmtLeft(phaseLen(pick, 'focus', fc.minute))}
+          </span>
+          <span className="fc-detail">{words.detail}</span>
+        </div>
       </div>
 
       {s ? (
         <div className="fc-controls">
+          <span className="fc-side">
+            <button type="button" className="fc-round" onClick={() => fc.stop()} aria-label="Stop the session"><Square size={15} strokeWidth={2.4} aria-hidden="true" /></button>
+            <span aria-hidden="true">Stop</span>
+          </span>
           {paused(s) ? (
-            <button type="button" className="fc-main" onClick={() => fc.resume()}>
-              <Play size={16} strokeWidth={2.2} aria-hidden="true" />Resume
-            </button>
+            <button type="button" className="fc-big" onClick={() => fc.resume()} aria-label="Resume"><Play size={26} strokeWidth={2.2} aria-hidden="true" /></button>
           ) : (
-            <button type="button" className="fc-main" onClick={() => fc.pause()}>
-              <Pause size={16} strokeWidth={2.2} aria-hidden="true" />Pause
-            </button>
+            <button type="button" className="fc-big" onClick={() => fc.pause()} aria-label="Pause"><Pause size={26} strokeWidth={2.2} aria-hidden="true" /></button>
           )}
-          <button type="button" className="fc-btn" onClick={() => fc.skip()} aria-label={s.phase === 'focus' ? 'Skip to the break' : 'Skip the break: focus now'}>
-            <SkipForward size={15} strokeWidth={2} aria-hidden="true" />Skip
-          </button>
-          <button type="button" className="fc-btn" onClick={() => fc.stop()} aria-label="Stop the session">
-            <Square size={13} strokeWidth={2.4} aria-hidden="true" />Stop
-          </button>
+          <span className="fc-side">
+            <button type="button" className="fc-round" onClick={() => fc.skip()} aria-label={s.phase === 'focus' ? 'Skip to the break' : 'Skip the break: focus now'}><SkipForward size={17} strokeWidth={2} aria-hidden="true" /></button>
+            <span aria-hidden="true">{s.phase === 'focus' ? 'Break' : 'Focus'}</span>
+          </span>
         </div>
       ) : (
-        <div className="fc-presets" role="group" aria-label="Start a session">
-          {PRESET_IDS.map((p) => (
-            <button key={p} type="button" className="fc-preset" onClick={() => fc.start(p)} aria-label={`Start: ${PRESETS[p][0]} minutes focus, ${PRESETS[p][1]} minutes break`}>
-              <span className="fc-preset-n">{PRESETS[p][0]}<small> / {PRESETS[p][1]}</small></span>
-              <span className="fc-preset-l">min focus / break</span>
-            </button>
-          ))}
+        <div className="fc-start">
+          <div className="fc-switch" role="radiogroup" aria-label="Length">
+            {PRESET_IDS.map((p) => (
+              <button key={p} type="button" role="radio" aria-checked={pick === p} className="fc-opt" onClick={() => setPick(p)} aria-label={`${PRESETS[p][0]} minutes focus, ${PRESETS[p][1]} minutes break`}>
+                {PRESETS[p][0]}<small> / {PRESETS[p][1]}</small>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="fc-big" onClick={() => fc.start(pick)} aria-label={`Start: ${PRESETS[pick][0]} minutes focus`}><Play size={26} strokeWidth={2.2} aria-hidden="true" /></button>
         </div>
       )}
       {fc.note && <p className="hb-note" role="status">{fc.note}</p>}
-      <p className="fc-foot">The same on all your devices · your phone buzzes at each change</p>
     </section>
   )
 }
