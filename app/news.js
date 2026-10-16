@@ -8,7 +8,9 @@
 // 404 / 403 and never see the icon; NEWS_URL not set: no icon either).
 // - A story's title opens it (a new tab) and marks it read: read ones are dimmed, on every device (the server keeps
 //   them). ✓ marks one read / unread by hand; "Mark all read" a whole section.
-// - Older editions from the agent's archive in the select at the top (read state carries over: same stories, same ids).
+// - A day at a time: every edition of it merged, each story once (lib/news.js mergeDay), the brief and the top stories
+//   the newest edition's; stories that came since the newest edition opened before this opening are marked New. Older
+//   days in the menu at the top (read state carries over: same stories, same ids).
 // - 📌 pins a story's link (app/pins.js).
 // - 🔄 Refresh: the agent makes an edition now (a run, a few minutes). Asked again every POLL while it's going (on every
 //   device: they hear 'news'), and the new edition shows by itself. The agent's limits (a cooldown, so many a day) are
@@ -20,7 +22,7 @@ import { Component, useEffect, useId, useRef, useState } from 'react'
 import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, Clapperboard, Clock, Cpu, Flag, Globe, Hash, MessageSquare, Newspaper, Pin, RefreshCw, Sparkles, Tv, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, motionOff, useStillPage } from './settings'
-import { CATEGORIES, EDITIONS, ago, editionLine, editionName, inCinemas, runGoing, waitFor } from '../lib/news'
+import { CATEGORIES, ago, dayName, editionLine, inCinemas, runGoing, waitFor } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
 import { reportError } from './report-error'
 
@@ -64,7 +66,7 @@ export function useNews(owner, clientId) {
     // (the agent's machine down, a restart: what was there stays, and so does the edition it was)
     function fail() {
       setError(true)
-      view.current = dataRef.current?.edition ?? null
+      view.current = dataRef.current?.picked ?? null
       setPicked(undefined)
     }
     async function pull(force = false) {
@@ -76,14 +78,14 @@ export function useNews(owner, clientId) {
       const n = ++seq.current.sent
       const name = view.current
       try {
-        const r = await fetch(name ? `${URL_}?edition=${encodeURIComponent(name)}` : URL_, { cache: 'no-store', redirect: 'manual' })
+        const r = await fetch(name ? `${URL_}?day=${encodeURIComponent(name)}` : URL_, { cache: 'no-store', redirect: 'manual' })
         const j = await r.json().catch(() => null)
         if (!on || name !== view.current) return
         // (read before a write of this tab's: asked again, so what was asked for still comes)
         if (n < seq.current.shown) return void (again = true)
         seq.current.shown = n
         if (r.status === 404 && name && j?.on) {
-          // (that edition has left the archive: back to the latest. Before the locked check: a guest's 404 has no on)
+          // (that day has left the archive: back to the newest. Before the locked check: a guest's 404 has no on)
           view.current = null
           setPicked(undefined)
           again = true
@@ -171,8 +173,8 @@ export function useNews(owner, clientId) {
     loading: picked !== undefined,
     // an edition newer than the newest one opened
     fresh: on && data.latestAt > Math.max(data.seen ?? 0, seenHere),
-    view: picked !== undefined ? picked : (data?.edition ?? null),
-    // another edition (null: the latest)
+    view: picked !== undefined ? picked : (data?.picked ?? null),
+    // another day (null: the newest with news)
     show(name) {
       view.current = name
       setPicked(name)
@@ -264,8 +266,14 @@ export function NewsModal({ nw, pn, dlg }) {
   ref.current = nw
   useEffect(() => void (open && ref.current.pull(true)), [open])
   // (the latest on screen, the modal open: seen)
-  const latestShown = open && nw.on && nw.view == null && nw.data.edition == null
+  const latestShown = open && nw.on && nw.data.digest.at === nw.data.latestAt
   useEffect(() => void (latestShown && ref.current.seen()), [latestShown, nw.data?.latestAt])
+  // New: what came after the newest edition opened before this opening (kept while it's open, though opening it moves
+  // that on; null: nothing opened yet, nothing marked)
+  const [base, setBase] = useState(undefined)
+  useEffect(() => void (!open && setBase(undefined)), [open])
+  useEffect(() => void (open && base === undefined && nw.on && setBase(nw.data.seen ?? null)), [open, base, nw.on])
+  const view = { ...nw, isNew: (it) => base != null && it.since > base }
   const close = () => closeDialog(dlg.current)
   return (
     <dialog
@@ -277,8 +285,8 @@ export function NewsModal({ nw, pn, dlg }) {
       className="wx-sheet nw-modal glass-panel text-lofi-text"
     >
       {nw.on && (
-        <NewsCatch key={nw.data.edition ?? 'latest'} nw={nw} onClose={close}>
-          <NewsBody nw={nw} pn={pn} dlg={dlg} tab={tab} setTab={setTab} onClose={close} />
+        <NewsCatch key={nw.data.day} nw={view} onClose={close}>
+          <NewsBody nw={view} pn={pn} dlg={dlg} tab={tab} setTab={setTab} onClose={close} />
         </NewsCatch>
       )}
     </dialog>
@@ -348,7 +356,7 @@ class NewsCatch extends Component {
     return { error }
   }
   componentDidCatch(error, info) {
-    reportError(error, `news:${this.props.nw.data?.edition ?? 'latest'}`, info?.componentStack)
+    reportError(error, `news:${this.props.nw.data?.day ?? '?'}`, info?.componentStack)
   }
   render() {
     if (!this.state.error) return this.props.children
@@ -362,9 +370,9 @@ class NewsCatch extends Component {
         </header>
         <div className="nw-scroll">
           <div className="nw-brief" role="alert">
-            <span className="nw-kicker">Couldn't show this edition</span>
+            <span className="nw-kicker">Couldn't show this day</span>
             <p>Something in it tripped the page. It's been noted.</p>
-            {nw.data?.edition != null && <button type="button" className="nw-brief-more nw-back" onClick={() => nw.show(null)}>Back to the latest</button>}
+            {nw.data?.picked != null && <button type="button" className="nw-brief-more nw-back" onClick={() => nw.show(null)}>Back to the newest</button>}
           </div>
         </div>
       </section>
@@ -381,7 +389,7 @@ const smooth = () => (motionOff() ? 'auto' : 'smooth')
 // them; each page scrolls on its own, so a section is a short read, not a long scroll past the others.
 // Keys (from lg, focus in the modal): ← → the pages, j / k the stories, m read / unread
 function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
-  const { digest, editions } = nw.data
+  const { digest, days } = nw.data
   const now = Date.now()
   const head = useRef(null)
   const pager = useRef(null)
@@ -499,12 +507,12 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
           <h2 id="nw-title">News</h2>
           {/* (with the edition menu there, the time is on its button) */}
           <span className="nw-sub">
-            <span className={editions.length ? 'nw-sub-ed' : undefined}>{editions.length ? (EDITIONS[digest.edition] ?? 'On demand') : editionLine(digest, now, TZ)}{total ? ' · ' : ''}</span>
+            <span className="nw-sub-ed">{digest.updates > 1 ? `${digest.updates} updates` : editionLine(digest, now, TZ)}{total ? ' · ' : ''}</span>
             {total ? (unread ? `${unread} unread` : 'all read') : ''}
           </span>
         </div>
         {nw.refresh.can && <RefreshButton nw={nw} />}
-        {editions.length > 0 && <EditionMenu nw={nw} editions={editions} now={now} />}
+        {days.length > 0 && <DayMenu nw={nw} days={days} now={now} />}
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </header>
 
@@ -564,16 +572,13 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
   )
 }
 
-const TOP = 8 // Top's stories at most
 const LEADS = 2 // lead cards at most (importance 5)
-const byWeight = (a, b) => b.importance - a.importance || (b.publishedAt ?? 0) - (a.publishedAt ?? 0)
 
-// Top: the day in brief, the stories that matter most from every section (4–5 of 5; the best five when there are
-// fewer), then a card per section (its unread, its first headlines) that opens it
+// Top: the day in brief and the stories that matter most (both the newest edition's: lib/news.js topIds), then a card
+// per section of the whole day (its unread, its first headlines) that opens it
 function TopPage({ digest, brief, setBrief, nw, pn, pinned, now, left, go }) {
-  const all = digest.sections.flatMap((s) => s.items).sort(byWeight)
-  let top = all.filter((i) => i.importance >= 4).slice(0, TOP)
-  if (top.length < 5) top = all.slice(0, 5)
+  const byId = new Map(digest.sections.flatMap((s) => s.items.map((i) => [i.id, i])))
+  const top = digest.top.map((id) => byId.get(id)).filter(Boolean)
   const props = { nw, pn, pinned, now }
   return (
     <>
@@ -737,17 +742,17 @@ function RunNote({ nw }) {
   )
 }
 
-// The edition picker: a button with the one shown ("Latest · 10:32"), a short list under it (Latest, then the archive
-// by day: "Today · 10:12", "Yesterday · 18:00"). Arrow keys move, Enter picks, Esc or a tap elsewhere closes it (Esc
-// doesn't close the modal then)
-function EditionMenu({ nw, editions, now }) {
+// The day picker: a button with the day shown and its last update ("Today · 14:37"), a short list under it (the days
+// with news, newest first: "Today · 6 updates", "Yesterday · 4 updates", "Thu 15 Oct"). Arrow keys move, Enter picks,
+// Esc or a tap elsewhere closes it (Esc doesn't close the modal then)
+function DayMenu({ nw, days, now }) {
   const [open, setOpen] = useState(false)
   const box = useRef(null)
   const btn = useRef(null)
-  const cur = nw.view
-  const latest = `Latest · ${new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(nw.data.latestAt)}`
-  const label = (n) => (n == null ? latest : (editionName(n, now, TZ) ?? n))
-  const all = [null, ...editions.map((e) => e.name)]
+  const shown = nw.view ?? nw.data.day
+  const info = (d) => days.find((x) => x.day === d)
+  const name = (d) => dayName(d, now, TZ) ?? d
+  const label = `${name(shown)}${info(shown) ? ` · ${info(shown).last}` : ''}`
   useEffect(() => {
     if (!open) return
     const out = (e) => !box.current?.contains(e.target) && setOpen(false)
@@ -756,10 +761,11 @@ function EditionMenu({ nw, editions, now }) {
     box.current?.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true })
     return () => document.removeEventListener('pointerdown', out, true)
   }, [open])
-  const pick = (n) => {
+  const pick = (d) => {
     setOpen(false)
     btn.current?.focus({ preventScroll: true })
-    if (n !== cur) nw.show(n)
+    // (the newest day: back to following it, so a new day takes over at midnight)
+    if (d !== shown) nw.show(d === days[0].day ? null : d)
   }
   function onKey(e) {
     if (!open) return
@@ -778,17 +784,18 @@ function EditionMenu({ nw, editions, now }) {
   }
   return (
     <div ref={box} className="nw-menu" onKeyDown={onKey}>
-      <button ref={btn} type="button" className={`nw-menu-btn${open ? ' is-open' : ''}`} aria-haspopup="menu" aria-expanded={open} aria-label={`Edition: ${label(cur)}. Pick another`} onClick={() => setOpen((o) => !o)}>
+      <button ref={btn} type="button" className={`nw-menu-btn${open ? ' is-open' : ''}`} aria-haspopup="menu" aria-expanded={open} aria-label={`Day: ${label}. Pick another`} onClick={() => setOpen((o) => !o)}>
         <Clock size={13} aria-hidden="true" />
-        <span>{label(cur)}</span>
+        <span>{label}</span>
         <ChevronDown size={14} className="chev" aria-hidden="true" />
       </button>
       {open && (
-        <div className="nw-menu-list" role="menu" aria-label="Editions">
-          {all.map((n, i) => (
-            <button key={n ?? 'latest'} type="button" role="menuitemradio" aria-checked={n === cur} tabIndex={-1} className={`nw-menu-item${i === 1 ? ' is-first-old' : ''}`} onClick={() => pick(n)}>
-              <span>{label(n)}</span>
-              {n === cur && <Check size={14} strokeWidth={2.4} aria-hidden="true" />}
+        <div className="nw-menu-list" role="menu" aria-label="Days">
+          {days.map((d, i) => (
+            <button key={d.day} type="button" role="menuitemradio" aria-checked={d.day === shown} tabIndex={-1} className={`nw-menu-item${i === 1 ? ' is-first-old' : ''}`} onClick={() => pick(d.day)}>
+              <span>{name(d.day)}</span>
+              <span className="nw-menu-n">{d.updates} {d.updates === 1 ? 'update' : 'updates'}</span>
+              {d.day === shown && <Check size={14} strokeWidth={2.4} aria-hidden="true" />}
             </button>
           ))}
         </div>
@@ -827,6 +834,7 @@ function Story({ it, lead = false, nw, pn, pinned, now }) {
     <article data-id={it.id} className={`nw-story${lead ? ' is-lead' : ''}${read ? ' is-read' : ''}`} style={{ '--nw-h': HUE[it.category] ?? 240 }}>
       <div className="nw-tags">
         <span className="nw-cat">{CATEGORIES[it.category]}</span>
+        {nw.isNew?.(it) && <span className="nw-new">New</span>}
         <span className="nw-imp" aria-label={`importance ${it.importance} of 5`} title={`importance ${it.importance} of 5`}>
           {[1, 2, 3, 4, 5].map((n) => <i key={n} className={n <= it.importance ? 'on' : ''} />)}
         </span>
@@ -837,6 +845,11 @@ function Story({ it, lead = false, nw, pn, pinned, now }) {
       </h4>
       {it.summary && (
         <p className={`nw-sum${more || lead ? ' is-open' : ''}`} onClick={() => !lead && setMore((m) => !m)}>{it.summary}</p>
+      )}
+      {more && it.keyPoints && (
+        <ul className="nw-points">
+          {it.keyPoints.map((p, i) => <li key={i}>{p}</li>)}
+        </ul>
       )}
       {more && it.original && <p className="nw-orig">{it.original}</p>}
       {lead && it.original && <p className="nw-orig">{it.original}</p>}
@@ -852,7 +865,7 @@ function Story({ it, lead = false, nw, pn, pinned, now }) {
           <span><MessageSquare size={11} aria-hidden="true" />{it.comments}</span>
         ))}
         <span className="nw-acts">
-          {!lead && (it.summary || it.original) && (
+          {(lead ? it.keyPoints : it.summary || it.original || it.keyPoints) && (
             <button type="button" className="nw-act" aria-expanded={more} aria-label={more ? 'Show less' : 'Show more'} title={more ? 'Less' : 'More'} onClick={() => setMore((m) => !m)}>
               <ChevronDown size={14} className={more ? 'rot' : ''} aria-hidden="true" />
             </button>

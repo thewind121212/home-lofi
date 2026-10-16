@@ -492,14 +492,17 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as a small
 magazine. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens it: a
 **bottom sheet** on phones (drag its top down to close), a centered panel on tablets, a wide one on desktops with the
-sections down the side. The edition comes in **pages**: *Top* (the day **in brief**, the stories rated 4–5 of 5 from
-every section, a card per section), then one per section (its 5/5 stories as lead cards, the rest as rows with their
-category, importance dots, source, how long ago, Hacker News points and comments; category chips to narrow it, *Next*
+sections down the side. It shows **a whole day** (the agent's clock): every edition of it merged, each story once in
+its newest words (the agent repeats stories from run to run); stories that came since you last looked are marked
+**New**; older days (the archive keeps 30) in the menu at the top, and a new day takes over at midnight. The day comes
+in **pages**: *Top* (the day **in brief** and the top stories, both from the newest edition:
+its overview covers the day so far; a card per section), then one per section (its 5/5 stories as lead cards, the rest as rows with their
+category, importance dots, source, how long ago, Hacker News points and comments, ▾ for the key points; category chips to narrow it, *Next*
 at the bottom). Swipe between pages on a phone, or pick one from the chips / the side; on a desktop ← → change pages,
 j / k move between stories, m marks one read or unread.
 A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
 read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
-editions from the agent's archive in the menu at the top. Also in ⌘K (*Open news*).
+days in the menu at the top. Also in ⌘K (*Open news*).
 🔄 **Refresh** asks the agent for a fresh edition now, besides its scheduled 07:00 and 15:00 ones: a run takes a few
 minutes, the modal says how it's going (on every device), and the new edition shows by itself when it's done (*Show
 it* when an older one is open). The agent's own limits (10 minutes between runs, 10 a day) answer with how long to
@@ -509,8 +512,9 @@ wait, and the page says so.
 | --- | --- | --- |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | where this server reaches the agent: `latest.json`, `archive/` (its listing), `archive/<YYYY-MM-DD_HHMM>.json`, and for Refresh `POST /api/run` and `GET /api/status` (no status: no 🔄) |
 
-- `GET /api/private/settings/news[?edition=<archive name>]` (owner) → `{ on, digest: { edition, at, overview, sections:
-  [{ key, title, items }] }, edition, latestAt, editions: [{ name, label }], read, seen }`; `{ on: false }` without
+- `GET /api/private/settings/news[?day=YYYY-MM-DD]` (owner) → `{ on, digest: { edition, at, first, updates, overview,
+  top, sections: [{ key, title, items }] }, day, picked, today, days: [{ day, updates, last }], latestAt, read, seen }`
+  (items carry `since`: when the story first came); `{ on: false }` without
   `NEWS_URL`; 502 when the agent can't be reached and nothing was loaded yet (once loaded, the last copy stays).
   `POST { action: 'read' | 'unread', ids }` / `{ action: 'seen', at }` / `{ action: 'refresh' }` (→ `{ ok, started }`,
   or 429 `{ nextAt }`: the agent's limits). GET also has `run` (the agent's newest run: `{ state, startedAt,
