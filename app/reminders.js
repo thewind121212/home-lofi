@@ -527,7 +527,7 @@ function PopupList({ rm, pn }) {
 // ---- Ambient and the lock screen ----
 // From 06:00 while anything is open (the pop-up's rule; the pop-up itself waits for the dashboard), the reminders follow
 // to the other screens: a chip on Ambient's bar (a tap opens the list), a quiet line under Ambient's big clock, and a
-// small list on the lock screen (not buttons: a swipe over it still unlocks; done is a hold, once unlocked).
+// small list on the lock screen (not buttons, but its ×: a swipe over it still unlocks; done is a hold, once unlocked).
 export const remindersShowing = (rm) => Boolean(rm.on && rm.data.due && rm.data.items.length)
 const showing = remindersShowing
 
@@ -568,18 +568,34 @@ export function RemindersLine({ rm }) {
   )
 }
 
-// the lock screen: up to LOCK_SHOWN of them, then "+N more"; a short screen (a landscape phone): one pill with the count
+// the lock screen: up to LOCK_SHOWN of them, then "+N more"; a short screen (a landscape phone): one pill with the count.
+// × hides them until the next lock (the lock screen mounts fresh each time, and this state with it)
 const LOCK_SHOWN = 3
 export function LockReminders({ rm }) {
-  if (!showing(rm)) return null
+  const [hidden, setHidden] = useState(false)
+  if (!showing(rm) || hidden) return null
   const items = rm.data.items
   const n = items.length
+  const hide = (
+    <button
+      type="button"
+      onClick={() => setHidden(true)}
+      onPointerDown={(e) => e.stopPropagation()} // (never the start of a swipe)
+      data-noswipe
+      aria-label="Hide reminders until the next lock"
+      title="Hide until the next lock"
+      className="-my-1 -mr-1.5 ml-auto w-7 h-7 shrink-0 rounded-full flex items-center justify-center text-lofi-muted hover:text-white transition-colors"
+    >
+      <X size={14} strokeWidth={2} aria-hidden="true" />
+    </button>
+  )
   return (
     <div role="group" aria-label="Reminders" className="flex flex-col items-center gap-2 w-[min(22rem,calc(100vw-2rem))]">
       <div className="short:hidden w-full glass-panel rounded-2xl px-3.5 py-3 text-left motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]">
         <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-lofi-muted">
           <ListTodo size={13} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
           {n} reminder{n === 1 ? '' : 's'} today
+          {hide}
         </p>
         <ul className="mt-2 flex flex-col gap-1.5">
           {items.slice(0, LOCK_SHOWN).map((r) => (
@@ -594,6 +610,7 @@ export function LockReminders({ rm }) {
       <div className="hidden short:flex glass-panel h-9 px-3.5 rounded-full items-center gap-2 font-mono text-xs text-white">
         <ListTodo size={13} strokeWidth={2} className="text-lofi-primary" aria-hidden="true" />
         {n} reminder{n === 1 ? '' : 's'} today
+        {hide}
       </div>
     </div>
   )
