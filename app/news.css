@@ -16,14 +16,38 @@
 .nw-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .nw-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
 .nw-sub { margin-top: 2px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nw-pick { position: relative; flex: none; display: inline-flex; align-items: center; color: var(--color-lofi-muted); }
-.nw-pick select {
-  appearance: none; height: 34px; max-width: 9.5rem; padding: 0 28px 0 12px; border-radius: 999px; cursor: pointer;
+/* the edition picker: a pill, and its list dropping under it (over the page, not in it) */
+.nw-menu { position: relative; flex: none; }
+.nw-menu-btn {
+  height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px 0 12px; border-radius: 999px; cursor: pointer;
   border: 1px solid rgb(255 255 255 / 0.12); background: rgb(26 26 46 / 0.6); color: var(--color-lofi-text);
-  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; text-overflow: ellipsis;
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; white-space: nowrap; transition: border-color 0.2s, color 0.2s;
 }
-.nw-pick select:hover, .nw-pick select:focus-visible { border-color: rgb(255 138 92 / 0.6); outline: none; }
-.nw-pick svg { position: absolute; right: 10px; pointer-events: none; }
+.nw-menu-btn > svg:first-child { color: var(--color-lofi-primary); }
+.nw-menu-btn .chev { color: var(--color-lofi-muted); transition: transform 0.25s; }
+.nw-menu-btn.is-open .chev { transform: rotate(180deg); }
+.nw-menu-btn:hover, .nw-menu-btn.is-open { border-color: rgb(255 138 92 / 0.6); }
+.nw-menu-btn:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+.nw-menu-list {
+  position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; min-width: 100%; width: max-content; max-height: min(18rem, 60svh); overflow-y: auto;
+  overscroll-behavior: contain; scrollbar-width: none; padding: 5px; border-radius: 16px; display: flex; flex-direction: column; gap: 2px;
+  background: #1c1c33; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 18px 40px rgb(0 0 0 / 0.55);
+  transform-origin: top right; animation: nw-drop 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.nw-menu-list::-webkit-scrollbar { display: none; }
+.nw-menu-item {
+  height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 10px 0 12px; border-radius: 11px; cursor: pointer;
+  border: 0; background: transparent; color: var(--color-lofi-text); text-align: left; white-space: nowrap;
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; transition: background-color 0.15s, color 0.15s;
+}
+.nw-menu-item:hover, .nw-menu-item:focus-visible { background: rgb(255 255 255 / 0.07); color: #fff; outline: none; }
+.nw-menu-item[aria-checked='true'] { color: var(--color-lofi-primary); }
+.nw-menu-item svg { flex: none; }
+/* (a hairline between the latest and the archive) */
+.nw-menu-item.is-first-old { margin-top: 5px; position: relative; }
+.nw-menu-item.is-first-old::before { content: ''; position: absolute; left: 10px; right: 10px; top: -4px; height: 1px; background: rgb(255 255 255 / 0.08); }
+@media (hover: none) { .nw-menu-item { height: 44px; } }
+@keyframes nw-drop { from { opacity: 0; transform: translateY(-4px) scale(0.97); } }
 
 .nw-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 22px; transition: opacity 0.2s; }
 .nw-scroll::-webkit-scrollbar { display: none; }
@@ -46,8 +70,8 @@
   .nw-brief-more { display: inline-flex; align-items: center; }
   .nw-brief p { font-size: 14px; line-height: 1.55; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; }
   .nw-brief.is-open p { display: block; -webkit-line-clamp: unset; }
-  .nw-sub { white-space: normal; }
-  .nw-pick select { max-width: 6.5rem; padding-left: 10px; }
+  .nw-menu-btn { padding: 0 8px 0 10px; gap: 5px; }
+  .nw-sub-ed { display: none; } /* (phones: the menu beside it says which edition; this line, how many are left) */
   .nw-head { gap: 10px; }
 }
 

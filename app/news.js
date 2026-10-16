@@ -13,10 +13,10 @@
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, MessageSquare, Newspaper, Pin, X } from 'lucide-react'
+import { Check, ChevronDown, Clock, MessageSquare, Newspaper, Pin, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, useStillPage } from './settings'
-import { CATEGORIES, ago, editionLine } from '../lib/news'
+import { CATEGORIES, EDITIONS, ago, editionLine, editionName } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
 
 const URL_ = '/api/private/settings/news'
@@ -238,18 +238,13 @@ function NewsBody({ nw, pn, onClose }) {
         <span className="nw-mark" aria-hidden="true"><Newspaper size={17} strokeWidth={1.9} /></span>
         <div className="nw-title">
           <h2 id="nw-title">News</h2>
-          <span className="nw-sub">{editionLine(digest, now, TZ)}{total ? ` · ${unread ? `${unread} unread` : 'all read'}` : ''}</span>
+          {/* (with the edition menu there, the time is on its button) */}
+          <span className="nw-sub">
+            <span className={editions.length ? 'nw-sub-ed' : undefined}>{editions.length ? (EDITIONS[digest.edition] ?? 'Special') : editionLine(digest, now, TZ)}{total ? ' · ' : ''}</span>
+            {total ? (unread ? `${unread} unread` : 'all read') : ''}
+          </span>
         </div>
-        {editions.length > 0 && (
-          <label className="nw-pick">
-            <span className="sr-only">Edition</span>
-            <select value={nw.view ?? ''} onChange={(e) => nw.show(e.target.value || null)}>
-              <option value="">Latest</option>
-              {editions.map((e) => <option key={e.name} value={e.name}>{e.label}</option>)}
-            </select>
-            <ChevronDown size={14} aria-hidden="true" />
-          </label>
-        )}
+        {editions.length > 0 && <EditionMenu nw={nw} editions={editions} now={now} />}
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </header>
 
@@ -268,6 +263,66 @@ function NewsBody({ nw, pn, onClose }) {
         {!total && <p className="nw-empty">Nothing in this edition.</p>}
       </div>
     </section>
+  )
+}
+
+// The edition picker: a button with the one shown ("Latest · 10:32"), a short list under it (Latest, then the archive
+// by day: "Today · 10:12", "Yesterday · 18:00"). Arrow keys move, Enter picks, Esc or a tap elsewhere closes it (Esc
+// doesn't close the modal then)
+function EditionMenu({ nw, editions, now }) {
+  const [open, setOpen] = useState(false)
+  const box = useRef(null)
+  const btn = useRef(null)
+  const cur = nw.view
+  const latest = `Latest · ${new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(nw.data.latestAt)}`
+  const label = (n) => (n == null ? latest : (editionName(n, now, TZ) ?? n))
+  const all = [null, ...editions.map((e) => e.name)]
+  useEffect(() => {
+    if (!open) return
+    const out = (e) => !box.current?.contains(e.target) && setOpen(false)
+    document.addEventListener('pointerdown', out, true)
+    // (the picked one gets the focus, so the arrows start from there)
+    box.current?.querySelector('[aria-checked="true"]')?.focus({ preventScroll: true })
+    return () => document.removeEventListener('pointerdown', out, true)
+  }, [open])
+  const pick = (n) => {
+    setOpen(false)
+    btn.current?.focus({ preventScroll: true })
+    if (n !== cur) nw.show(n)
+  }
+  function onKey(e) {
+    if (!open) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setOpen(false)
+      btn.current?.focus({ preventScroll: true })
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      e.preventDefault()
+      const items = [...box.current.querySelectorAll('[role="menuitemradio"]')]
+      const i = items.indexOf(document.activeElement)
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : (i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+      items[next]?.focus()
+    } else if (e.key === 'Tab') setOpen(false)
+  }
+  return (
+    <div ref={box} className="nw-menu" onKeyDown={onKey}>
+      <button ref={btn} type="button" className={`nw-menu-btn${open ? ' is-open' : ''}`} aria-haspopup="menu" aria-expanded={open} aria-label={`Edition: ${label(cur)}. Pick another`} onClick={() => setOpen((o) => !o)}>
+        <Clock size={13} aria-hidden="true" />
+        <span>{label(cur)}</span>
+        <ChevronDown size={14} className="chev" aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="nw-menu-list" role="menu" aria-label="Editions">
+          {all.map((n, i) => (
+            <button key={n ?? 'latest'} type="button" role="menuitemradio" aria-checked={n === cur} tabIndex={-1} className={`nw-menu-item${i === 1 ? ' is-first-old' : ''}`} onClick={() => pick(n)}>
+              <span>{label(n)}</span>
+              {n === cur && <Check size={14} strokeWidth={2.4} aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
