@@ -489,10 +489,14 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 
 ### News (owner only)
 
-The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as one magazine
-page. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens a centered
-modal (on phones too): the edition and its time, the day **in brief**, then each section (its 5/5 stories as lead
-cards, the rest as rows with their category, importance dots, source, how long ago, Hacker News points and comments).
+The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as a small
+magazine. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens it: a
+**bottom sheet** on phones (drag its top down to close), a centered panel on tablets, a wide one on desktops with the
+sections down the side. The edition comes in **pages**: *Top* (the day **in brief**, the stories rated 4–5 of 5 from
+every section, a card per section), then one per section (its 5/5 stories as lead cards, the rest as rows with their
+category, importance dots, source, how long ago, Hacker News points and comments; category chips to narrow it, *Next*
+at the bottom). Swipe between pages on a phone, or pick one from the chips / the side; on a desktop ← → change pages,
+j / k move between stories, m marks one read or unread.
 A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
 read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
 editions from the agent's archive in the menu at the top. Also in ⌘K (*Open news*).

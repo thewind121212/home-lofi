@@ -1,17 +1,22 @@
-/* News (app/news.js): the agent's digest as one magazine page in a centered modal, on phones too (not the bottom
-   sheet the other sheets are there). The page's own tokens; nw- keeps it to itself. Only the page scrolls, under a
-   header that stays put. */
-.nw-modal {
-  width: calc(100% - 1.5rem); max-width: 46rem; height: min(88svh, 60rem); max-height: none; margin: auto; padding: 0;
-  border-radius: 1.5rem; overflow: hidden; overscroll-behavior: contain;
-}
-.nw-modal[open] { animation-name: panel-in; }
-.nw-modal[data-closing] { animation-name: panel-out; }
-@media (max-height: 500px) { .nw-modal { height: calc(100svh - 1rem); } }
+/* News (app/news.js): the agent's digest as a small magazine in a .wx-sheet dialog: the bottom sheet on phones (a
+   grip on top, dragged down to close), a centered panel from 640px, a wide one from 1024px with the sections down the
+   side. The edition in pages side by side (.nw-pager, scroll-snapped: a swipe turns the page); each page scrolls on its
+   own under a header and a nav that stay put. The page's own tokens; nw- keeps it to itself. */
+.nw-modal { padding: 0; overflow: hidden; overscroll-behavior: contain; }
+@media (max-width: 639px) { .nw-modal { height: 92svh; max-height: 92svh; } }
+@media (min-width: 640px) { .nw-modal { max-width: 46rem; height: min(88svh, 60rem); max-height: none; } }
+@media (min-width: 1024px) { .nw-modal { max-width: 72rem; height: min(90svh, 54rem); } }
+@media (max-height: 500px) { .nw-modal { height: calc(100svh - 1rem); max-height: calc(100svh - 1rem); } }
 
 .nw { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.nw-head { display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px 20px; border-bottom: 1px solid rgb(255 255 255 / 0.06); }
+.nw-head { position: relative; flex: none; display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px 20px; border-bottom: 1px solid rgb(255 255 255 / 0.06); }
 @media (min-width: 640px) { .nw-head { padding: 20px 20px 14px 26px; } }
+/* (phones: the grip; the whole header drags, so the browser mustn't pan it) */
+.nw-grip { display: none; }
+@media (max-width: 639px) {
+  .nw-head { padding-top: 24px; touch-action: none; }
+  .nw-grip { display: block; position: absolute; top: 9px; left: 50%; width: 40px; height: 4px; margin-left: -20px; border-radius: 999px; background: rgb(255 255 255 / 0.22); }
+}
 .nw-mark { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
 .nw-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .nw-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
@@ -77,6 +82,114 @@
 }
 .nw-run-go:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
 
+/* the nav: chips over the pages; from 1024px a column beside them (and the keys under it) */
+.nw-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.nw-side { flex: none; border-bottom: 1px solid rgb(255 255 255 / 0.06); }
+.nw-nav { position: relative; display: flex; gap: 6px; padding: 10px 16px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.nw-nav::-webkit-scrollbar { display: none; }
+@media (min-width: 640px) { .nw-nav { padding: 10px 26px; } }
+.nw-tab {
+  flex: none; height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 8px 0 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgb(255 255 255 / 0.1); background: transparent; color: var(--color-lofi-muted); font-size: 13px; white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+}
+.nw-tab:hover { color: var(--color-lofi-text); border-color: rgb(255 255 255 / 0.2); }
+.nw-tab[aria-selected='true'] { color: #fff; border-color: rgb(255 138 92 / 0.55); background: rgb(255 138 92 / 0.14); }
+.nw-tab[aria-selected='true'] > svg { color: var(--color-lofi-primary); }
+.nw-tab:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+/* (Top has no count: the same padding both ends) */
+.nw-tab:not(:has(.nw-tab-n)) { padding-right: 12px; }
+.nw-tab-n {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: inline-grid; place-items: center;
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; background: rgb(255 255 255 / 0.08); color: var(--color-lofi-text);
+}
+.nw-tab[aria-selected='true'] .nw-tab-n:not(.is-done) { background: var(--color-lofi-primary); color: #1a1a2e; }
+.nw-tab-n.is-done { color: var(--color-lofi-muted); }
+.nw-keys { display: none; }
+@media (min-width: 1024px) {
+  .nw-body { flex-direction: row; }
+  .nw-side { width: 15rem; display: flex; flex-direction: column; border-bottom: 0; border-right: 1px solid rgb(255 255 255 / 0.06); }
+  .nw-nav { flex-direction: column; gap: 2px; padding: 16px 12px; overflow: visible; }
+  .nw-tab { width: 100%; height: 42px; border-radius: 12px; border-color: transparent; padding: 0 10px 0 12px; gap: 10px; }
+  .nw-tab:not(:has(.nw-tab-n)) { padding-right: 10px; }
+  .nw-tab:hover { border-color: transparent; background: rgb(255 255 255 / 0.05); }
+  .nw-tab[aria-selected='true'] { border-color: rgb(255 138 92 / 0.35); }
+  .nw-tab-name { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+  .nw-keys {
+    display: flex; flex-direction: column; gap: 6px; margin: auto 0 0; padding: 14px 18px 18px; font-family: var(--font-space-mono), ui-monospace, monospace;
+    font-size: 10px; color: var(--color-lofi-muted);
+  }
+  .nw-keys > span { display: flex; align-items: center; gap: 3px; }
+  .nw-keys > span > :last-child { margin-left: 6px; }
+  .nw-keys kbd {
+    display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 5px; font: inherit;
+    border: 1px solid rgb(255 255 255 / 0.14); color: var(--color-lofi-text); background: rgb(255 255 255 / 0.04);
+  }
+}
+
+/* the pages: side by side, one wide each, snapping; each scrolls on its own, up and down only (a sideways swipe goes
+   on to the pager; the pager keeps it from going on to the browser's back / forward) */
+.nw-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; transition: opacity 0.2s; }
+.nw-main.is-loading { opacity: 0.5; pointer-events: none; }
+.nw-notes { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 12px 20px 0; }
+.nw-notes:empty { display: none; }
+@media (min-width: 640px) { .nw-notes { padding: 14px 26px 0; } }
+@media (min-width: 1024px) { .nw-notes { padding: 18px 30px 0; } }
+.nw-pager {
+  flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.nw-pager::-webkit-scrollbar { display: none; }
+.nw-page {
+  flex: 0 0 100%; min-width: 0; overflow: hidden auto; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; scrollbar-width: none;
+  display: flex; flex-direction: column; gap: 22px; padding: 16px 20px calc(28px + env(safe-area-inset-bottom)); outline: none;
+}
+.nw-page::-webkit-scrollbar { display: none; }
+@media (min-width: 640px) { .nw-page { padding: 20px 26px 32px; } }
+@media (min-width: 1024px) { .nw-page { padding: 22px 30px 36px; } }
+
+/* Top's section cards */
+.nw-index { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 10px; }
+.nw-card {
+  display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 14px 16px; border-radius: 16px; cursor: pointer; text-align: left;
+  border: 1px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.45); color: var(--color-lofi-text); transition: border-color 0.2s, transform 0.2s;
+}
+.nw-card:hover { border-color: rgb(255 138 92 / 0.5); transform: translateY(-1px); }
+.nw-card:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+.nw-card { overflow: hidden; }
+.nw-card > * { min-width: 0; max-width: 100%; }
+.nw-card-top { display: flex; align-items: center; gap: 8px; width: 100%; }
+.nw-card-top > svg:first-child { color: var(--color-lofi-primary); flex: none; }
+.nw-card-top > svg:last-child { color: var(--color-lofi-muted); flex: none; }
+.nw-card-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; color: #fff; }
+.nw-card-n { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); }
+.nw-card-line { display: block; font-size: 13px; line-height: 1.45; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-card-line::before { content: '·'; margin-right: 8px; color: var(--color-lofi-primary); }
+
+/* a section's category chips */
+.nw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: -8px; }
+.nw-chip {
+  --nw-h: 18; height: 30px; display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: var(--color-lofi-text);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; transition: border-color 0.2s, background-color 0.2s;
+}
+.nw-chip > span { color: var(--color-lofi-muted); }
+.nw-chip:hover { border-color: hsl(var(--nw-h) 70% 65% / 0.5); }
+.nw-chip[aria-pressed='true'] { color: #fff; border-color: hsl(var(--nw-h) 70% 65% / 0.7); background: hsl(var(--nw-h) 60% 50% / 0.2); }
+.nw-chip[aria-pressed='true'] > span { color: hsl(var(--nw-h) 75% 75%); }
+.nw-chip:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+@media (hover: none) { .nw-chip { height: 34px; } }
+
+/* on to the next page */
+.nw-next {
+  align-self: center; height: 40px; display: inline-flex; align-items: center; gap: 8px; padding: 0 18px; margin-top: 2px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgb(255 138 92 / 0.4); background: rgb(255 138 92 / 0.08); color: var(--color-lofi-primary);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 12px; transition: border-color 0.2s, background-color 0.2s;
+}
+.nw-next:hover { border-color: rgb(255 138 92 / 0.7); background: rgb(255 138 92 / 0.14); }
+.nw-next:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+
+/* (the error card's page) */
 .nw-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 22px; transition: opacity 0.2s; }
 .nw-scroll::-webkit-scrollbar { display: none; }
 @media (min-width: 640px) { .nw-scroll { padding: 20px 26px 32px; } }
