@@ -17,10 +17,10 @@
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
 import { Component, useEffect, useId, useRef, useState } from 'react'
-import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, Clock, Cpu, Flag, Globe, Hash, MessageSquare, Newspaper, Pin, RefreshCw, Sparkles, X } from 'lucide-react'
+import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, Clapperboard, Clock, Cpu, Flag, Globe, Hash, MessageSquare, Newspaper, Pin, RefreshCw, Sparkles, Tv, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, motionOff, useStillPage } from './settings'
-import { CATEGORIES, EDITIONS, ago, editionLine, editionName, runGoing, waitFor } from '../lib/news'
+import { CATEGORIES, EDITIONS, ago, editionLine, editionName, inCinemas, runGoing, waitFor } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
 import { reportError } from './report-error'
 
@@ -373,7 +373,7 @@ class NewsCatch extends Component {
 }
 
 // a section's icon in the nav (by the agent's keys; anything else a #)
-const SEC_ICON = { top: Sparkles, vietnam: Flag, 'viet-nam': Flag, tech: Cpu, 'cong-nghe': Cpu, world: Globe, 'the-gioi': Globe }
+const SEC_ICON = { top: Sparkles, vietnam: Flag, 'viet-nam': Flag, tech: Cpu, 'cong-nghe': Cpu, world: Globe, 'the-gioi': Globe, movies: Clapperboard, 'phim-anh': Clapperboard }
 const smooth = () => (motionOff() ? 'auto' : 'smooth')
 
 // The edition as pages, side by side: Top (the day in brief, the stories that matter most, each section's card), then
@@ -797,6 +797,25 @@ function EditionMenu({ nw, editions, now }) {
   )
 }
 
+// a film's platforms after its title: 📺 Netflix, 🎬 for the cinema (a known service in its own colour)
+const PLATFORM_HUE = { netflix: 357, 'disney+': 220, hulu: 145, 'prime video': 195, 'amazon prime video': 195, max: 265, 'hbo max': 265, 'apple tv+': 0, 'fpt play': 25, vieon: 330, 'galaxy play': 280, 'tv360': 200, youtube: 0 }
+function Platforms({ names }) {
+  return (
+    <span className="nw-plats" aria-label={`Where to watch: ${names.join(', ')}`}>
+      {names.map((n) => {
+        const Icon = inCinemas(n) ? Clapperboard : Tv
+        const h = PLATFORM_HUE[n.toLowerCase()]
+        return (
+          <span key={n} className={`nw-plat${h == null ? '' : ' is-known'}`} style={h == null ? undefined : { '--nw-ph': h }}>
+            <Icon size={11} strokeWidth={2.2} aria-hidden="true" />
+            {n}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
 function Story({ it, lead = false, nw, pn, pinned, now }) {
   const [more, setMore] = useState(false)
   const [pinning, setPinning] = useState(false)
@@ -814,6 +833,7 @@ function Story({ it, lead = false, nw, pn, pinned, now }) {
       </div>
       <h4 className="nw-h">
         <a href={it.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={open} onAuxClick={(e) => e.button === 1 && open()}>{it.title}</a>
+        {it.platform && <Platforms names={it.platform} />}
       </h4>
       {it.summary && (
         <p className={`nw-sum${more || lead ? ' is-open' : ''}`} onClick={() => !lead && setMore((m) => !m)}>{it.summary}</p>
