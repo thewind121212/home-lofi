@@ -1,9 +1,10 @@
 'use client'
 
 // News: the digest an agent on another machine writes twice a day (Vietnam and tech, summarised in Vietnamese), read
-// here as one magazine page in a centered modal. An icon next to the header's bell (a dot: an edition not opened yet);
-// a tap opens it: the edition and its time, the day in brief, then each section, its most important stories as lead
-// cards and the rest as rows. Rules in lib/news.js; the route is app/api/private/settings/news (owner-only: guests get
+// here as a small magazine: a bottom sheet on phones, a panel on bigger screens. An icon next to the header's bell (a
+// dot: an edition not opened yet); a tap opens it on pages: Top (the day in brief, the stories that matter most, a card
+// per section), then one per section (its most important stories as lead cards, the rest as rows), swiped or picked
+// from the nav. Rules in lib/news.js; the route is app/api/private/settings/news (owner-only: guests get
 // 404 / 403 and never see the icon; NEWS_URL not set: no icon either).
 // - A story's title opens it (a new tab) and marks it read: read ones are dimmed, on every device (the server keeps
 //   them). ✓ marks one read / unread by hand; "Mark all read" a whole section.
@@ -15,10 +16,10 @@
 // - Asked when the owner's known, when the page shows again (MIN_GAP apart), every REFRESH while it's on screen (a new
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
-import { Component, useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Clock, MessageSquare, Newspaper, Pin, RefreshCw, X } from 'lucide-react'
+import { Component, useEffect, useId, useRef, useState } from 'react'
+import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, Clock, Cpu, Flag, Globe, Hash, MessageSquare, Newspaper, Pin, RefreshCw, Sparkles, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
-import { closeDialog, useStillPage } from './settings'
+import { closeDialog, motionOff, useStillPage } from './settings'
 import { CATEGORIES, EDITIONS, ago, editionLine, editionName, runGoing, waitFor } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
 import { reportError } from './report-error'
@@ -243,10 +244,14 @@ const domainOf = (u) => {
   }
 }
 
-// The magazine page in a centered modal (opened from the header icon). Opening it asks for a fresh digest, and marks
+// The magazine in a dialog (opened from the header icon): a bottom sheet on phones (drag its top down to close), a
+// centered panel from sm, wider from lg with the sections down the side. Opening it asks for a fresh digest, and marks
 // the latest edition seen once it's on screen
 export function NewsModal({ nw, pn, dlg }) {
   const [open, setOpen] = useState(false)
+  // the page shown: 'top' or a section's key (kept across editions and openings: a sheet dragged shut by mistake opens
+  // where it was)
+  const [tab, setTab] = useState('top')
   useStillPage(dlg, open)
   useEffect(() => {
     const d = dlg.current
@@ -273,11 +278,66 @@ export function NewsModal({ nw, pn, dlg }) {
     >
       {nw.on && (
         <NewsCatch key={nw.data.edition ?? 'latest'} nw={nw} onClose={close}>
-          <NewsBody nw={nw} pn={pn} onClose={close} />
+          <NewsBody nw={nw} pn={pn} dlg={dlg} tab={tab} setTab={setTab} onClose={close} />
         </NewsCatch>
       )}
     </dialog>
   )
+}
+
+// Phones: the sheet follows a finger dragging its top (grip): let go past DRAG_CLOSE (or a flick) and it slides away,
+// short of it and it springs back. Buttons in there stay buttons
+const DRAG_CLOSE = 110
+function useDragClose(dlg, grip) {
+  useEffect(() => {
+    const g = grip.current
+    if (!g) return
+    let y0 = null, dy = 0, t0 = 0, id = null
+    const phone = () => matchMedia('(max-width: 639px)').matches
+    const down = (e) => {
+      const d = dlg.current
+      if (!d || !phone() || e.button > 0 || e.target.closest('button, a, [role="menu"]')) return
+      y0 = e.clientY
+      dy = 0
+      t0 = performance.now()
+      id = e.pointerId
+      g.setPointerCapture?.(id)
+      d.style.transition = 'none'
+    }
+    const move = (e) => {
+      if (y0 == null || e.pointerId !== id) return
+      dy = Math.max(0, e.clientY - y0)
+      dlg.current.style.transform = dy ? `translateY(${dy}px)` : ''
+    }
+    const up = (e) => {
+      if (y0 == null || e.pointerId !== id) return
+      y0 = null
+      const d = dlg.current
+      const flick = dy > 40 && dy / Math.max(1, performance.now() - t0) > 0.6
+      if (dy > DRAG_CLOSE || flick) {
+        d.style.transition = 'transform 0.2s cubic-bezier(0.4, 0, 1, 1)'
+        d.style.transform = 'translateY(100%)'
+        setTimeout(() => {
+          d.close()
+          d.style.transform = d.style.transition = ''
+        }, 200)
+      } else {
+        d.style.transition = 'transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)'
+        d.style.transform = ''
+        setTimeout(() => void (d.style.transition = ''), 260)
+      }
+    }
+    g.addEventListener('pointerdown', down)
+    g.addEventListener('pointermove', move)
+    g.addEventListener('pointerup', up)
+    g.addEventListener('pointercancel', up)
+    return () => {
+      g.removeEventListener('pointerdown', down)
+      g.removeEventListener('pointermove', move)
+      g.removeEventListener('pointerup', up)
+      g.removeEventListener('pointercancel', up)
+    }
+  }, [dlg, grip])
 }
 
 // An edition that can't be drawn (something in it the page didn't expect): told to the server's log, and the modal says
@@ -312,23 +372,128 @@ class NewsCatch extends Component {
   }
 }
 
-function NewsBody({ nw, pn, onClose }) {
+// a section's icon in the nav (by the agent's keys; anything else a #)
+const SEC_ICON = { top: Sparkles, vietnam: Flag, 'viet-nam': Flag, tech: Cpu, 'cong-nghe': Cpu, world: Globe, 'the-gioi': Globe }
+const smooth = () => (motionOff() ? 'auto' : 'smooth')
+
+// The edition as pages, side by side: Top (the day in brief, the stories that matter most, each section's card), then
+// one per section. The nav (chips over the pages below lg, a column beside them from lg) and a swipe both move between
+// them; each page scrolls on its own, so a section is a short read, not a long scroll past the others.
+// Keys (from lg, focus in the modal): ← → the pages, j / k the stories, m read / unread
+function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
   const { digest, editions } = nw.data
   const now = Date.now()
-  const scroller = useRef(null)
+  const head = useRef(null)
+  const pager = useRef(null)
+  const nav = useRef(null)
+  const aim = useRef({ i: null, t: 0 }) // a page being scrolled to (its scroll events aren't a swipe)
+  const want = useRef(null) // where the focus goes once the page asked for is shown: 'tab' | 'page'
   const [brief, setBrief] = useState(false) // (phones: the brief folded to a few lines until tapped)
-  // another edition: back to the top
-  // (a block, not `() => el.scrollTo()`: newer Chrome returns a Promise from scrollTo, and React takes whatever an
-  // effect returns for its cleanup: calling that Promise on the next edition took the whole page down)
-  useEffect(() => {
-    scroller.current?.scrollTo({ top: 0 })
-  }, [digest.at])
+  useDragClose(dlg, head)
+  const pages = [{ key: 'top', title: 'Top' }, ...digest.sections]
+  const at = Math.max(0, pages.findIndex((p) => p.key === tab))
+  const atRef = useRef(at)
+  atRef.current = at
   const pinned = new Set(pn?.on ? pn.data.pins.map((p) => p.url) : [])
   const total = digest.sections.reduce((n, s) => n + s.items.length, 0)
-  const unread = digest.sections.reduce((n, s) => n + s.items.filter((i) => !nw.isRead(i.id)).length, 0)
+  const left = (s) => s.items.filter((i) => !nw.isRead(i.id)).length
+  const unread = digest.sections.reduce((n, s) => n + left(s), 0)
+
+  function go(i, focus = null) {
+    const n = Math.min(pages.length - 1, Math.max(0, i))
+    setTab(pages[n].key)
+    const el = pager.current
+    if (el?.clientWidth) {
+      clearTimeout(aim.current.t)
+      aim.current = { i: n, t: setTimeout(() => (aim.current.i = null), 900) }
+      el.scrollTo({ left: n * el.clientWidth, behavior: smooth() })
+    }
+    // (once it's drawn: till then the page is inert, and can't take it)
+    want.current = focus
+    if (n === atRef.current) focusOn(n)
+  }
+  function focusOn(n) {
+    const f = want.current
+    want.current = null
+    if (f === 'tab') nav.current?.querySelectorAll('[role="tab"]')[n]?.focus()
+    else if (f === 'page') pager.current?.children[n]?.focus({ preventScroll: true })
+  }
+  // a swipe: the page it settles on is the one shown
+  function onScroll() {
+    const el = pager.current
+    const w = el?.clientWidth
+    if (!w) return
+    if (aim.current.i != null) {
+      if (Math.abs(el.scrollLeft - aim.current.i * w) > 2) return
+      aim.current.i = null
+    }
+    const i = Math.round(el.scrollLeft / w)
+    if (i !== atRef.current && pages[i]) setTab(pages[i].key)
+  }
+  // the pager on the page shown: when it gets its size (the modal opening, a phone turned) and when the page is changed
+  // from outside a swipe (a section gone from a newer edition: Top)
+  useEffect(() => {
+    const el = pager.current
+    if (!el) return
+    const snap = () => {
+      if (!el.clientWidth) return
+      aim.current.i = null
+      el.scrollLeft = atRef.current * el.clientWidth
+    }
+    snap()
+    const ro = new ResizeObserver(snap)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  useEffect(() => {
+    const el = pager.current
+    if (!el?.clientWidth || aim.current.i != null) return
+    if (Math.round(el.scrollLeft / el.clientWidth) !== at) el.scrollLeft = at * el.clientWidth
+  }, [at, pages.length])
+  useEffect(() => {
+    focusOn(at)
+  }, [at])
+  // (the chips: the one shown kept in view)
+  useEffect(() => {
+    const n = nav.current
+    const b = n?.querySelector('[aria-selected="true"]')
+    if (!b || n.scrollWidth <= n.clientWidth + 1) return
+    n.scrollTo({ left: b.offsetLeft - (n.clientWidth - b.offsetWidth) / 2, behavior: smooth() })
+  }, [at])
+  // a newer copy of the latest: every page back to its top
+  useEffect(() => {
+    for (const p of pager.current?.children ?? []) p.scrollTop = 0
+  }, [digest.at])
+
+  function onKey(e) {
+    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.target.closest?.('.nw-menu')) return
+    const onTab = e.target.getAttribute?.('role') === 'tab'
+    const step = { ArrowRight: 1, ArrowLeft: -1, ...(onTab && { ArrowDown: 1, ArrowUp: -1 }) }[e.key]
+    if (step) {
+      e.preventDefault()
+      return go(at + step, onTab ? 'tab' : 'page')
+    }
+    const page = pager.current?.children[at]
+    if (!page) return
+    if (e.key === 'j' || e.key === 'k') {
+      e.preventDefault()
+      const links = [...page.querySelectorAll('.nw-h a')]
+      const cur = links.findIndex((a) => a.closest('article')?.contains(document.activeElement))
+      const next = links[cur < 0 ? 0 : Math.min(links.length - 1, Math.max(0, cur + (e.key === 'j' ? 1 : -1)))]
+      next?.focus({ preventScroll: true })
+      next?.closest('article')?.scrollIntoView({ block: 'nearest', behavior: smooth() })
+    } else if (e.key === 'm') {
+      const id = document.activeElement?.closest?.('article[data-id]')?.dataset.id
+      if (id && nw.isRead(id)) nw.unread([id])
+      else if (id) nw.read([id])
+    }
+  }
+
+  const notes = nw.error || nw.data.stale || nw.refresh.can
   return (
-    <section aria-labelledby="nw-title" className="nw">
-      <header className="nw-head">
+    <section aria-labelledby="nw-title" className="nw" onKeyDown={onKey}>
+      <header ref={head} className="nw-head">
+        <span className="nw-grip" aria-hidden="true" />
         <span className="nw-mark" aria-hidden="true"><Newspaper size={17} strokeWidth={1.9} /></span>
         <div className="nw-title">
           <h2 id="nw-title">News</h2>
@@ -343,21 +508,168 @@ function NewsBody({ nw, pn, onClose }) {
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </header>
 
-      <div ref={scroller} className={`nw-scroll${nw.loading ? ' is-loading' : ''}`} aria-busy={nw.loading} data-scroll>
-        {(nw.error || nw.data.stale) && <p className="nw-note" role="status">The news machine isn't answering: this is the last edition it sent.</p>}
-        {nw.refresh.can && <RunNote nw={nw} />}
-        {digest.overview && (
-          <div className={`nw-brief${brief ? ' is-open' : ''}`}>
-            <span className="nw-kicker">In brief</span>
-            <p>{digest.overview}</p>
-            <button type="button" className="nw-brief-more" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>{brief ? 'Less' : 'More'}</button>
+      <div className="nw-body">
+        <div className="nw-side">
+          <div ref={nav} className="nw-nav" role="tablist" aria-label="Sections">
+            {pages.map((p, i) => {
+              const Icon = SEC_ICON[p.key] ?? Hash
+              const n = p.items ? left(p) : null
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  role="tab"
+                  id={`nw-tab-${p.key}`}
+                  aria-selected={i === at}
+                  aria-controls={`nw-page-${p.key}`}
+                  tabIndex={i === at ? 0 : -1}
+                  className="nw-tab"
+                  onClick={() => go(i)}
+                >
+                  <Icon size={14} strokeWidth={2} aria-hidden="true" />
+                  <span className="nw-tab-name">{p.title}</span>
+                  {n != null && <span className={`nw-tab-n${n ? '' : ' is-done'}`} aria-label={n ? `${n} unread` : 'all read'}>{n || <Check size={11} strokeWidth={3} />}</span>}
+                </button>
+              )
+            })}
           </div>
-        )}
-        {digest.sections.map((s) => (
-          <Section key={s.key} section={s} nw={nw} pn={pn} pinned={pinned} now={now} />
-        ))}
-        {!total && <p className="nw-empty">Nothing in this edition.</p>}
+          <p className="nw-keys" aria-hidden="true">
+            <span><kbd>←</kbd><kbd>→</kbd><span>sections</span></span>
+            <span><kbd>j</kbd><kbd>k</kbd><span>stories</span></span>
+            <span><kbd>m</kbd><span>read / unread</span></span>
+          </p>
+        </div>
+
+        <div className={`nw-main${nw.loading ? ' is-loading' : ''}`} aria-busy={nw.loading}>
+          {notes && (
+            <div className="nw-notes">
+              {(nw.error || nw.data.stale) && <p className="nw-note" role="status">The news machine isn't answering: this is the last edition it sent.</p>}
+              {nw.refresh.can && <RunNote nw={nw} />}
+            </div>
+          )}
+          <div ref={pager} className="nw-pager" onScroll={onScroll}>
+            {pages.map((p, i) => (
+              <div key={p.key} id={`nw-page-${p.key}`} role="tabpanel" aria-labelledby={`nw-tab-${p.key}`} tabIndex={-1} inert={i !== at} className="nw-page" data-scroll>
+                {p.key === 'top' ? (
+                  <TopPage digest={digest} brief={brief} setBrief={setBrief} nw={nw} pn={pn} pinned={pinned} now={now} left={left} go={go} />
+                ) : (
+                  <SectionPage section={p} next={pages[i + 1]} onNext={() => go(i + 1, 'page')} onTop={() => go(0, 'page')} nw={nw} pn={pn} pinned={pinned} now={now} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+    </section>
+  )
+}
+
+const TOP = 8 // Top's stories at most
+const LEADS = 2 // lead cards at most (importance 5)
+const byWeight = (a, b) => b.importance - a.importance || (b.publishedAt ?? 0) - (a.publishedAt ?? 0)
+
+// Top: the day in brief, the stories that matter most from every section (4–5 of 5; the best five when there are
+// fewer), then a card per section (its unread, its first headlines) that opens it
+function TopPage({ digest, brief, setBrief, nw, pn, pinned, now, left, go }) {
+  const all = digest.sections.flatMap((s) => s.items).sort(byWeight)
+  let top = all.filter((i) => i.importance >= 4).slice(0, TOP)
+  if (top.length < 5) top = all.slice(0, 5)
+  const props = { nw, pn, pinned, now }
+  return (
+    <>
+      {digest.overview && (
+        <div className={`nw-brief${brief ? ' is-open' : ''}`}>
+          <span className="nw-kicker">In brief</span>
+          <p>{digest.overview}</p>
+          <button type="button" className="nw-brief-more" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>{brief ? 'Less' : 'More'}</button>
+        </div>
+      )}
+      {top.length > 0 && <Stories title="Top stories" items={top} {...props} />}
+      {digest.sections.length > 0 && (
+        <section className="nw-sec" aria-labelledby="nw-s-index">
+          <div className="nw-sec-head">
+            <h3 id="nw-s-index">Sections</h3>
+            <span className="nw-rule" aria-hidden="true" />
+          </div>
+          <div className="nw-index">
+            {digest.sections.map((s, i) => {
+              const Icon = SEC_ICON[s.key] ?? Hash
+              const n = left(s)
+              const heads = s.items.filter((it) => !nw.isRead(it.id)).slice(0, 2)
+              return (
+                <button key={s.key} type="button" className="nw-card" onClick={() => go(i + 1, 'page')}>
+                  <span className="nw-card-top">
+                    <Icon size={15} strokeWidth={2} aria-hidden="true" />
+                    <span className="nw-card-name">{s.title}</span>
+                    <span className="nw-card-n">{n ? `${n} unread` : 'all read'}</span>
+                    <ChevronRight size={16} aria-hidden="true" />
+                  </span>
+                  {heads.map((it) => <span key={it.id} className="nw-card-line">{it.title}</span>)}
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      )}
+      {!digest.sections.length && <p className="nw-empty">Nothing in this edition.</p>}
+    </>
+  )
+}
+
+// A section's page: its stories (filtered by category when it has more than one), then on to the next
+function SectionPage({ section, next, onNext, onTop, nw, pn, pinned, now }) {
+  const [picked, setCat] = useState(null)
+  const cats = Object.entries(section.items.reduce((m, i) => ((m[i.category] = (m[i.category] ?? 0) + 1), m), {}))
+  // (a newer copy without that category: all of them)
+  const cat = cats.some(([k]) => k === picked) ? picked : null
+  const items = cat ? section.items.filter((i) => i.category === cat) : section.items
+  const chip = (key, label, n) => (
+    <button key={key ?? 'all'} type="button" className="nw-chip" aria-pressed={cat === key} onClick={() => setCat(key)} style={key ? { '--nw-h': HUE[key] ?? 240 } : undefined}>
+      {label}
+      {n != null && <span>{n}</span>}
+    </button>
+  )
+  return (
+    <>
+      {cats.length > 1 && (
+        <div className="nw-chips" role="group" aria-label="Category">
+          {chip(null, 'All', section.items.length)}
+          {cats.map(([k, n]) => chip(k, CATEGORIES[k] ?? k, n))}
+        </div>
+      )}
+      <Stories title={section.title} items={items} all={section.items} nw={nw} pn={pn} pinned={pinned} now={now} />
+      <button type="button" className="nw-next" onClick={next ? onNext : onTop}>
+        {next ? <>Next: {next.title}<ArrowRight size={15} aria-hidden="true" /></> : <>Back to Top<ArrowUp size={15} aria-hidden="true" /></>}
+      </button>
+    </>
+  )
+}
+
+// a run of stories under a heading: their unread, Mark all read, the 5/5 ones as lead cards (LEADS at most), the rest as
+// rows (all: what Mark all read covers, when a filter shows fewer)
+function Stories({ title, items, all = items, nw, pn, pinned, now }) {
+  const left = all.filter((i) => !nw.isRead(i.id)).map((i) => i.id)
+  const leads = items.filter((i) => i.importance >= 5).slice(0, LEADS)
+  const rest = items.filter((i) => !leads.includes(i))
+  const id = useId()
+  return (
+    <section className="nw-sec" aria-labelledby={id}>
+      <div className="nw-sec-head">
+        <h3 id={id}>{title}</h3>
+        <span className="nw-rule" aria-hidden="true" />
+        <span className="nw-count">{left.length ? `${left.length} unread` : 'all read'}</span>
+        {left.length > 0 && <button type="button" className="nw-allread" onClick={() => nw.read(left)}>Mark all read</button>}
+      </div>
+      {leads.length > 0 && (
+        <div className="nw-leads">
+          {leads.map((it) => <Story key={it.id} it={it} lead nw={nw} pn={pn} pinned={pinned} now={now} />)}
+        </div>
+      )}
+      {rest.length > 0 && (
+        <ul className="nw-list">
+          {rest.map((it) => <li key={it.id}><Story it={it} nw={nw} pn={pn} pinned={pinned} now={now} /></li>)}
+        </ul>
+      )}
     </section>
   )
 }
@@ -485,34 +797,6 @@ function EditionMenu({ nw, editions, now }) {
   )
 }
 
-const LEADS = 2 // a section's lead cards at most (its importance-5 stories)
-
-function Section({ section, nw, pn, pinned, now }) {
-  const ids = section.items.map((i) => i.id)
-  const left = ids.filter((id) => !nw.isRead(id))
-  const leads = section.items.filter((i) => i.importance >= 5).slice(0, LEADS)
-  const rest = section.items.filter((i) => !leads.includes(i))
-  const id = `nw-s-${section.key}`
-  return (
-    <section className="nw-sec" aria-labelledby={id}>
-      <div className="nw-sec-head">
-        <h3 id={id}>{section.title}</h3>
-        <span className="nw-rule" aria-hidden="true" />
-        <span className="nw-count">{left.length ? `${left.length} unread` : 'all read'}</span>
-        {left.length > 0 && <button type="button" className="nw-allread" onClick={() => nw.read(left)}>Mark all read</button>}
-      </div>
-      {leads.length > 0 && (
-        <div className="nw-leads">
-          {leads.map((it) => <Story key={it.id} it={it} lead nw={nw} pn={pn} pinned={pinned} now={now} />)}
-        </div>
-      )}
-      <ul className="nw-list">
-        {rest.map((it) => <li key={it.id}><Story it={it} nw={nw} pn={pn} pinned={pinned} now={now} /></li>)}
-      </ul>
-    </section>
-  )
-}
-
 function Story({ it, lead = false, nw, pn, pinned, now }) {
   const [more, setMore] = useState(false)
   const [pinning, setPinning] = useState(false)
@@ -521,7 +805,7 @@ function Story({ it, lead = false, nw, pn, pinned, now }) {
   const isPinned = pinned.has(it.url)
   const open = () => nw.read([it.id])
   return (
-    <article className={`nw-story${lead ? ' is-lead' : ''}${read ? ' is-read' : ''}`} style={{ '--nw-h': HUE[it.category] ?? 240 }}>
+    <article data-id={it.id} className={`nw-story${lead ? ' is-lead' : ''}${read ? ' is-read' : ''}`} style={{ '--nw-h': HUE[it.category] ?? 240 }}>
       <div className="nw-tags">
         <span className="nw-cat">{CATEGORIES[it.category]}</span>
         <span className="nw-imp" aria-label={`importance ${it.importance} of 5`} title={`importance ${it.importance} of 5`}>
