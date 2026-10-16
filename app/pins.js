@@ -8,14 +8,16 @@
 // - The newest SHOWN as tiles, "Show all (N)" for the rest; ✕ removes one, with a short Undo.
 // - Pictures come straight from the sites (no referrer, lazy); a broken one gives way to a tile with the site's icon
 //   or its first letter.
+// - Links: a pin can go on habits and reminders (several on one): their small chips there open it (PinChips), and the
+//   picker (LinkPicker, one for the page, opened with pn.pick) ticks pins on and off, or pins a pasted link onto it.
 // - The owner's other tabs follow on the live stream ('pins': pull).
 import './pins.css'
 import { useEffect, useRef, useState } from 'react'
-import { Link2, Pin, Plus, RotateCw, Search, Trash2, X } from 'lucide-react'
+import { Check, Link2, Pin, Plus, RotateCw, Search, Trash2, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { Bone } from './skeleton'
 import { closeDialog, useStillPage } from './settings'
-import { REASONS, SHOWN, UNDO_MS, cleanUrl, looksLikeLink, matches } from '../lib/pins'
+import { MAX_LINKS, REASONS, SHOWN, UNDO_MS, cleanUrl, linkedTo, looksLikeLink, matches } from '../lib/pins'
 import { UndoLeft, UndoLine } from './habits'
 
 const URL_ = '/api/private/settings/pins'
@@ -24,7 +26,8 @@ const NOTE_MS = 6000
 // ---- state: the server's, with the device only drawing it ----
 
 // owner: settings sync answered as the owner (the page's `owner`); clientId(): this tab's live-stream id (its own
-// changes aren't echoed back). -> { on, pending, data, adding, refreshing, undoing, note, add, remove, undo, refresh, live }
+// changes aren't echoed back). -> { on, pending, data, adding, refreshing, undoing, note, add, remove, undo, refresh, live,
+// linked, link, unlink, picking, pick, unpick }
 export function usePins(owner, clientId) {
   const [data, setData] = useState(null)
   const [off, setOff] = useState(false)
@@ -35,6 +38,10 @@ export function usePins(owner, clientId) {
   const [note, setNote] = useState(null)
   const [said, setSaid] = useState('') // what the card's one live region says (screen readers): the latest news
   const [gone, setGone] = useState(() => new Set()) // pins removed here whose removal the server hasn't confirmed yet
+  const [picking, setPicking] = useState(null) // { to, label }: the link picker is open for this habit / reminder
+  // links ticked on / off here whose request hasn't been answered yet: drawn over whatever answer lands meanwhile (an
+  // add still fetching its preview, a pull), so a tick never flickers back. Each goes once its own answer is in
+  const [ticks, setTicks] = useState([]) // [{ key, on, pin, kind, id, at }]
   const api = useRef({})
   const seq = useRef({ sent: 0, shown: 0, at: 0, key: 0 }) // an older answer landing later is out of date
   // every request goes one at a time, in order (a pull never reads around a change still on its way), and one that
@@ -125,6 +132,13 @@ export function usePins(owner, clientId) {
     }
   }
   const why = (reason) => REASONS[reason] ?? REASONS.unreachable
+  function tick(on, pin, to) {
+    const key = ++seq.current.key
+    setTicks((t) => [...t, { key, on, pin: pin.id, kind: to.kind, id: to.id, at: Date.now() }])
+    enqueue(() => call('POST', { action: on ? 'link' : 'unlink', id: pin.id, to }))
+      .catch((e) => failed(e, on ? 'link it' : 'unlink it'))
+      .finally(() => setTicks((t) => t.filter((x) => x.key !== key)))
+  }
 
   return {
     on: Boolean(owner && data && !off),
@@ -140,8 +154,9 @@ export function usePins(owner, clientId) {
     hidden: (id) => gone.has(id) || undoing?.pin.id === id,
     // 'pins': another tab changed something; 'hello': the stream (re)connected, a pull unless one just went out
     live: (kind) => (kind === 'pins' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
-    // a link -> true once it's kept (or was already), false if not (the note says why)
-    async add(text) {
+    // a link -> true once it's kept (or was already), false if not (the note says why). to: linked onto that habit /
+    // reminder too ({ kind, id })
+    async add(text, to) {
       const c = cleanUrl(text)
       if (c.error) {
         tell(`That link won't do: ${c.error.replace(/^url: /, '')}`)
@@ -150,8 +165,9 @@ export function usePins(owner, clientId) {
       const key = ++seq.current.key
       setAdding((a) => [{ key, url: c.url }, ...a])
       try {
-        const j = await enqueue(() => call('POST', { url: c.url }))
-        if (j?.dup) tell('Already pinned: moved it to the top')
+        const j = await enqueue(() => call('POST', { url: c.url, ...(to && { to }) }))
+        if (j?.linkError) tell(j.linkError.charAt(0).toUpperCase() + j.linkError.slice(1))
+        else if (j?.dup) tell(to ? 'Already pinned: linked it' : 'Already pinned: moved it to the top')
         else if (j && !j.ok) tell(`Pinned without a preview: ${why(j.reason)}`)
         return Boolean(j)
       } catch (e) {
@@ -183,6 +199,22 @@ export function usePins(owner, clientId) {
       setData((d) => (d && !d.pins.some((p) => p.id === u.pin.id) ? { ...d, pins: [...d.pins.slice(0, u.index), u.pin, ...d.pins.slice(u.index)] } : d))
       enqueue(() => call('POST', { action: 'undo', id: u.pin.id })).catch((e) => failed(e, 'bring it back'))
     },
+    // the pins on a habit / reminder (kept ones, not one being removed), in the order they were linked
+    linked(kind, id) {
+      if (!data) return []
+      let links = data.links ?? []
+      for (const t of ticks) {
+        const same = (l) => l.pin === t.pin && l.kind === t.kind && l.id === t.id
+        links = t.on ? (links.some(same) ? links : [...links, t]) : links.filter((l) => !same(l))
+      }
+      return linkedTo(links, data.pins.filter((p) => !gone.has(p.id) && undoing?.pin.id !== p.id), kind, id)
+    },
+    link: (pin, to) => tick(true, pin, to),
+    unlink: (pin, to) => tick(false, pin, to),
+    // the picker: open for one habit / reminder (label: its name, for the heading)
+    picking,
+    pick: (to, label) => setPicking({ to, label }),
+    unpick: () => setPicking(null),
     async refresh(pin) {
       setRefreshing(pin.id)
       try {
@@ -423,6 +455,176 @@ function PinsBody({ pn, onClose }) {
           {all ? 'Show fewer' : `Show all (${found.length})`}
         </button>
       )}
+    </section>
+  )
+}
+
+// ---- links on habits and reminders ----
+
+// The pins on a habit / reminder (to: { kind, id }), as small chips: each opens its link in a new tab. Nothing when
+// there are none (or this isn't the owner's page)
+export function PinChips({ pn, to, className = '' }) {
+  if (!pn?.on) return null
+  const list = pn.linked(to.kind, to.id)
+  if (!list.length) return null
+  return (
+    <ul className={`pn-chips ${className}`} aria-label="Links">
+      {list.map((p) => (
+        <li key={p.id}>
+          <a className="pn-chip" href={p.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={p.title ? `${p.title} · ${p.domain}` : p.url}>
+            <Icon pin={p} size={12} />
+            <span>{p.title ?? p.domain}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// The button that opens the picker for a habit / reminder (label: its name). With some linked, it shows how many
+export function LinkButton({ pn, to, label, className = '', text = false }) {
+  if (!pn?.on) return null
+  const n = pn.linked(to.kind, to.id).length
+  return (
+    <button
+      type="button"
+      className={`pn-linkbtn${n ? ' has-links' : ''}${text ? ' is-text' : ''} ${className}`}
+      aria-haspopup="dialog"
+      aria-label={n ? `Links for ${label}: ${n}. Change them` : `Link a pin to ${label}`}
+      title={n ? `${n} link${n === 1 ? '' : 's'}: change them` : 'Link a pin'}
+      onClick={() => pn.pick(to, label)}
+    >
+      <Link2 size={14} aria-hidden="true" />
+      {text ? <span>{n ? `Links (${n})` : 'Add links'}</span> : n > 0 && <span>{n}</span>}
+    </button>
+  )
+}
+
+// The one picker for the page (pn.pick opens it, for one habit / reminder): the box searches the pins, or pins a pasted
+// link straight onto it; a tap on a pin ticks it on or off. The linked ones come first. It opens over whatever sheet
+// it was opened from (the routines, the reminders), and goes back to it
+export function LinkPicker({ pn }) {
+  const dlg = useRef(null)
+  const open = Boolean(pn.on && pn.picking)
+  useStillPage(dlg, open)
+  useEffect(() => {
+    const d = dlg.current
+    if (!d) return
+    if (open && !d.open) d.showModal()
+    else if (!open && d.open) closeDialog(d)
+  }, [open])
+  const close = () => closeDialog(dlg.current)
+  return (
+    <dialog
+      ref={dlg}
+      aria-labelledby="pn-pick-title"
+      onClick={(e) => e.target === dlg.current && close()}
+      onCancel={(e) => (e.preventDefault(), close())}
+      onClose={() => (delete dlg.current.dataset.closing, pn.unpick())}
+      className="wx-sheet sm:max-w-lg glass-panel text-lofi-text overscroll-contain"
+    >
+      {open && <PickerBody key={`${pn.picking.to.kind}:${pn.picking.to.id}`} pn={pn} to={pn.picking.to} label={pn.picking.label} onClose={close} />}
+    </dialog>
+  )
+}
+
+function PickerBody({ pn, to, label, onClose }) {
+  const [q, setQ] = useState('')
+  const box = useRef(null)
+  const linked = pn.linked(to.kind, to.id)
+  const on = new Set(linked.map((p) => p.id))
+  // (the order as it opened: a pin ticked on doesn't jump to the top under the finger)
+  const [order] = useState(() => on)
+  const pins = pn.data.pins.filter((p) => !pn.hidden(p.id))
+  const link = looksLikeLink(q)
+  const found = link || !q.trim() ? pins : pins.filter((p) => matches(p, q))
+  const list = [...found.filter((p) => order.has(p.id)), ...found.filter((p) => !order.has(p.id))]
+  const full = linked.length >= (pn.data.maxLinks ?? MAX_LINKS)
+  const kept = link ? pins.find((p) => p.url === cleanUrl(q).url) : null
+
+  async function submit(e) {
+    e.preventDefault()
+    if (!link) return
+    const text = q
+    setQ('')
+    if (!(await pn.add(text, to))) setQ((cur) => cur || text)
+  }
+  const what = to.kind === 'habit' ? 'routine' : 'reminder'
+  return (
+    <section aria-labelledby="pn-pick-title" className="p-5 sm:p-6 pn">
+      <div className="pn-head">
+        <span className="pn-mark" aria-hidden="true"><Link2 size={16} /></span>
+        <div className="pn-title">
+          <h2 id="pn-pick-title">Links</h2>
+          <span className="pn-sub pn-pick-for" title={label}>{label}</span>
+        </div>
+        <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+      </div>
+
+      <form className="pn-box" role="search" onSubmit={submit}>
+        <span className="pn-box-ic" aria-hidden="true">{link ? <Link2 size={16} /> : <Search size={16} />}</span>
+        <input
+          ref={box}
+          className="pn-input"
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === 'Escape' && q && (e.preventDefault(), setQ(''))}
+          placeholder="Paste a link or search"
+          aria-label={`Paste a link to pin it onto this ${what}, or type to search your pins`}
+          enterKeyHint={link ? 'go' : 'search'}
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        {q && (
+          <button type="button" className="pn-clear" aria-label="Clear" onClick={() => (setQ(''), box.current?.focus())}>
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
+        <button type="submit" className="pn-add" disabled={!link || (full && !(kept && on.has(kept.id)))} title={link ? 'Pin and link it' : 'Paste a link to pin it here'}>
+          <Plus size={16} aria-hidden="true" /><span>Link</span>
+        </button>
+      </form>
+      {kept && <p className="pn-note soft">{on.has(kept.id) ? 'Already linked here' : full ? 'Already pinned' : 'Already pinned: Enter links it'}</p>}
+      <p className="sr-only" role="status" aria-live="polite">{pn.said}</p>
+      {pn.note && <p className="pn-note">{pn.note}</p>}
+      {full && <p className="pn-note soft">{linked.length} linked: the most one {what} can have</p>}
+
+      {pins.length === 0 && !pn.adding.length ? (
+        <div className="pn-empty"><p>No pins yet</p><small>Paste a link above: it's pinned and linked here.</small></div>
+      ) : list.length === 0 && !pn.adding.length ? (
+        <p className="pn-none">No pin matches “{q.trim()}”</p>
+      ) : (
+        <ul className="pn-picks" data-scroll>
+          {pn.adding.map((a) => (
+            <li key={`add-${a.key}`} className="pn-pick is-pending" aria-busy="true">
+              <span className="pn-pick-ic sk-pulse" />
+              <span className="pn-pick-text"><span className="pn-name">{a.url.replace(/^https?:\/\/(www\.)?/, '')}</span><span className="pn-pick-dom">fetching its preview…</span></span>
+            </li>
+          ))}
+          {list.map((p) => {
+            const is = on.has(p.id)
+            return (
+              <li key={p.id}>
+                <button type="button" className={`pn-pick${is ? ' is-on' : ''}`} aria-pressed={is} disabled={!is && full} onClick={() => (is ? pn.unlink(p, to) : pn.link(p, to))}>
+                  <Icon pin={p} size={18} />
+                  <span className="pn-pick-text">
+                    <span className="pn-name">{p.title ?? p.domain}</span>
+                    <span className="pn-pick-dom">{p.domain}</span>
+                  </span>
+                  <span className="pn-pick-tick" aria-hidden="true">{is && <Check size={14} strokeWidth={2.6} />}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <div className="pn-pick-foot">
+        <span className="pn-sub">{linked.length ? `${linked.length} linked` : 'none linked yet'}</span>
+        <button type="button" className="hb-btn primary" onClick={onClose}>Done</button>
+      </div>
     </section>
   )
 }

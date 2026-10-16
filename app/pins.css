@@ -107,3 +107,51 @@
 @keyframes pn-rise { from { opacity: 0; transform: translateY(6px); } }
 
 /* (Settings › Motion: Reduced and the OS setting stop all of it: app/globals.css) */
+
+/* ---- links on habits and reminders (PinChips, LinkButton, LinkPicker) ---- */
+/* the chips: as many lines as they need (each one cut short) */
+.pn-chips { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.pn-chips li { min-width: 0; max-width: 100%; }
+.pn-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: min(100%, 10rem); height: 22px; padding: 0 8px 0 5px; border-radius: 999px;
+  background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.1); color: var(--color-lofi-text); text-decoration: none;
+  font-size: 11px; line-height: 1; transition: border-color 0.2s, color 0.2s, background-color 0.2s;
+}
+.pn-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-chip .pn-icon { border-radius: 3px; }
+.pn-chip:hover { border-color: rgb(255 138 92 / 0.55); color: #fff; background: rgb(255 138 92 / 0.1); }
+.pn-chip:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 1px; }
+
+/* the button that opens the picker: an icon (with the count once there are some), or with words in the routine editor */
+.pn-linkbtn {
+  flex: none; height: 30px; min-width: 30px; padding: 0 7px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer;
+  border: 1px solid transparent; background: transparent; color: var(--color-lofi-muted);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; transition: border-color 0.2s, color 0.2s, background-color 0.2s;
+}
+.pn-linkbtn:hover { color: var(--color-lofi-text); border-color: rgb(255 255 255 / 0.12); }
+.pn-linkbtn.has-links { color: var(--color-lofi-primary); }
+.pn-linkbtn.is-text { height: 34px; padding: 0 12px 0 10px; border-color: rgb(255 255 255 / 0.12); color: var(--color-lofi-text); }
+.pn-linkbtn.is-text:hover { border-color: rgb(255 138 92 / 0.6); color: var(--color-lofi-primary); }
+.pn-linkbtn:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 1px; }
+@media (hover: none) { .pn-linkbtn:not(.is-text) { min-width: 36px; height: 36px; } }
+
+/* the picker */
+.pn-pick-for { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: min(52vh, 26rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.pn-picks::-webkit-scrollbar { display: none; }
+.pn-pick {
+  width: 100%; min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 12px; border-radius: 14px; cursor: pointer; text-align: left;
+  border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.4); color: inherit; transition: border-color 0.2s, background-color 0.2s, opacity 0.2s;
+}
+.pn-pick:hover:not(:disabled) { border-color: rgb(255 138 92 / 0.35); background: rgb(26 26 46 / 0.6); }
+.pn-pick.is-on { border-color: rgb(255 138 92 / 0.5); background: rgb(255 138 92 / 0.08); }
+.pn-pick:disabled { opacity: 0.45; cursor: default; }
+.pn-pick:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+.pn-pick.is-pending { border-style: dashed; border-color: rgb(255 138 92 / 0.35); cursor: default; }
+.pn-pick-ic { width: 18px; height: 18px; flex: none; border-radius: 4px; background: var(--color-lofi-surface); }
+.pn-pick-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pn-pick-dom { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-pick-tick { width: 24px; height: 24px; flex: none; border-radius: 999px; display: grid; place-items: center; border: 1.5px solid rgb(255 255 255 / 0.2); color: var(--color-lofi-base); transition: background-color 0.2s, border-color 0.2s; }
+.pn-pick.is-on .pn-pick-tick { background: var(--color-lofi-primary); border-color: var(--color-lofi-primary); }
+.pn-pick-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pn-pick-foot .hb-btn { flex: none; height: 40px; padding: 0 22px; }

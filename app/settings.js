@@ -76,6 +76,12 @@ export function useStillPage(dlg, open) {
     let x0 = 0
     let y0 = 0
     let off = false // the touch began on the backdrop
+    let above = false // the touch began in another sheet opened over this one (app/pins.js LinkPicker): its own rules
+    // (a sheet opened over this one: it keeps its own page still, and this one leaves it be)
+    const over = (t) => {
+      const o = t?.closest?.('dialog[open]')
+      return Boolean(o && o !== d)
+    }
     // the backdrop is the <dialog> too (its events' target), but outside its box: nothing there scrolls
     const outside = (x, y) => {
       const b = d.getBoundingClientRect()
@@ -83,16 +89,17 @@ export function useStillPage(dlg, open) {
     }
     // (on the window while the sheet is open: a wheel over the backdrop doesn't reach the dialog)
     const wheel = (e) => {
-      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // pinch zoom, sideways (the chips)
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || over(e.target)) return // pinch zoom, sideways (the chips)
       if (outside(e.clientX, e.clientY) || !(d.contains(e.target) && canScroll(e.target, d, e.deltaY))) e.preventDefault()
     }
     const start = (e) => {
       x0 = e.touches[0]?.clientX ?? 0
       y0 = e.touches[0]?.clientY ?? 0
-      off = outside(x0, y0)
+      above = over(e.target)
+      off = !above && outside(x0, y0)
     }
     const move = (e) => {
-      if (e.touches.length !== 1 || !e.cancelable) return
+      if (e.touches.length !== 1 || !e.cancelable || above) return
       if (off) return e.preventDefault()
       const dx = x0 - e.touches[0].clientX
       const dy = y0 - e.touches[0].clientY

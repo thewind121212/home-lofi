@@ -20,7 +20,7 @@ import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, mot
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
 import { HabitsCard, useHabits } from './habits'
-import { PinsIcon, PinsSheet, usePins } from './pins'
+import { LinkPicker, PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingIcon, ReadingSheet, useReading } from './reading'
 import { HeadIcon } from './head-icon'
 import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } from './focus'
@@ -616,7 +616,7 @@ export default function Home() {
           {/* the owner's Habits bar sits on top of the hosted apps, their width (nothing for guests) */}
           <div className="lg:col-span-8 lg:col-start-5 lg:row-start-2 lg:row-span-2 2xl:col-span-6 2xl:col-start-4 2xl:row-start-1 2xl:row-span-1 flex flex-col gap-6">
             {/* its skeleton while it may be on its way: the owner not known yet (the owner's browser), or loading */}
-            <HabitsCard hb={habits} wait={!cloud.known || (owner && habits.pending)} force={owner} />
+            <HabitsCard hb={habits} pn={pins} wait={!cloud.known || (owner && habits.pending)} force={owner} />
             <Services priv={priv} privFailed={privFailed} />
           </div>
         </main>
@@ -680,8 +680,10 @@ export default function Home() {
       )}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} notify={hub.on} />
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
-      <RemindersSheet rm={reminders} dlg={remDlg} />
+      <RemindersSheet rm={reminders} dlg={remDlg} pn={pins} />
       <PinsSheet pn={pins} dlg={pinDlg} />
+      {/* (pins onto a habit or a reminder: one picker, over whichever sheet opened it) */}
+      <LinkPicker pn={pins} />
       <ReadingSheet rd={reading} dlg={readDlg} />
       <FocusSheet fc={focus} dlg={focusDlg} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
@@ -689,7 +691,7 @@ export default function Home() {
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
       {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
       {/* the owner's open reminders from 06:00, floating over the dashboard until each is held done (app/reminders.js) */}
-      <RemindersPopup rm={reminders} hidden={!view.dashboard} />
+      <RemindersPopup rm={reminders} hidden={!view.dashboard} pn={pins} />
     </SteamData>
     </Prefs>
   )

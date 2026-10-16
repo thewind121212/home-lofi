@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
-import { MAX, MAX_PINS, UNDO_MS, canUndo, cleanAction, cleanText, domainOf, safeLink, validId } from '../../../../../lib/pins.js'
+import { MAX, MAX_LINKS, MAX_PINS, UNDO_MS, canUndo, cleanAction, cleanText, domainOf, safeLink, validId } from '../../../../../lib/pins.js'
 import { KEEP_REMOVED, pinsStore } from '../../../../../lib/pins-store.js'
 import { fetchPreview } from '../../../../../lib/pins-fetch.js'
 
@@ -14,8 +14,12 @@ import { fetchPreview } from '../../../../../lib/pins-fetch.js'
 //                                          preview (blocked, too slow, not a page): kept all the same, with why
 //        { action: 'refresh', id }        fetch its preview again
 //        { action: 'undo', id }           right after a removal (UNDO_MS): back where it was
+//        { action: 'link', id, to }       onto a habit or a reminder (to: { kind: 'habit' | 'todo', id }; MAX_LINKS
+//                                          on one). An add can carry `to` too: pinned and linked in one go
+//        { action: 'unlink', id, to }     off it again (the pin stays)
 //   DELETE { id }                         removed (kept a little while for the Undo)
-//   -> { pins: [{ id, url, domain, title, description, image, icon, site, ok, reason, addedAt }] (newest first), max },
+//   -> { pins: [{ id, url, domain, title, description, image, icon, site, ok, reason, addedAt }] (newest first),
+//      links: [{ pin, kind, id, at }] (the kept pins' links), max, maxLinks },
 //      plus for a write: pin (its id), dup, ok, reason, removed / until (the Undo's end, server clock). The owner's
 //      other tabs hear 'pins' on the live stream and pull.
 // 404 = not set up (no gate / no database), 403 = someone else, 400 = a bad body ({ error, field }), 409 = not
@@ -44,7 +48,10 @@ const view = (p) => ({
   reason: p.data.reason ?? null,
   addedAt: p.addedAt,
 })
-const state = async (store, who) => ({ pins: (await store.list(who)).map(view), max: MAX_PINS })
+const state = async (store, who) => {
+  const [pins, links] = await Promise.all([store.list(who), store.links(who)])
+  return { pins: pins.map(view), links, max: MAX_PINS, maxLinks: MAX_LINKS }
+}
 const tell = (who, request) => liveBus().publish(who, { kind: 'pins', at: Date.now(), from: clientId(request.headers.get('x-home-client')) })
 
 // the fetcher's answer -> what's kept (only the fields the card shows, cut to size: whatever a fetcher returns)
@@ -98,13 +105,17 @@ export async function POST(request) {
   try {
     const store = pinsStore()
     const conflict = async (error) => json({ error, ...(await state(store, who)) }, 409)
+    // (an add with `to`: linked once it's kept; a full habit / reminder keeps the pin, unlinked, and says so)
+    const linkTo = async (pin) => (act.to ? store.link(who, pin, act.to, Date.now(), MAX_LINKS) : 'ok')
+    const full = `${MAX_LINKS} links at most on one: unlink one first`
     if (act.action === 'add') {
       const old = await store.byUrl(who, act.url)
       // kept already: to the top, as it is (Refresh fetches it again)
       if (old && old.removedAt == null) {
         await store.bump(who, old.id, Date.now())
+        const l = await linkTo(old.id)
         tell(who, request)
-        return json({ ...(await state(store, who)), pin: old.id, dup: true, ok: old.data.ok !== false })
+        return json({ ...(await state(store, who)), pin: old.id, dup: true, ok: old.data.ok !== false, ...(l === 'full' && { linkError: full }) })
       }
       // (a new link, or a removed one coming back: either adds one, so the cap first, before any fetch)
       if ((await store.list(who)).length >= MAX_PINS) return conflict(`${MAX_PINS} pins at most: remove some first`)
@@ -112,10 +123,23 @@ export async function POST(request) {
       const data = await preview(act.url)
       const id = await store.put(who, { id: mkId(), url: act.url, data, at: Date.now() })
       if (!id) return conflict(`${MAX_PINS} pins at most: remove some first`)
+      const l = await linkTo(id)
       // (removed ones linger for their Undo: a write is a good moment to clear the old ones out)
       await store.prune(who, Date.now() - KEEP_REMOVED).catch(() => {})
       tell(who, request)
-      return json({ ...(await state(store, who)), pin: id, dup: false, ok: data.ok, reason: data.reason })
+      return json({ ...(await state(store, who)), pin: id, dup: false, ok: data.ok, reason: data.reason, ...(l === 'full' && { linkError: full }) })
+    }
+    if (act.action === 'link') {
+      const l = await store.link(who, act.id, act.to, Date.now(), MAX_LINKS)
+      if (l === 'gone') return conflict('no such pin')
+      if (l === 'full') return conflict(full)
+      tell(who, request)
+      return json({ ...(await state(store, who)), pin: act.id })
+    }
+    if (act.action === 'unlink') {
+      // (not linked: nothing to do, the fresh state all the same)
+      if (await store.unlink(who, act.id, act.to)) tell(who, request)
+      return json({ ...(await state(store, who)), pin: act.id })
     }
     const pin = await store.get(who, act.id)
     if (act.action === 'refresh') {
