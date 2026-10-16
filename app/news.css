@@ -48,6 +48,8 @@
 .nw-menu-item:hover, .nw-menu-item:focus-visible { background: rgb(255 255 255 / 0.07); color: #fff; outline: none; }
 .nw-menu-item[aria-checked='true'] { color: var(--color-lofi-primary); }
 .nw-menu-item svg { flex: none; }
+.nw-menu-n { margin-left: auto; font-size: 10px; color: var(--color-lofi-muted); }
+.nw-menu-item:not([aria-checked='true']) .nw-menu-n { margin-right: 30px; } /* (lined up with the ticked one's) */
 /* (a hairline between the latest and the archive) */
 .nw-menu-item.is-first-old { margin-top: 5px; position: relative; }
 .nw-menu-item.is-first-old::before { content: ''; position: absolute; left: 10px; right: 10px; top: -4px; height: 1px; background: rgb(255 255 255 / 0.08); }
@@ -247,6 +249,12 @@
 .nw-tags { display: flex; align-items: center; gap: 8px; }
 .nw-cat { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: hsl(var(--nw-h) 75% 72%); }
 .nw-imp { display: inline-flex; gap: 2px; }
+/* came since the last look */
+.nw-new {
+  height: 16px; padding: 0 6px; border-radius: 999px; display: inline-flex; align-items: center; font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #1a1a2e; background: var(--color-lofi-primary);
+}
+.nw-story.is-read .nw-new { display: none; }
 .nw-imp i { width: 4px; height: 4px; border-radius: 999px; background: rgb(255 255 255 / 0.14); }
 .nw-imp i.on { background: hsl(var(--nw-h) 75% 68%); }
 
@@ -271,6 +279,10 @@
 }
 .nw-sum.is-open { -webkit-line-clamp: unset; display: block; cursor: auto; }
 .nw-story:not(.is-lead) .nw-sum.is-open { cursor: pointer; }
+/* a story's key points (its own few lines, under the summary when it's open) */
+.nw-points { margin: 2px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.nw-points li { position: relative; padding-left: 14px; font-size: 13px; line-height: 1.5; color: var(--color-lofi-text); opacity: 0.9; }
+.nw-points li::before { content: ''; position: absolute; left: 2px; top: 0.62em; width: 5px; height: 5px; border-radius: 999px; background: hsl(var(--nw-h) 75% 68%); }
 .nw-orig { margin: 0; font-size: 12px; line-height: 1.45; font-style: italic; color: var(--color-lofi-muted); }
 
 .nw-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-height: 28px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10.5px; color: var(--color-lofi-muted); }

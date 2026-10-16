@@ -1,19 +1,21 @@
 import { sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
-import { archiveLabel, archiveName, cleanAction, validArchive } from '../../../../../lib/news.js'
+import { DAY, archiveDays, archiveName, cleanAction, dayOf, mergeDay } from '../../../../../lib/news.js'
 import { archived, editions, latest, latestStale, newsOn, runState, startRun } from '../../../../../lib/news-fetch.js'
 import { newsStore } from '../../../../../lib/news-store.js'
 
 // The owner's News (app/news.js): the agent's digest (lib/news-fetch.js, NEWS_URL), in the owner-only zone like the
 // settings next door (lib/gate.js ownerOf): the proxy's /api/private/settings location covers this path, Authelia login
 // included. Guests get 404 / 403 and the page shows no icon.
-//   GET [?edition=<archive name>]  -> { on: true, digest: { edition, at, overview, sections }, edition (the archive name
-//                                     shown, null = the latest), latestAt (the newest edition's time), editions:
-//                                     [{ name, label }] (the archive, newest first, the latest left out), read: [ids] (this digest's stories
-//                                     the owner has read), seen (the newest edition opened, ms | null), stale (the
-//                                     agent didn't answer just now: the latest is the copy from before), run (the
-//                                     agent's newest run, lib/news.js cleanRun, or null: it has none to tell, so no
-//                                     Refresh), nextAt (no Refresh before then: the agent's limits; 0 = any time) }
+//   GET [?day=YYYY-MM-DD]          -> { on: true, digest: a day's editions merged (lib/news.js mergeDay: { edition, at,
+//                                     first, updates, overview, top, sections }), day (the day shown), picked (the
+//                                     day asked for, null = the newest day with news), today (the agent's today),
+//                                     days: [{ day, updates, last (HH:MM) }] (newest first), latestAt (the newest
+//                                     edition's time), read: [ids] (this day's stories the owner has read), seen (the
+//                                     newest edition opened, ms | null), stale (the agent didn't answer just now: the
+//                                     latest is the copy from before), run (the agent's newest run, lib/news.js
+//                                     cleanRun, or null: it has none to tell, so no Refresh), nextAt (no Refresh
+//                                     before then: the agent's limits; 0 = any time) }
 //                                     { on: false }: NEWS_URL isn't set (no icon)
 //   POST { action: 'read' | 'unread', ids }   stories read (opened) / back to unread
 //        { action: 'seen', at }               an edition opened (the icon's dot goes; only ever forward)
@@ -21,7 +23,7 @@ import { newsStore } from '../../../../../lib/news-store.js'
 //                                             again until it's done) -> { ok: true, started } (false: one was going
 //                                             already), or 429 { error, nextAt } (the agent's cooldown / daily limit)
 //   -> { ok: true }; the owner's other tabs hear 'news' on the live stream and pull.
-// 404 = not set up / no such edition, 403 = someone else, 400 = a bad body, 502 = the agent unreachable or not a
+// 404 = not set up / no such day, 403 = someone else, 400 = a bad body, 502 = the agent unreachable or not a
 // digest ({ on: true, error }: the page keeps what it had), 503 = database unreachable (POST).
 const HEADERS = { 'cache-control': 'no-store, private' }
 const json = (body, status = 200) => Response.json(body, { status, headers: HEADERS })
@@ -33,17 +35,24 @@ export async function GET(request) {
   const who = syncOwner(request)
   if (typeof who === 'number') return json({ error: 'no news' }, who)
   if (!newsOn()) return json({ on: false })
-  const name = new URL(request.url).searchParams.get('edition')
-  if (name && !validArchive(name)) return json({ on: true, error: 'no such edition' }, 404)
-  let digest, newest, names, run
+  const day = new URL(request.url).searchParams.get('day')
+  if (day && !DAY.test(day)) return json({ on: true, error: 'no such day' }, 404)
+  let newest, names, run
   try {
     ;[newest, names, run] = await Promise.all([latest(), editions(), runState()])
     // (a run just done: its edition, not the copy from before it)
     if (run.fresh) [newest, names] = await Promise.all([latest(), editions()])
-    digest = name ? await archived(name) : newest
-  } catch (e) {
-    return json({ on: true, error: e?.status === 404 && name ? 'no such edition' : 'news unreachable' }, e?.status === 404 && name ? 404 : 502)
+  } catch {
+    return json({ on: true, error: 'news unreachable' }, 502)
   }
+  // the day: its editions from the archive (the latest as just fetched), merged; one that won't load is left out
+  const latestName = archiveName(newest.at, TZ)
+  const days = archiveDays(names, latestName)
+  const entry = day ? days.find((d) => d.day === day) : days[0]
+  if (!entry) return json({ on: true, error: 'no such day' }, 404)
+  const got = await Promise.allSettled(entry.names.map((n) => (n === latestName ? newest : archived(n))))
+  const digest = mergeDay(got.filter((g) => g.status === 'fulfilled').map((g) => g.value))
+  if (!digest) return json({ on: true, error: 'news unreachable' }, 502)
   // the read state: a database hiccup still shows the news (nothing dimmed, no dot)
   let read = [], seen = null
   try {
@@ -51,7 +60,20 @@ export async function GET(request) {
     const ids = new Set(digest.sections.flatMap((s) => s.items.map((i) => i.id)))
     ;[read, seen] = await Promise.all([store.reads(who).then((r) => r.filter((id) => ids.has(id))), store.seen(who)])
   } catch {}
-  return json({ on: true, digest, edition: name || null, stale: latestStale(), latestAt: newest.at, editions: names.filter((n) => n !== archiveName(newest.at, TZ)).map((n) => ({ name: n, label: archiveLabel(n) })), read, seen, run: run.run, nextAt: run.nextAt })
+  return json({
+    on: true,
+    digest,
+    day: entry.day,
+    picked: day || null,
+    today: dayOf(archiveName(Date.now(), TZ)),
+    days: days.map((d) => ({ day: d.day, updates: d.names.length, last: d.names.at(-1).slice(11, 13) + ':' + d.names.at(-1).slice(13, 15) })),
+    latestAt: newest.at,
+    stale: latestStale(),
+    read,
+    seen,
+    run: run.run,
+    nextAt: run.nextAt,
+  })
 }
 
 export async function POST(request) {
