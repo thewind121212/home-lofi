@@ -12,11 +12,13 @@
 //   Before 06:00 anything still open shows as the pill (a tap opens the panel on this tab; it doesn't open by itself).
 // - Done is a hold (Habits' ring, app/habits.js HoldRing: keyboard Space / Enter held, a buzz, reduced motion kept),
 //   then the row folds away; Undo right after (UNDO_MS).
+// - Links: pins on a reminder (app/pins.js): their chips under its text, and the link button on its row opens the picker.
 // - The owner's other tabs follow on the live stream ('reminders': pull).
 import './reminders.css'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } from 'lucide-react'
 import { HoldRing, UndoLeft, UndoLine } from './habits'
+import { LinkButton, PinChips } from './pins'
 import { localNow } from '../lib/habits'
 import { MAX_TEXT, TUCK_KEY, UNDO_MS, carried, tuckHolds } from '../lib/reminders'
 import { closeDialog, motionOff, useStillPage } from './settings'
@@ -256,8 +258,9 @@ function useLeaving(items) {
 
 const ageText = (n) => (n <= 0 ? 'added today' : n === 1 ? 'since yesterday' : `carried ${n} days`)
 
-// One reminder: its text, how long it's been carried, the ring to hold. onRemove: the card's quiet delete (two taps)
-function Row({ item, today, leaving, onDone, onRemove }) {
+// One reminder: its text, how long it's been carried, its links, the ring to hold. onRemove: the card's quiet delete
+// (two taps). pn: usePins() (its links: chips, and the button that opens the picker)
+function Row({ item, today, leaving, onDone, onRemove, pn }) {
   const li = useRef(null)
   const [holding, setHolding] = useState(false)
   const [sure, setSure] = useState(false) // the trash was tapped once: the second tap deletes
@@ -267,13 +270,16 @@ function Row({ item, today, leaving, onDone, onRemove }) {
     return () => clearTimeout(t)
   }, [sure])
   const age = carried(item, today)
+  const to = { kind: 'todo', id: item.id }
   return (
     <li ref={li} className={`rm-row${holding ? ' is-holding' : ''}${leaving ? ' is-leaving' : ''}${age > 0 ? ' is-carried' : ''}`} aria-hidden={leaving || undefined}>
       <div className="rm-row-in">
         <div className="rm-text">
           <p title={item.text}>{item.text}</p>
           <small>{holding ? 'keep holding: done when the ring fills' : ageText(age)}</small>
+          <PinChips pn={pn} to={to} />
         </div>
+        {!leaving && <LinkButton pn={pn} to={to} label={item.text} />}
         {onRemove && (
           <button
             type="button"
@@ -362,7 +368,7 @@ function AddForm({ rm, compact = false }) {
 // ---- the sheet ----
 
 // The whole list in a sheet (opened from Ambient's chip or ⌘K): the open ones, the add field, hold to mark one done, the two-tap delete
-export function RemindersSheet({ rm, dlg }) {
+export function RemindersSheet({ rm, dlg, pn }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)
   useEffect(() => {
@@ -382,12 +388,12 @@ export function RemindersSheet({ rm, dlg }) {
       onClose={() => delete dlg.current.dataset.closing}
       className="wx-sheet sm:max-w-xl glass-panel text-lofi-text overscroll-contain"
     >
-      {rm.on && <RemindersBody rm={rm} onClose={close} />}
+      {rm.on && <RemindersBody rm={rm} pn={pn} onClose={close} />}
     </dialog>
   )
 }
 
-function RemindersBody({ rm, onClose }) {
+function RemindersBody({ rm, pn, onClose }) {
   const { data } = rm
   const items = data.items
   const rows = useLeaving(items)
@@ -406,7 +412,7 @@ function RemindersBody({ rm, onClose }) {
       <AddForm rm={rm} />
       {rows.length ? (
         <ul className="rm-list">
-          {rows.map((r) => <Row key={r.item.id} item={r.item} today={data.today} leaving={r.leaving} onDone={rm.done} onRemove={rm.remove} />)}
+          {rows.map((r) => <Row key={r.item.id} item={r.item} today={data.today} leaving={r.leaving} onDone={rm.done} onRemove={rm.remove} pn={pn} />)}
         </ul>
       ) : (
         <p className="rm-empty">Nothing carried over. What you add stays here, and on screen from 06:00, until you hold it done.</p>
@@ -420,7 +426,7 @@ function RemindersBody({ rm, onClose }) {
 // ---- the pop-up ----
 
 // hidden: the dashboard isn't on screen (Ambient, the lock): it waits, and comes back with it
-export function RemindersPopup({ rm, hidden = false }) {
+export function RemindersPopup({ rm, hidden = false, pn }) {
   const want = rm.panel !== 'none' && !hidden
   const [shown, setShown] = useState(want)
   const [leaving, setLeaving] = useState(false)
@@ -497,7 +503,7 @@ export function RemindersPopup({ rm, hidden = false }) {
           </button>
         )}
       </div>
-      <PopupList rm={rm} />
+      <PopupList rm={rm} pn={pn} />
       {n > 0 && <AddForm rm={rm} compact />}
       {n === 0 && rm.undoing && (
         <p className="rm-clear"><Check size={15} strokeWidth={2.4} aria-hidden="true" />Nothing carried over to tomorrow.</p>
@@ -508,12 +514,12 @@ export function RemindersPopup({ rm, hidden = false }) {
   )
 }
 
-function PopupList({ rm }) {
+function PopupList({ rm, pn }) {
   const rows = useLeaving(rm.data.items)
   if (!rows.length) return null
   return (
     <ul className="rm-list rm-pop-list">
-      {rows.map((r) => <Row key={r.item.id} item={r.item} today={rm.data.today} leaving={r.leaving} onDone={rm.done} />)}
+      {rows.map((r) => <Row key={r.item.id} item={r.item} today={rm.data.today} leaving={r.leaving} onDone={rm.done} pn={pn} />)}
     </ul>
   )
 }

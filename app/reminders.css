@@ -113,3 +113,7 @@ html[data-motion='reduce'] :is(.rm, .rm-pop, .rm-pill), html[data-motion='reduce
 @media (prefers-reduced-motion: reduce) {
   :is(.rm, .rm-pop, .rm-pill), :is(.rm, .rm-pop, .rm-pill) * { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
 }
+
+/* a reminder's links (app/pins.js PinChips, LinkButton) */
+.rm-text .pn-chips { margin-top: 5px; }
+.rm-row .pn-linkbtn { margin-right: -2px; }

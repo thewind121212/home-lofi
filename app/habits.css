@@ -298,3 +298,7 @@ html[data-motion='reduce'] .hb-tile .hb-hold .ring-hint, html[data-motion='reduc
 /* (reduced motion keeps the Undo line draining: it's the time left, as the hold's ring is the hold) */
 html[data-motion='reduce'] .undo-drain.undo-drain.undo-drain { animation-duration: var(--dur) !important; }
 @media (prefers-reduced-motion: reduce) { .undo-drain.undo-drain.undo-drain { animation-duration: var(--dur) !important; } }
+
+/* a routine's links (app/pins.js PinChips): under the tile's line, and in the editor above its button */
+.hb-text .pn-chips { margin-top: 5px; }
+.hb-links.pn-chips { margin: 0 0 8px; }

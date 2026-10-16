@@ -16,6 +16,10 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
 - **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading and the 🔔 bell.
   Reminders have no icon there: their pop-up / pill (bottom left, the pill at any hour while one is open), Ambient's chip and ⌘K open them.
+- **Links**: pins can go on habits and reminders (several on one, one on several). A reminder's 🔗 button (on its row,
+  in the pop-up or the list) or a routine's *Links* (Habits › routines › edit) opens the picker: tick pins on or off,
+  or paste a new link to pin and link it at once. Their chips show under the reminder and on the habit's tile; a tap
+  opens the link. A removed pin drops off them (its Undo brings it back).
 - The page scrolls without a scrollbar of its own (panels and lists keep theirs).
 - **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
   too, not over another dialog; the same keys close it) or **/** outside a field. Type a few letters, **Enter** runs

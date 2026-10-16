@@ -17,11 +17,12 @@ import { SK_MAX } from '../lib/skeleton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, Archive, ArchiveRestore, BedDouble, Bell, Bike, BookOpen, Brain, CalendarDays, ChevronDown, ChevronRight, Clock, Code, Coffee, Droplet, Dumbbell, Flame,
-  Footprints, Guitar, Heart, Languages, Leaf, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
+  Footprints, Guitar, Heart, Languages, Leaf, Link2, Moon, Mountain, Music, PenLine, PersonStanding, Piano, Plus, Salad, SlidersHorizontal, Smile, Sprout, Sunrise,
   Timer, Trash2, Waves, X,
 } from 'lucide-react'
 import { DELETE_WORD, DEFAULT_ICON, GRACE_MIN, ICONS, REMIND_BEFORE, UNDO_MS, addDays, dowOf, fmtMin, isLate, localNow, remindAt, spanOf, toMin } from '../lib/habits'
 import { closeDialog, motionOff, useStillPage } from './settings'
+import { LinkButton, PinChips } from './pins'
 
 const URL_ = '/api/private/settings/habits'
 const HOLD_MS = 1800
@@ -368,7 +369,7 @@ function Burst() {
 // While held, the second line becomes the identity line; just kept, it asks how it went (three small buttons);
 // tapping the check later opens "take it back" under the tile.
 
-function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
+function Tile({ habit, pn, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
   const [holding, setHolding] = useState(false)
   const [asking, setAsking] = useState(false)
   // "take it back" opens only for a press that began on the check itself (a finger, a button, Enter / Space): the finger
@@ -432,6 +433,7 @@ function Tile({ habit, today, now, entry, fresh, onKeep, onRate, onTakeBack }) {
               ))}
             </div>
           </div>
+          <PinChips pn={pn} to={{ kind: 'habit', id: habit.id }} />
         </div>
         {done ? (
           <button
@@ -602,7 +604,7 @@ function Timeline({ draft, setDraft }) {
 }
 
 const KINDS = [['time', 'At a time'], ['window', 'In a window'], ['any', 'Any time']]
-function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
+function Editor({ habit, pn, onSave, onArchive, onBack, busy, error }) {
   const [draft, setDraft] = useState(() => structuredClone(habit))
   const [icons, setIcons] = useState(false)
   const kind = draft.when.kind
@@ -665,6 +667,20 @@ function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
         {!draft.identity && <div className="hb-chips"><button type="button" className="hb-pick" onClick={() => setDraft({ ...draft, identity: hint })}>Use “{hint}”</button></div>}
       </div>
 
+      {pn?.on && (
+        <div className="hb-field">
+          <span className="hb-flabel" id="hb-links"><Link2 size={12} strokeWidth={2} aria-hidden="true" />Links</span>
+          {habit.id ? (
+            <>
+              <PinChips pn={pn} to={{ kind: 'habit', id: habit.id }} className="hb-links" />
+              <div className="hb-chips"><LinkButton pn={pn} to={{ kind: 'habit', id: habit.id }} label={habit.name} text /></div>
+            </>
+          ) : (
+            <p className="hb-sub" style={{ margin: 0 }}>Save the routine first, then link pins to it.</p>
+          )}
+        </div>
+      )}
+
       <div className="hb-field">
         <div className="hb-switchline">
           <span className="bell" aria-hidden="true"><Bell size={18} strokeWidth={1.75} /></span>
@@ -695,7 +711,7 @@ function Editor({ habit, onSave, onArchive, onBack, busy, error }) {
   )
 }
 
-function Routines({ hb, dlg }) {
+function Routines({ hb, pn, dlg }) {
   const [view, setView] = useState(null) // null: the list; else the habit being edited ({} new)
   const [doomed, setDoomed] = useState(null) // an archived habit about to be deleted for good (its confirm screen)
   const [busy, setBusy] = useState(false)
@@ -751,7 +767,7 @@ function Routines({ hb, dlg }) {
           }}
         />
       ) : view ? (
-        <Editor key={view.id ?? 'new'} habit={view} busy={busy} error={error} onBack={() => (setView(null), setError(null))} onSave={put} onArchive={(d) => put({ ...d, archived: true })} />
+        <Editor key={view.id ?? 'new'} pn={pn} habit={view} busy={busy} error={error} onBack={() => (setView(null), setError(null))} onSave={put} onArchive={(d) => put({ ...d, archived: true })} />
       ) : (
         <div className="hb-list">
           {active.map((h) => (
@@ -880,13 +896,13 @@ const WEEK_KEY = 'habitsWeek' // the week strip folded open on this device
 // habits as tiles, the week folded under ▾, the routines behind the sliders.
 // wait: the owner's card may be on its way (owner not known yet, or the first load), so its skeleton keeps the place;
 // force: it surely is (the owner), whatever the remembered shape says
-export function HabitsCard({ hb, wait = false, force = false }) {
+export function HabitsCard({ hb, pn, wait = false, force = false }) {
   if (!hb.on) return wait ? <HabitsSkeleton force={force} /> : null
-  return <HabitsBody hb={hb} />
+  return <HabitsBody hb={hb} pn={pn} />
 }
 
 // (mounted only once the data is here, in the browser: the week strip opens as it was, without animating open)
-function HabitsBody({ hb }) {
+function HabitsBody({ hb, pn }) {
   const dlg = useRef(null)
   const card = useRef(null)
   const [week, setWeek] = useState(() => {
@@ -962,7 +978,7 @@ function HabitsBody({ hb }) {
       {habits.length ? (
         <ul className="hb-tiles">
           {habits.map((h) => (
-            <Tile key={h.id} habit={h} today={today} now={now} entry={entry(h.id)} fresh={hb.fresh === h.id} onKeep={hb.keep} onRate={hb.rate} onTakeBack={(x, r, d) => hb.takeBack(x, r, d)} />
+            <Tile key={h.id} pn={pn} habit={h} today={today} now={now} entry={entry(h.id)} fresh={hb.fresh === h.id} onKeep={hb.keep} onRate={hb.rate} onTakeBack={(x, r, d) => hb.takeBack(x, r, d)} />
           ))}
         </ul>
       ) : (
@@ -992,7 +1008,7 @@ function HabitsBody({ hb }) {
           <div><Week habits={habits} checkins={data.checkins} streaks={data.streaks} today={today} /></div>
         </div>
       )}
-      <Routines hb={hb} dlg={dlg} />
+      <Routines hb={hb} pn={pn} dlg={dlg} />
     </section>
   )
 }
