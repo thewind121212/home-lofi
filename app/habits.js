@@ -942,7 +942,7 @@ function HabitsBody({ hb, pn }) {
   const openRoutines = () => dlg.current?.showModal()
   // the next visit's skeleton: how many routines, the week strip, and this card's height at this window width
   const count = habits.length
-  useEffect(() => rememberShape({ habits: count, hbWeek: week && count > 0 }), [count, week])
+  useEffect(() => void rememberShape({ habits: count, hbWeek: week && count > 0 }), [count, week])
   useEffect(() => {
     const el = card.current
     if (!el || typeof ResizeObserver === 'undefined') return

@@ -224,7 +224,7 @@ export function useSounds(mix, { music = false } = {}) {
   // sync) never resets a running count. A new timer value from another device does re-arm it here, as the same tap
   // would: "stop in 30 min" picked on the PC for the phone playing in the bedroom means that phone, from now (it
   // arrives a second after the tap). A page that isn't playing just shows the new value; its count starts with ▶.
-  useEffect(() => setEndsAt(playing ? timerEnd(Date.now(), mix.timer) : null), [playing, mix.timer])
+  useEffect(() => void setEndsAt(playing ? timerEnd(Date.now(), mix.timer) : null), [playing, mix.timer])
   useEffect(() => {
     if (!endsAt) return
     const i = setInterval(() => Date.now() >= endsAt && ((t.slow = true), setPlaying(false)), 1000)

@@ -12,12 +12,13 @@
 // - Asked when the owner's known, when the page shows again (MIN_GAP apart), every REFRESH while it's on screen (a new
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
-import { useEffect, useRef, useState } from 'react'
+import { Component, useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, Clock, MessageSquare, Newspaper, Pin, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, useStillPage } from './settings'
 import { CATEGORIES, EDITIONS, ago, editionLine, editionName } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
+import { reportError } from './report-error'
 
 const URL_ = '/api/private/settings/news'
 const MIN_GAP = 30_000
@@ -217,9 +218,45 @@ export function NewsModal({ nw, pn, dlg }) {
       onClose={() => (delete dlg.current.dataset.closing, nw.reset())}
       className="wx-sheet nw-modal glass-panel text-lofi-text"
     >
-      {nw.on && <NewsBody nw={nw} pn={pn} onClose={close} />}
+      {nw.on && (
+        <NewsCatch key={nw.data.edition ?? 'latest'} nw={nw} onClose={close}>
+          <NewsBody nw={nw} pn={pn} onClose={close} />
+        </NewsCatch>
+      )}
     </dialog>
   )
+}
+
+// An edition that can't be drawn (something in it the page didn't expect): told to the server's log, and the modal says
+// so with a way back to the latest, instead of the whole page going down. (A fresh one for each edition: its key)
+class NewsCatch extends Component {
+  state = { error: null }
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+  componentDidCatch(error, info) {
+    reportError(error, `news:${this.props.nw.data?.edition ?? 'latest'}`, info?.componentStack)
+  }
+  render() {
+    if (!this.state.error) return this.props.children
+    const { nw, onClose } = this.props
+    return (
+      <section className="nw">
+        <header className="nw-head">
+          <span className="nw-mark" aria-hidden="true"><Newspaper size={17} strokeWidth={1.9} /></span>
+          <div className="nw-title"><h2 id="nw-title">News</h2></div>
+          <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+        </header>
+        <div className="nw-scroll">
+          <div className="nw-brief" role="alert">
+            <span className="nw-kicker">Couldn't show this edition</span>
+            <p>Something in it tripped the page. It's been noted.</p>
+            {nw.data?.edition != null && <button type="button" className="nw-brief-more nw-back" onClick={() => nw.show(null)}>Back to the latest</button>}
+          </div>
+        </div>
+      </section>
+    )
+  }
 }
 
 function NewsBody({ nw, pn, onClose }) {
@@ -228,7 +265,11 @@ function NewsBody({ nw, pn, onClose }) {
   const scroller = useRef(null)
   const [brief, setBrief] = useState(false) // (phones: the brief folded to a few lines until tapped)
   // another edition: back to the top
-  useEffect(() => scroller.current?.scrollTo({ top: 0 }), [digest.at])
+  // (a block, not `() => el.scrollTo()`: newer Chrome returns a Promise from scrollTo, and React takes whatever an
+  // effect returns for its cleanup: calling that Promise on the next edition took the whole page down)
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: 0 })
+  }, [digest.at])
   const pinned = new Set(pn?.on ? pn.data.pins.map((p) => p.url) : [])
   const total = digest.sections.reduce((n, s) => n + s.items.length, 0)
   const unread = digest.sections.reduce((n, s) => n + s.items.filter((i) => !nw.isRead(i.id)).length, 0)

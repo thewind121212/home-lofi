@@ -172,7 +172,7 @@ export default function Home() {
   const variant = mode && dayVariant(mode, scene, wantDay, badVariants)
   const base = scene && variant && sceneBase(SCENES_URL, scene, variant)
   const [sceneDown, setSceneDown] = useState(false) // signature files missing / host down -> night sky fallback
-  useEffect(() => setSceneDown(false), [base])
+  useEffect(() => void setSceneDown(false), [base])
   const onSceneFail = (m) => (m === 'signature' ? setSceneDown(true) : setBadVariants((b) => new Set(b).add(`${m}/${scene}`)))
 
   useEffect(() => {
@@ -445,7 +445,7 @@ export default function Home() {
   // music: the radio or the Player's Listen plays here, so they keep the phone's lock screen (Spotify plays elsewhere)
   const snd = useSounds(set.sounds, { music: tune.playing || tune.loading || player.listening })
   soundsOn.current = snd.playing
-  useEffect(() => cloud.live(), [snd.playing]) // started from the lock screen with the stream shut: open it again
+  useEffect(() => void cloud.live(), [snd.playing]) // started from the lock screen with the stream shut: open it again
   const setMix = (sounds) => update({ sounds })
   const openSounds = () => sndDlg.current.open || sndDlg.current.showModal() // (the music card's Sounds row, A)
   // a bar's sheet; 'add': straight on its field (a reminder to type, a link to paste)
@@ -983,7 +983,7 @@ function LockScreen({ onUnlock, set, update, full, screen, notices, children }) 
       removeEventListener('keyup', keyUp, true)
     }
   }, [])
-  useEffect(() => (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps 🎨 there
+  useEffect(() => void (look ? clearTimeout(timer.current) : rest()), [look]) // the look panel keeps 🎨 there
 
   // swipe: only upward moves count; past 8 px it's a swipe (so a tap still presses a button)
   const down = (e) => {
@@ -1234,7 +1234,7 @@ function Music({ ctl, onTune, spotify, spCtl, owner, wasOwner, tab, pick, statio
     ctl.current = { toggle: r.toggle, pause: r.pause }
   })
   // the Player plays at the radio's volume (one slider, one mute for both)
-  useEffect(() => player.setVolume(r.muted ? 0 : r.volume), [r.muted, r.volume])
+  useEffect(() => void player.setVolume(r.muted ? 0 : r.volume), [r.muted, r.volume])
 
   return (
     <div className="glass-panel rounded-3xl p-6 relative overflow-hidden flex flex-col h-[320px]">
@@ -2176,7 +2176,7 @@ function SceneCanvas({ base, mode, videoRef, reduced, onFail }) {
     }
   }, [videoRef]) // base / mode changes go through switchTo below, not a remount
 
-  useEffect(() => api.current?.switchTo(base, mode), [base, mode])
+  useEffect(() => void api.current?.switchTo(base, mode), [base, mode])
 
   // fade-in: a cheap cross-fade (through the night sky) on scene switches
   return (

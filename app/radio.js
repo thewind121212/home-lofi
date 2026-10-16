@@ -44,7 +44,7 @@ export const coverOf = (s, info) => (s.kind === 'youtube' && info?.[s.id]?.v ? y
 
 export function useMounted() {
   const [on, setOn] = useState(false)
-  useEffect(() => setOn(true), [])
+  useEffect(() => void setOn(true), [])
   return on
 }
 
@@ -405,7 +405,7 @@ export function useRadio({ station, info, onStation, onTune, host }) {
     ms.playbackState = m.want ? 'playing' : 'paused'
   }, [station, info, now, status])
 
-  useEffect(() => onTune({ playing: status === 'playing', loading: status === 'loading' }), [status, onTune])
+  useEffect(() => void onTune({ playing: status === 'playing', loading: status === 'loading' }), [status, onTune])
   useEffect(() => {
     if (!note) return
     const t = setTimeout(() => setNote(null), 6000)

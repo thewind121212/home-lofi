@@ -272,7 +272,7 @@ export function QuickPalette({ dlg, ctx }) {
   const found = !open || !typed ? [] : [...(cmd ? [cmd] : []), ...rank(items, q)]
   const rows = !open ? [] : typed ? [...found, web] : startList(items, recent)
   const at = Math.max(0, Math.min(active, rows.length - 1))
-  useEffect(() => keepInView(list.current, list.current?.querySelector(`[data-i="${at}"]`)), [at, typed])
+  useEffect(() => void keepInView(list.current, list.current?.querySelector(`[data-i="${at}"]`)), [at, typed])
 
   const type = (v) => (setQ(v), setActive(0), setErr(null))
   async function go(item) {

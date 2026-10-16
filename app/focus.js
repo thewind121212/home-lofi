@@ -187,7 +187,7 @@ export function useFocus(owner, clientId) {
   }, [note])
 
   // a new state or a new skew: the beat re-aims at the new second's edges and re-draws now
-  useEffect(() => beat.arm(), [data, beat])
+  useEffect(() => void beat.arm(), [data, beat])
 
   // A phase running out on this device's (corrected) clock: the chime, if the page is on screen, then a pull for the
   // server's next phase (the live event usually brings it first). Not for a phase that ran out long ago (the page slept)

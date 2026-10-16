@@ -21,6 +21,9 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   or paste a new link to pin and link it at once. Their chips show under the reminder and on the habit's tile; a tap
   opens the link. A removed pin drops off them (its Undo brings it back).
 - The page scrolls without a scrollbar of its own (panels and lists keep theirs).
+- **Errors**: a crash shows the page's own screen (*Oops*, Try again / Reload) and an unknown address its 404, over a
+  slowly drifting sky (`app/oops.js`); News has its own catch, so a bad edition only blanks the modal. Each crash is
+  told to the server's log: `docker logs <container> | grep client-error` (where, message, stack, browser).
 - **Quick actions** (`app/quick.js`, rules in `lib/quick.js`): a command palette. **⌘K** / **Ctrl+K** (in a text field
   too, not over another dialog; the same keys close it) or **/** outside a field. Type a few letters, **Enter** runs
   the top match, **↑ ↓** or **Tab / Shift+Tab** move (the typing stays in the field, as in Spotlight), a click runs a
@@ -209,6 +212,7 @@ Change it for your own domain.
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
+| `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
 ### Other servers
