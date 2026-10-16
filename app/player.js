@@ -232,7 +232,7 @@ export function useTavarian({ keep = false } = {}) {
       stopped = true
     }
   }, [])
-  useEffect(() => sync.current(), [keep])
+  useEffect(() => void sync.current(), [keep])
 
   return {
     ...d,
@@ -539,7 +539,7 @@ export function usePlayer({ owner, onListen }) {
   const [keep, setKeep] = useState(false)
   const tv = useTavarian({ keep })
   const au = usePlayerAudio(tv, { owner, onListen })
-  useEffect(() => setKeep(au.listening), [au.listening])
+  useEffect(() => void setKeep(au.listening), [au.listening])
   return { ...tv, ...au }
 }
 
@@ -2029,7 +2029,9 @@ function SearchView({ p, ops, seed }) {
   const linky = ['video', 'playlist', 'spotify', 'mix'].includes(classifyLink(q).kind) || /^(https?:\/\/|www\.)/i.test(q)
   const last = useRef(q)
   const jumped = Math.abs(q.length - last.current.length) > 1
-  useEffect(() => input.current?.focus({ preventScroll: true }), [])
+  useEffect(() => {
+    input.current?.focus({ preventScroll: true })
+  }, [])
   useEffect(() => {
     last.current = q
     if (q.length < 2) return setRes(null), setErr(null), setBusy(false)

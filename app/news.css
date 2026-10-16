@@ -65,6 +65,8 @@
   background: transparent; color: var(--color-lofi-primary); font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px;
 }
 .nw-brief-more:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+/* (the error card's way back: the same pill, on every screen) */
+.nw-brief-more.nw-back { display: inline-flex; align-items: center; }
 /* phones: a few lines of it, the rest behind More */
 @media (max-width: 639px) {
   .nw-brief-more { display: inline-flex; align-items: center; }
