@@ -14,7 +14,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Dock** (bottom right): on the dashboard the owner's ⏱ Focus, ⛰ Ambient (**H**) and 🔒 Lock (**L**); in Ambient 👁 Show
   panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as on
   a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
-- **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading and the 🔔 bell.
+- **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading, 📰 News and the 🔔 bell.
   Reminders have no icon there: their pop-up / pill (bottom left, the pill at any hour while one is open), Ambient's chip and ⌘K open them.
 - **Links**: pins can go on habits and reminders (several on one, one on several). A reminder's 🔗 button (on its row,
   in the pop-up or the list) or a routine's *Links* (Habits › routines › edit) opens the picker: tick pins on or off,
@@ -208,6 +208,7 @@ Change it for your own domain.
 | `SERVER_NAME` | `Server` (Coolify: `lenovo`) | this machine's label on the Server card |
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
+| `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
 ### Other servers
@@ -481,6 +482,30 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 - `GET /api/private/settings/reading/cover?id=<series>`: the cover through this server (only for a book on the list,
   a picture of 3 MB at most, `private` cache). The key only buys a short-lived token (`lib/kavita.js`), kept in memory.
 
+
+### News (owner only)
+
+The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as one magazine
+page. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens a centered
+modal (on phones too): the edition and its time, the day **in brief**, then each section (its 5/5 stories as lead
+cards, the rest as rows with their category, importance dots, source, how long ago, Hacker News points and comments).
+A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
+read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
+editions from the agent's archive in the select at the top. Also in ⌘K (*Open news*).
+
+| env | default | what |
+| --- | --- | --- |
+| `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | where this server reaches the agent: `latest.json`, `archive/` (its listing) and `archive/<YYYY-MM-DD_HHMM>.json` |
+
+- `GET /api/private/settings/news[?edition=<archive name>]` (owner) → `{ on, digest: { edition, at, overview, sections:
+  [{ key, title, items }] }, edition, latestAt, editions: [{ name, label }], read, seen }`; `{ on: false }` without
+  `NEWS_URL`; 502 when the agent can't be reached and nothing was loaded yet (once loaded, the last copy stays).
+  `POST { action: 'read' | 'unread', ids }` / `{ action: 'seen', at }`.
+- Whatever the agent writes is checked first (`lib/news.js`): known fields only, cut to size, links http(s) only,
+  importance 1–5; a story without a title or link is left out. `latest.json` is kept a minute, the archive's listing
+  5 minutes, an archived digest for good (the newest 12). The page asks on load, when it shows again, every 10 minutes
+  while on screen, when the modal opens, and when another device reads something (`news` on the live stream).
+- Read stories are kept 45 days (`news_reads`), the newest edition opened in `news_seen`.
 ### Focus (owner only)
 
 A small Pomodoro that is **the same on every device**: ⏱ at the top of the dock, over ⛰ (a ring fills as the phase goes:

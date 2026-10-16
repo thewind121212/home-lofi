@@ -48,7 +48,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 // scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), snd, mix, setMix,
 // openSounds, music ({ source, tune, station, radio(), sp, spAct(action) (the page's Spotify control), spShow() (the
 // card's Spotify tab), player, tvOn }), wx, openWeather,
-// rm + openReminders, pn + openPins, rd + openReading, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
+// rm + openReminders, pn + openPins, rd + openReading, nw + openNews, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
 export function quickActions(ctx) {
   return [...basics(ctx), ...music(ctx), ...sounds(ctx), ...focusing(ctx), ...owners(ctx), ...scenes(ctx)]
 }
@@ -132,7 +132,7 @@ function sounds(c) {
   return out
 }
 
-// the owner's: Reminders, Pins, Reading (each once its hook has it: on)
+// the owner's: Reminders, Pins, Reading, News (each once its hook has it: on)
 function owners(c) {
   if (!c.owner) return []
   const out = []
@@ -156,6 +156,7 @@ function owners(c) {
       out.push({ id: `book:${b.id}`, title: b.name, hint: `${b.percent}% · continue in Kavita`, fa: 'fa-book', keywords: ['continue', 'reading', 'book', 'kavita'], run: () => openTab(b.href) })
     }
   }
+  if (c.nw?.on) out.push({ id: 'news', title: 'Open news', hint: c.nw.fresh ? 'a new edition' : 'the latest edition', fa: 'fa-newspaper', keywords: ['news', 'digest', 'rss', 'tin tức', 'báo'], run: () => c.openNews() })
   return out
 }
 

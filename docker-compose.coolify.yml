@@ -38,6 +38,8 @@ services:
       KAVITA_API_KEY: ${KAVITA_API_KEY:-}
       KAVITA_PUBLIC_URL: ${KAVITA_PUBLIC_URL:-https://kavita.wliafdew.dev}
       KAVITA_TZ: ${KAVITA_TZ:-Asia/Ho_Chi_Minh}
+      # the owner's News: the news agent's digests on the LAN (latest.json, archive/), see README "News"
+      NEWS_URL: ${NEWS_URL:-http://10.10.0.162:8090}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)
       DATABASE_URL: ${DATABASE_URL:-}
       OWNER_USER: ${OWNER_USER:-}
