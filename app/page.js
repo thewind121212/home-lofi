@@ -191,13 +191,24 @@ export default function Home() {
     mq.addEventListener('change', onMq)
     // right away (not after the re-render), so mount-time animations below already see it
     document.documentElement.dataset.motion = st.motion === 'reduce' || mq.matches ? 'reduce' : ''
-    setNow(new Date())
-    const t = setInterval(() => setNow(new Date()), 1000)
+    // the page's time: on the minute (everything it shows is minutes: the clocks, "5m", the greeting, day or night), so
+    // the whole page isn't drawn again every second for a clock that changes once a minute. Back on screen (a timer
+    // held back in a hidden tab, a laptop waking): at once
+    let t = 0
+    const tick = () => {
+      clearTimeout(t)
+      setNow(new Date())
+      t = setTimeout(tick, 60_000 - (Date.now() % 60_000) + 50)
+    }
+    tick()
+    const wake = () => document.visibilityState === 'visible' && tick()
+    document.addEventListener('visibilitychange', wake)
     // (not while a dialog is open: Esc closes just that, as its ✕ or a tap outside it does, and Ambient stays)
     const onKey = (e) => e.key === 'Escape' && !lockRef.current && !document.querySelector('dialog[open]') && leaveAmbient()
     addEventListener('keydown', onKey)
     return () => {
-      clearInterval(t)
+      clearTimeout(t)
+      document.removeEventListener('visibilitychange', wake)
       removeEventListener('keydown', onKey)
       mq.removeEventListener('change', onMq)
     }
