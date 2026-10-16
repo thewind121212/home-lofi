@@ -495,16 +495,23 @@ modal (on phones too): the edition and its time, the day **in brief**, then each
 cards, the rest as rows with their category, importance dots, source, how long ago, Hacker News points and comments).
 A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
 read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
-editions from the agent's archive in the select at the top. Also in ⌘K (*Open news*).
+editions from the agent's archive in the menu at the top. Also in ⌘K (*Open news*).
+🔄 **Refresh** asks the agent for a fresh edition now, besides its scheduled 07:00 and 15:00 ones: a run takes a few
+minutes, the modal says how it's going (on every device), and the new edition shows by itself when it's done (*Show
+it* when an older one is open). The agent's own limits (10 minutes between runs, 10 a day) answer with how long to
+wait, and the page says so.
 
 | env | default | what |
 | --- | --- | --- |
-| `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | where this server reaches the agent: `latest.json`, `archive/` (its listing) and `archive/<YYYY-MM-DD_HHMM>.json` |
+| `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | where this server reaches the agent: `latest.json`, `archive/` (its listing), `archive/<YYYY-MM-DD_HHMM>.json`, and for Refresh `POST /api/run` and `GET /api/status` (no status: no 🔄) |
 
 - `GET /api/private/settings/news[?edition=<archive name>]` (owner) → `{ on, digest: { edition, at, overview, sections:
   [{ key, title, items }] }, edition, latestAt, editions: [{ name, label }], read, seen }`; `{ on: false }` without
   `NEWS_URL`; 502 when the agent can't be reached and nothing was loaded yet (once loaded, the last copy stays).
-  `POST { action: 'read' | 'unread', ids }` / `{ action: 'seen', at }`.
+  `POST { action: 'read' | 'unread', ids }` / `{ action: 'seen', at }` / `{ action: 'refresh' }` (→ `{ ok, started }`,
+  or 429 `{ nextAt }`: the agent's limits). GET also has `run` (the agent's newest run: `{ state, startedAt,
+  finishedAt, items, cost, error }`, its status kept 4 s) and `nextAt`; while a run is going the page asks every 8 s,
+  and once it's done `latest.json` is asked again at once.
 - Whatever the agent writes is checked first (`lib/news.js`): known fields only, cut to size, links http(s) only,
   importance 1–5; a story without a title or link is left out. `latest.json` is kept a minute, the archive's listing
   5 minutes, an archived digest for good (the newest 12). The page asks on load, when it shows again, every 10 minutes

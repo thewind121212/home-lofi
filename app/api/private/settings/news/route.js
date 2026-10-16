@@ -1,7 +1,7 @@
 import { sameOriginJson, syncOwner } from '../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../lib/live.js'
 import { archiveLabel, archiveName, cleanAction, validArchive } from '../../../../../lib/news.js'
-import { archived, editions, latest, latestStale, newsOn } from '../../../../../lib/news-fetch.js'
+import { archived, editions, latest, latestStale, newsOn, runState, startRun } from '../../../../../lib/news-fetch.js'
 import { newsStore } from '../../../../../lib/news-store.js'
 
 // The owner's News (app/news.js): the agent's digest (lib/news-fetch.js, NEWS_URL), in the owner-only zone like the
@@ -11,10 +11,15 @@ import { newsStore } from '../../../../../lib/news-store.js'
 //                                     shown, null = the latest), latestAt (the newest edition's time), editions:
 //                                     [{ name, label }] (the archive, newest first, the latest left out), read: [ids] (this digest's stories
 //                                     the owner has read), seen (the newest edition opened, ms | null), stale (the
-//                                     agent didn't answer just now: the latest is the copy from before) }
+//                                     agent didn't answer just now: the latest is the copy from before), run (the
+//                                     agent's newest run, lib/news.js cleanRun, or null: it has none to tell, so no
+//                                     Refresh), nextAt (no Refresh before then: the agent's limits; 0 = any time) }
 //                                     { on: false }: NEWS_URL isn't set (no icon)
 //   POST { action: 'read' | 'unread', ids }   stories read (opened) / back to unread
 //        { action: 'seen', at }               an edition opened (the icon's dot goes; only ever forward)
+//        { action: 'refresh' }                the agent makes an edition now (a run: a few minutes; the page asks
+//                                             again until it's done) -> { ok: true, started } (false: one was going
+//                                             already), or 429 { error, nextAt } (the agent's cooldown / daily limit)
 //   -> { ok: true }; the owner's other tabs hear 'news' on the live stream and pull.
 // 404 = not set up / no such edition, 403 = someone else, 400 = a bad body, 502 = the agent unreachable or not a
 // digest ({ on: true, error }: the page keeps what it had), 503 = database unreachable (POST).
@@ -30,9 +35,11 @@ export async function GET(request) {
   if (!newsOn()) return json({ on: false })
   const name = new URL(request.url).searchParams.get('edition')
   if (name && !validArchive(name)) return json({ on: true, error: 'no such edition' }, 404)
-  let digest, newest, names
+  let digest, newest, names, run
   try {
-    ;[newest, names] = await Promise.all([latest(), editions()])
+    ;[newest, names, run] = await Promise.all([latest(), editions(), runState()])
+    // (a run just done: its edition, not the copy from before it)
+    if (run.fresh) [newest, names] = await Promise.all([latest(), editions()])
     digest = name ? await archived(name) : newest
   } catch (e) {
     return json({ on: true, error: e?.status === 404 && name ? 'no such edition' : 'news unreachable' }, e?.status === 404 && name ? 404 : 502)
@@ -44,7 +51,7 @@ export async function GET(request) {
     const ids = new Set(digest.sections.flatMap((s) => s.items.map((i) => i.id)))
     ;[read, seen] = await Promise.all([store.reads(who).then((r) => r.filter((id) => ids.has(id))), store.seen(who)])
   } catch {}
-  return json({ on: true, digest, edition: name || null, stale: latestStale(), latestAt: newest.at, editions: names.filter((n) => n !== archiveName(newest.at, TZ)).map((n) => ({ name: n, label: archiveLabel(n) })), read, seen })
+  return json({ on: true, digest, edition: name || null, stale: latestStale(), latestAt: newest.at, editions: names.filter((n) => n !== archiveName(newest.at, TZ)).map((n) => ({ name: n, label: archiveLabel(n) })), read, seen, run: run.run, nextAt: run.nextAt })
 }
 
 export async function POST(request) {
@@ -62,6 +69,16 @@ export async function POST(request) {
   const c = cleanAction(body)
   if (c.error) return json({ error: c.error, field: c.field }, 400)
   const { act } = c
+  if (act.action === 'refresh') {
+    if (!newsOn()) return json({ error: 'no news' }, 404)
+    try {
+      const r = await startRun()
+      tell(who, request)
+      return r.nextAt ? json({ error: 'not yet', nextAt: r.nextAt }, 429) : json({ ok: true, started: r.started })
+    } catch {
+      return json({ error: 'news unreachable' }, 502)
+    }
+  }
   try {
     const store = newsStore()
     if (act.action === 'read') {

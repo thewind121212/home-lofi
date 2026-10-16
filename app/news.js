@@ -9,20 +9,25 @@
 //   them). ✓ marks one read / unread by hand; "Mark all read" a whole section.
 // - Older editions from the agent's archive in the select at the top (read state carries over: same stories, same ids).
 // - 📌 pins a story's link (app/pins.js).
+// - 🔄 Refresh: the agent makes an edition now (a run, a few minutes). Asked again every POLL while it's going (on every
+//   device: they hear 'news'), and the new edition shows by itself. The agent's limits (a cooldown, so many a day) are
+//   its own: the page says how long to wait.
 // - Asked when the owner's known, when the page shows again (MIN_GAP apart), every REFRESH while it's on screen (a new
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
 import { Component, useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Clock, MessageSquare, Newspaper, Pin, X } from 'lucide-react'
+import { Check, ChevronDown, Clock, MessageSquare, Newspaper, Pin, RefreshCw, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, useStillPage } from './settings'
-import { CATEGORIES, EDITIONS, ago, editionLine, editionName } from '../lib/news'
+import { CATEGORIES, EDITIONS, ago, editionLine, editionName, runGoing, waitFor } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
 import { reportError } from './report-error'
 
 const URL_ = '/api/private/settings/news'
 const MIN_GAP = 30_000
 const REFRESH = 10 * 60_000
+const POLL = 8000 // a run going: asked this often
+const FAILED_FOR = 30 * 60_000 // a run that failed: said for this long
 const TZ = 'Asia/Ho_Chi_Minh' // (the agent's editions are this home's mornings and evenings)
 
 // ---- state: the server's, the page only draws it ----
@@ -39,6 +44,12 @@ export function useNews(owner, clientId) {
   const [ops, setOps] = useState([]) // [{ key, on, ids }]
   // the newest edition opened here: the dot stays gone even if a pull already on its way lands without it
   const [seenHere, setSeenHere] = useState(0)
+  // Refresh: asked (the answer not in yet); its trouble ('down': the agent didn't answer, 'soon': its limits); the run
+  // this tab saw going and then done (its new edition, until the modal closes)
+  const [asking, setAsking] = useState(false)
+  const [trouble, setTrouble] = useState(null)
+  const [ready, setReady] = useState(null)
+  const runRef = useRef(null)
   const api = useRef({})
   const view = useRef(null) // the archive name shown (null: the latest)
   const ownerRef = useRef(owner)
@@ -70,7 +81,12 @@ export function useNews(owner, clientId) {
         // (read before a write of this tab's: asked again, so what was asked for still comes)
         if (n < seq.current.shown) return void (again = true)
         seq.current.shown = n
-        if (privateAnswer(r.status, r.type) === 'locked' || (r.ok && j?.on === false)) {
+        if (r.status === 404 && name && j?.on) {
+          // (that edition has left the archive: back to the latest. Before the locked check: a guest's 404 has no on)
+          view.current = null
+          setPicked(undefined)
+          again = true
+        } else if (privateAnswer(r.status, r.type) === 'locked' || (r.ok && j?.on === false)) {
           setOff(true)
           setData(null)
           setError(false)
@@ -79,11 +95,6 @@ export function useNews(owner, clientId) {
           setData(j)
           setError(false)
           setPicked(undefined)
-        } else if (r.status === 404 && name) {
-          // (that edition has left the archive: back to the latest)
-          view.current = null
-          setPicked(undefined)
-          again = true
         } else fail()
       } catch {
         if (on && name === view.current) fail()
@@ -112,15 +123,31 @@ export function useNews(owner, clientId) {
     }
     setData(null)
   }, [owner])
+  // a run going: asked again every POLL, until it's done (or stuck)
+  const run = data?.run ?? null
+  const going = runGoing(run, Date.now())
+  useEffect(() => {
+    if (!going) return
+    const t = setInterval(() => document.visibilityState === 'visible' && api.current.pull?.(true), POLL)
+    return () => clearInterval(t)
+  }, [going])
+  // (one seen going, then done: its edition is the latest now)
+  useEffect(() => {
+    const was = runRef.current
+    runRef.current = run
+    if (was?.state === 'running' && run?.state === 'done' && (!was.job || was.job === run.job)) setReady(run)
+  }, [run?.state, run?.job])
 
-  async function write(body) {
+  async function send(body) {
     const headers = { 'content-type': 'application/json' }
     const id = clientId?.()
     if (id) headers['x-home-client'] = id
     // (a pull already on its way read the state before this write: its answer is dropped, not drawn over it)
     seq.current.shown = ++seq.current.sent
-    const r = await fetch(URL_, { method: 'POST', cache: 'no-store', redirect: 'manual', headers, body: JSON.stringify(body) })
-    if (!r.ok) throw new Error('failed')
+    return fetch(URL_, { method: 'POST', cache: 'no-store', redirect: 'manual', headers, body: JSON.stringify(body) })
+  }
+  async function write(body) {
+    if (!(await send(body)).ok) throw new Error('failed')
   }
   function mark(on, ids) {
     if (!ids.length) return
@@ -154,6 +181,32 @@ export function useNews(owner, clientId) {
     reset() {
       view.current = null
       setPicked(undefined)
+      setTrouble(null)
+      setReady(null)
+    },
+    // Refresh: { can (the agent tells its runs), busy (asked, or a run going), run, nextAt, trouble, ready }
+    refresh: { can: Boolean(on && run), busy: asking || going, run, nextAt: data?.nextAt ?? 0, trouble, ready },
+    // a fresh edition now (the agent's limits: said, not asked)
+    async start() {
+      if (!on || asking || going) return
+      setReady(null)
+      if (data.nextAt > Date.now()) return void setTrouble('soon')
+      setTrouble(null)
+      setAsking(true)
+      try {
+        const r = await send({ action: 'refresh' })
+        const j = await r.json().catch(() => null)
+        if (r.status === 429 && j?.nextAt) {
+          setData((d) => d && { ...d, nextAt: j.nextAt })
+          setTrouble('soon')
+        } else if (!r.ok) setTrouble('down')
+        else if (j?.started === false) setTrouble(null) // (one was going already: it's drawn as going)
+      } catch {
+        setTrouble('down')
+      } finally {
+        setAsking(false)
+        api.current.pull?.(true)
+      }
     },
     isRead: (id) => readSet.has(id),
     read: (ids) => mark(true, ids.filter((id) => !readSet.has(id))),
@@ -281,16 +334,18 @@ function NewsBody({ nw, pn, onClose }) {
           <h2 id="nw-title">News</h2>
           {/* (with the edition menu there, the time is on its button) */}
           <span className="nw-sub">
-            <span className={editions.length ? 'nw-sub-ed' : undefined}>{editions.length ? (EDITIONS[digest.edition] ?? 'Special') : editionLine(digest, now, TZ)}{total ? ' · ' : ''}</span>
+            <span className={editions.length ? 'nw-sub-ed' : undefined}>{editions.length ? (EDITIONS[digest.edition] ?? 'On demand') : editionLine(digest, now, TZ)}{total ? ' · ' : ''}</span>
             {total ? (unread ? `${unread} unread` : 'all read') : ''}
           </span>
         </div>
+        {nw.refresh.can && <RefreshButton nw={nw} />}
         {editions.length > 0 && <EditionMenu nw={nw} editions={editions} now={now} />}
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </header>
 
       <div ref={scroller} className={`nw-scroll${nw.loading ? ' is-loading' : ''}`} aria-busy={nw.loading} data-scroll>
         {(nw.error || nw.data.stale) && <p className="nw-note" role="status">The news machine isn't answering: this is the last edition it sent.</p>}
+        {nw.refresh.can && <RunNote nw={nw} />}
         {digest.overview && (
           <div className={`nw-brief${brief ? ' is-open' : ''}`}>
             <span className="nw-kicker">In brief</span>
@@ -304,6 +359,69 @@ function NewsBody({ nw, pn, onClose }) {
         {!total && <p className="nw-empty">Nothing in this edition.</p>}
       </div>
     </section>
+  )
+}
+
+// 🔄: a fresh edition now. Spins while asked or a run is going (on any device)
+function RefreshButton({ nw }) {
+  const { busy } = nw.refresh
+  return (
+    <button
+      type="button"
+      className={`nw-refresh${busy ? ' is-busy' : ''}`}
+      aria-label={busy ? 'Making a fresh edition' : 'Refresh: a fresh edition now'}
+      title={busy ? 'Making a fresh edition…' : 'Fresh news now (takes a few minutes)'}
+      aria-busy={busy}
+      disabled={busy}
+      onClick={() => nw.start()}
+    >
+      <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
+    </button>
+  )
+}
+
+// What a run is up to, under the header: going (how long so far), taking too long, failed, the agent's limits, done
+// (with a way to it from an older edition). Nothing when there's nothing to say
+function RunNote({ nw }) {
+  const { run, nextAt, trouble, ready, busy } = nw.refresh
+  const [now, setNow] = useState(Date.now)
+  const ticking = busy || (trouble === 'soon' && nextAt > now)
+  useEffect(() => {
+    if (!ticking) return
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [ticking])
+  const at = (ms) => new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms)
+  let tone = 'run', text = null, action = null
+  if (run?.state === 'running') {
+    const so = run.startedAt != null ? Math.max(0, now - run.startedAt) : null
+    if (runGoing(run, now)) {
+      const t = so == null ? '' : ` ${Math.floor(so / 60_000)}:${String(Math.floor(so / 1000) % 60).padStart(2, '0')}`
+      text = `Making a fresh edition…${t} · usually 2–4 min. It shows here when it's ready.`
+    } else {
+      tone = 'warn'
+      text = `The fresh edition is taking longer than usual (started ${at(run.startedAt)}). It shows here if it comes.`
+    }
+  } else if (trouble === 'down') {
+    tone = 'warn'
+    text = "The news machine didn't answer: no fresh edition this time."
+  } else if (trouble === 'soon' && nextAt > now) {
+    tone = 'warn'
+    text = `Too soon for another refresh: try again in ${waitFor(nextAt - now)}.`
+  } else if (ready) {
+    text = `Fresh edition ready${ready.items != null ? ` · ${ready.items} stories` : ''}.`
+    if (nw.view != null) action = <button type="button" className="nw-run-go" onClick={() => nw.show(null)}>Show it</button>
+  } else if (run?.state === 'error' && (run.finishedAt ?? 0) > now - FAILED_FOR) {
+    tone = 'warn'
+    text = `The last refresh failed: ${run.error}`
+  }
+  if (!text) return null
+  return (
+    <p className={`nw-run is-${tone}`} role="status">
+      {busy && <span className="nw-run-bar" aria-hidden="true" />}
+      <span>{text}</span>
+      {action}
+    </p>
   )
 }
 
