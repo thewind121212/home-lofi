@@ -49,6 +49,34 @@
 @media (hover: none) { .nw-menu-item { height: 44px; } }
 @keyframes nw-drop { from { opacity: 0; transform: translateY(-4px) scale(0.97); } }
 
+/* 🔄 Refresh: a round button by the edition menu, spinning while a run is going */
+.nw-refresh {
+  width: 34px; height: 34px; flex: none; padding: 0; border-radius: 999px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid rgb(255 255 255 / 0.12); background: rgb(26 26 46 / 0.6); color: var(--color-lofi-primary); transition: border-color 0.2s, opacity 0.2s;
+}
+.nw-refresh:hover:not(:disabled) { border-color: rgb(255 138 92 / 0.6); }
+.nw-refresh:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+.nw-refresh:disabled { cursor: default; }
+.nw-refresh.is-busy svg { animation: nw-spin 1.1s linear infinite; }
+@keyframes nw-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .nw-refresh.is-busy svg { animation-duration: 3s; } }
+/* what the run is up to: a line over the page, a thin bar running along it while it's going */
+.nw-run {
+  position: relative; overflow: hidden; flex: none; margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 10px 14px; border-radius: 14px;
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; line-height: 1.5; color: var(--color-lofi-text);
+  background: rgb(255 138 92 / 0.08); border: 1px solid rgb(255 138 92 / 0.22);
+}
+.nw-run.is-warn { color: var(--color-lofi-highlight); background: rgb(255 255 255 / 0.04); border-color: rgb(255 255 255 / 0.1); }
+.nw-run > span:not(.nw-run-bar) { flex: 1; min-width: 12rem; }
+.nw-run-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 35%; background: var(--color-lofi-primary); border-radius: 2px; animation: nw-bar 1.6s ease-in-out infinite; }
+@keyframes nw-bar { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) { .nw-run-bar { animation: none; width: 100%; opacity: 0.5; } }
+.nw-run-go {
+  flex: none; height: 28px; padding: 0 12px; border-radius: 999px; cursor: pointer; border: 1px solid rgb(255 138 92 / 0.5);
+  background: transparent; color: var(--color-lofi-primary); font: inherit;
+}
+.nw-run-go:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+
 .nw-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 22px; transition: opacity 0.2s; }
 .nw-scroll::-webkit-scrollbar { display: none; }
 @media (min-width: 640px) { .nw-scroll { padding: 20px 26px 32px; } }
@@ -74,7 +102,8 @@
   .nw-brief.is-open p { display: block; -webkit-line-clamp: unset; }
   .nw-menu-btn { padding: 0 8px 0 10px; gap: 5px; }
   .nw-sub-ed { display: none; } /* (phones: the menu beside it says which edition; this line, how many are left) */
-  .nw-head { gap: 10px; }
+  .nw-head { gap: 8px; }
+  .nw-menu-btn > svg:first-child { display: none; } /* (and room for 🔄 beside it) */
 }
 
 /* a section: its name, a rule, how many are left */
