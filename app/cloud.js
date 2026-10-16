@@ -204,6 +204,7 @@ export function useCloudSync(apply, hold, keep, onLive) {
       src.addEventListener('reminders', () => es === src && onLiveRef.current?.('reminders'))
       src.addEventListener('focus', () => es === src && onLiveRef.current?.('focus'))
       src.addEventListener('news', () => es === src && onLiveRef.current?.('news'))
+      src.addEventListener('github', () => es === src && onLiveRef.current?.('github'))
       src.addEventListener('hello', () => es === src && onLiveRef.current?.('hello'))
       // a drop or a refusal: our own backoff, not EventSource's (it would retry a refusal never, a drop every 3 s)
       src.onerror = () => {

@@ -62,8 +62,8 @@ export async function GET(request) {
       quiet(frame('hello', { at: Date.now() }))
       // end: the bus lets go of this stream (this tab connected again, the cap, the server stopping)
       // ('notify': the notification hub has news, lib/notify.js; 'habits': a habit kept / edited, lib/habits.js;
-      // 'pins': a pin added / removed, lib/pins.js; 'reminders': lib/reminders.js; 'focus': lib/focus.js; 'news': lib/news.js; everything else is a settings save)
-      unsubscribe = liveBus().subscribe(who, id, ({ kind, ...event }) => write(frame(kind === 'notify' || kind === 'habits' || kind === 'pins' || kind === 'reminders' || kind === 'focus' || kind === 'news' ? kind : 'changed', event)), end)
+      // 'pins': a pin added / removed, lib/pins.js; 'reminders': lib/reminders.js; 'focus': lib/focus.js; 'news': lib/news.js; 'github': lib/github.js; everything else is a settings save)
+      unsubscribe = liveBus().subscribe(who, id, ({ kind, ...event }) => write(frame(kind === 'notify' || kind === 'habits' || kind === 'pins' || kind === 'reminders' || kind === 'focus' || kind === 'news' || kind === 'github' ? kind : 'changed', event)), end)
       ping = setInterval(() => quiet(': ping\n\n'), PING)
       if (request.signal.aborted) end()
       else request.signal.addEventListener('abort', () => end(), { once: true })

@@ -48,7 +48,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 // scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), snd, mix, setMix,
 // openSounds, music ({ source, tune, station, radio(), sp, spAct(action) (the page's Spotify control), spShow() (the
 // card's Spotify tab), player, tvOn }), wx, openWeather,
-// rm + openReminders, pn + openPins, rd + openReading, nw + openNews, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
+// rm + openReminders, pn + openPins, rd + openReading, nw + openNews, gh + openGithub, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
 export function quickActions(ctx) {
   return [...basics(ctx), ...music(ctx), ...sounds(ctx), ...focusing(ctx), ...owners(ctx), ...scenes(ctx)]
 }
@@ -157,6 +157,7 @@ function owners(c) {
     }
   }
   if (c.nw?.on) out.push({ id: 'news', title: 'Open news', hint: c.nw.fresh ? 'a new edition' : 'the latest edition', fa: 'fa-newspaper', keywords: ['news', 'digest', 'rss', 'tin tức', 'báo'], run: () => c.openNews() })
+  if (c.gh?.on) out.push({ id: 'github', title: 'Open GitHub trending', hint: c.gh.fresh ? 'a new list' : "the day's repos", fa: 'fa-brands fa-github', keywords: ['github', 'trending', 'repos', 'repo', 'open source'], run: () => c.openGithub() })
   return out
 }
 
