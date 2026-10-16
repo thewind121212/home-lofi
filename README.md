@@ -527,6 +527,25 @@ wait, and the page says so.
   5 minutes, an archived digest for good (the newest 12). The page asks on load, when it shows again, every 10 minutes
   while on screen, when the modal opens, and when another device reads something (`news` on the live stream).
 - Read stories are kept 45 days (`news_reads`), the newest edition opened in `news_seen`.
+
+### GitHub (owner only)
+
+The same agent's GitHub picks of the day, behind a GitHub icon next to 📰 (a dot: a list not opened yet). It opens like
+News (a bottom sheet on phones, a panel on bigger screens): *This week* (the agent's overview), then the repos as
+cards: rank, category, *New* (new on the list today), worth trying (●●●●○), name (opens it and marks it read), language,
+★ stars, +★ this week, forks, licence, and a summary in Vietnamese. ▾ opens *Tính năng*, *Giúp gì khi làm app*, *Khi
+nào dùng*, the quick start (copied with a tap), its homepage and topics; 📌 pins it, ✓ marks it read. Filters on top:
+All / Trending / New, ★ 4+, a category (kept across openings). Older days in the menu at the top (the agent keeps 30).
+Also in ⌘K (*Open GitHub trending*).
+
+- Agent files (`NEWS_URL`): `github.json`, `github-archive/` (its listing), `github-archive/<YYYY-MM-DD_HHMM>.json`
+  (the newest of each day is that day's), `github-schema.json` (schema `gh-1.0`: fields only ever added).
+- Late: the list is made about 06:00. After 06:05 a list from an older day says *Chưa cập nhật* and the page asks
+  again every 15 minutes (until 08:00 it says so).
+- `GET /api/private/settings/github[?day=YYYY-MM-DD]` (owner) → `{ on, digest: { date, at, overview, repos }, day,
+  picked, today, days: [{ day, last }], latestAt, late, retry, stale, read, seen }`; `POST { action: 'read' | 'unread',
+  ids: ['owner/name'] }` / `{ action: 'seen', at }`. Checked first (`lib/github.js`), cached like News'.
+- Read repos are kept with News' (`news_reads`, as `gh:<owner/name>`), the newest list opened in `github_seen`.
 ### Focus (owner only)
 
 A small Pomodoro that is **the same on every device**: ⏱ at the top of the dock, over ⛰ (a ring fills as the phase goes:

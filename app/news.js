@@ -296,7 +296,7 @@ export function NewsModal({ nw, pn, dlg }) {
 // Phones: the sheet follows a finger dragging its top (grip): let go past DRAG_CLOSE (or a flick) and it slides away,
 // short of it and it springs back. Buttons in there stay buttons
 const DRAG_CLOSE = 110
-function useDragClose(dlg, grip) {
+export function useDragClose(dlg, grip) {
   useEffect(() => {
     const g = grip.current
     if (!g) return
@@ -349,23 +349,24 @@ function useDragClose(dlg, grip) {
 }
 
 // An edition that can't be drawn (something in it the page didn't expect): told to the server's log, and the modal says
-// so with a way back to the latest, instead of the whole page going down. (A fresh one for each edition: its key)
-class NewsCatch extends Component {
+// so with a way back to the latest, instead of the whole page going down. (A fresh one for each edition: its key.) The
+// GitHub list's too (app/github.js): its name, mark and title id
+export class NewsCatch extends Component {
   state = { error: null }
   static getDerivedStateFromError(error) {
     return { error }
   }
   componentDidCatch(error, info) {
-    reportError(error, `news:${this.props.nw.data?.day ?? '?'}`, info?.componentStack)
+    reportError(error, `${this.props.tag ?? 'news'}:${this.props.nw.data?.day ?? '?'}`, info?.componentStack)
   }
   render() {
     if (!this.state.error) return this.props.children
-    const { nw, onClose } = this.props
+    const { nw, onClose, name = 'News', mark = <Newspaper size={17} strokeWidth={1.9} />, titleId = 'nw-title' } = this.props
     return (
       <section className="nw">
         <header className="nw-head">
-          <span className="nw-mark" aria-hidden="true"><Newspaper size={17} strokeWidth={1.9} /></span>
-          <div className="nw-title"><h2 id="nw-title">News</h2></div>
+          <span className="nw-mark" aria-hidden="true">{mark}</span>
+          <div className="nw-title"><h2 id={titleId}>{name}</h2></div>
           <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
         </header>
         <div className="nw-scroll">
@@ -744,15 +745,17 @@ function RunNote({ nw }) {
 
 // The day picker: a button with the day shown and its last update ("Today · 14:37"), a short list under it (the days
 // with news, newest first: "Today · 6 updates", "Yesterday · 4 updates", "Thu 15 Oct"). Arrow keys move, Enter picks,
-// Esc or a tap elsewhere closes it (Esc doesn't close the modal then)
-function DayMenu({ nw, days, now }) {
+// Esc or a tap elsewhere closes it (Esc doesn't close the modal then). note: what a day's row says on its right (the
+// GitHub list's: its time)
+const updatesOf = (d) => `${d.updates} ${d.updates === 1 ? 'update' : 'updates'}`
+export function DayMenu({ nw, days, now, note = updatesOf }) {
   const [open, setOpen] = useState(false)
   const box = useRef(null)
   const btn = useRef(null)
   const shown = nw.view ?? nw.data.day
   const info = (d) => days.find((x) => x.day === d)
   const name = (d) => dayName(d, now, TZ) ?? d
-  const label = `${name(shown)}${info(shown) ? ` · ${info(shown).last}` : ''}`
+  const label = `${name(shown)}${info(shown)?.last ? ` · ${info(shown).last}` : ''}`
   useEffect(() => {
     if (!open) return
     const out = (e) => !box.current?.contains(e.target) && setOpen(false)
@@ -794,7 +797,7 @@ function DayMenu({ nw, days, now }) {
           {days.map((d, i) => (
             <button key={d.day} type="button" role="menuitemradio" aria-checked={d.day === shown} tabIndex={-1} className={`nw-menu-item${i === 1 ? ' is-first-old' : ''}`} onClick={() => pick(d.day)}>
               <span>{name(d.day)}</span>
-              <span className="nw-menu-n">{d.updates} {d.updates === 1 ? 'update' : 'updates'}</span>
+              <span className="nw-menu-n">{note(d)}</span>
               {d.day === shown && <Check size={14} strokeWidth={2.4} aria-hidden="true" />}
             </button>
           ))}
