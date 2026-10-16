@@ -1,20 +1,21 @@
 'use client'
 
-// The icons next to the header's bell (⚙️ Settings, the owner's Pins and Reading), and Focus on the dock: the bell's square, a Lucide icon, a count badge
+// The icons next to the header's bell (⚙️ Settings, the owner's Pins, Reading and News), and Focus on the dock: the bell's square, a Lucide icon, a count badge
 // when there's something to count; a tap opens its sheet (wx-sheet: a bottom sheet on phones, a centered panel from
 // sm). warm: tinted (something wants doing). ring: 0–100, a thin progress ring around the icon instead of a badge
 // (Reading: how far the latest book is; a started book shows at least a sliver; Focus: how far this phase has gone).
 // ringClass: the ring's colour (the accent unless said: Focus's break is a calm green). dock: the dock's round glass
 // button instead of the bell's square (Focus sits on top of the dock). Its skeleton is the bell's stand-in square, or
 // the dock's circle (className: more skeleton classes, e.g. Reading's sk-reading). fa: a Font Awesome glyph instead of
-// the Lucide icon, as the bell and the dock's own buttons have them (Settings by the bell, Focus on the dock)
+// the Lucide icon, as the bell and the dock's own buttons have them (Settings by the bell, Focus on the dock). dot: a
+// small accent dot on its corner, something new without a count (News: an edition not opened yet)
 const R = 13
 const ROUND = 2 * Math.PI * R
 const SHAPE = {
   head: 'rounded-xl bg-lofi-base/50 border border-white/5 hover:border-white/20 transition-colors',
   dock: 'glass-panel rounded-full hover:scale-105 transition',
 }
-export function HeadIcon({ label, icon: Icon, fa, count = 0, warm = false, ring = null, ringClass = 'stroke-lofi-primary', dock = false, onOpen, className = '' }) {
+export function HeadIcon({ label, icon: Icon, fa, count = 0, dot = false, warm = false, ring = null, ringClass = 'stroke-lofi-primary', dock = false, onOpen, className = '' }) {
   const arc = Number.isFinite(ring) && ring > 0 ? Math.max(4, Math.min(100, ring)) : 0
   return (
     <button
@@ -32,6 +33,7 @@ export function HeadIcon({ label, icon: Icon, fa, count = 0, warm = false, ring 
         </svg>
       )}
       {fa ? <i className={`fa-solid ${fa} ${ring != null ? 'text-[11px]' : 'text-sm'}`} aria-hidden="true" /> : <Icon size={ring != null ? 13 : 16} strokeWidth={2} aria-hidden="true" />}
+      {dot && count <= 0 && <span aria-hidden="true" className="absolute top-2 right-2 w-2 h-2 rounded-full bg-lofi-primary ring-2 ring-lofi-base" />}
       {count > 0 && (
         <span
           aria-hidden="true"

@@ -22,6 +22,7 @@ import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, use
 import { HabitsCard, useHabits } from './habits'
 import { LinkPicker, PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingIcon, ReadingSheet, useReading } from './reading'
+import { NewsIcon, NewsModal, useNews } from './news'
 import { HeadIcon } from './head-icon'
 import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } from './focus'
 import { QuickPalette } from './quick'
@@ -119,6 +120,7 @@ export default function Home() {
   const remDlg = useRef(null) // the Reminders, Pins and Reading sheets (their bars under Sounds open them)
   const pinDlg = useRef(null)
   const readDlg = useRef(null)
+  const newsDlg = useRef(null) // the News modal (its header icon)
   const focusDlg = useRef(null) // the Focus sheet (its header icon, Ambient's chip)
   const inboxDlg = useRef(null) // the notifications inbox (app/notify.js)
   const quickDlg = useRef(null) // Quick actions, the ⌘K palette (app/quick.js)
@@ -138,6 +140,7 @@ export default function Home() {
   const pinsLive = useRef(() => {}) // and Pins ('pins', and 'hello')
   const remindersLive = useRef(() => {}) // and Reminders ('reminders', 'hello')
   const focusLive = useRef(() => {}) // and Focus ('focus': another device or the server's phase change; 'hello')
+  const newsLive = useRef(() => {}) // and News ('news': a story read / an edition opened on another device; 'hello')
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -153,7 +156,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && kind !== 'focus' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind), focusLive.current(kind)))
+  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && kind !== 'focus' && kind !== 'news' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind), focusLive.current(kind), newsLive.current(kind)))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -275,6 +278,9 @@ export default function Home() {
   remindersLive.current = reminders.live
   // the books in progress in Kavita (app/reading.js): asked on load, when the tab shows again and when its sheet opens
   const reading = useReading(owner)
+  // the news agent's digest (app/news.js): asked on load, when the tab shows again, every few minutes and on 'news'
+  const news = useNews(owner, cloud.id)
+  newsLive.current = news.live
   // the owner's focus session (app/focus.js): the server's, the same on every device; its chip follows to Ambient and
   // the lock screen while one runs. useFocus's start / pause / resume / skip / stop are the API for anything else
   const focus = useFocus(owner, cloud.id)
@@ -453,6 +459,7 @@ export default function Home() {
   const openSettings = () => setDlg.current.open || setDlg.current.showModal()
   const openPins = openSheet(pinDlg, '.pn-input')
   const openReading = openSheet(readDlg)
+  const openNews = openSheet(newsDlg)
   const openFocus = openSheet(focusDlg)
   // Quick actions (app/quick.js): ⌘K / Ctrl+K, "/", the dock's 🔍. Its keys close it again
   // (the field takes the focus inside the key press or tap itself: iOS opens its keyboard only then)
@@ -515,7 +522,7 @@ export default function Home() {
     // (spShow: the card turns to Spotify, not saved, like startedTab, so the change and any no from Spotify show there)
     music: { source, tune, station, radio: () => music.current?.toggle(), sp: spotify, spAct: spCtl.act, spShow: () => amb.ambient || setAudioTab('spotify'), player, tvOn },
     wx, openWeather: () => weather.current?.openDetail(),
-    rm: reminders, openReminders, pn: pins, openPins, rd: reading, openReading, fc: focus, openFocus,
+    rm: reminders, openReminders, pn: pins, openPins, rd: reading, openReading, nw: news, openNews, fc: focus, openFocus,
     priv,
   }
 
@@ -564,7 +571,7 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* ⚙️ Settings (everyone's), the owner's Pins and Reading (only while a book is in progress), then the bell:
+            {/* ⚙️ Settings (everyone's), the owner's Pins, Reading (only while a book is in progress) and News, then the bell:
                 one tight group (the owner's stand-ins while they may be on the way). Reminders have no icon here: their
                 pop-up / pill bottom left, Ambient's chip and ⌘K open them. Phones: a row of its own under the clock, the
                 icons sharing its width (four don't fit beside it) */}
@@ -572,6 +579,7 @@ export default function Home() {
               <HeadIcon label="Settings" fa="fa-gear" onOpen={openSettings} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
+              <NewsIcon nw={news} wait={!cloud.known || (owner && news.pending)} force={owner} onOpen={openNews} />
               {hub.on ? (
                 <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />
               ) : (
@@ -685,6 +693,7 @@ export default function Home() {
       {/* (pins onto a habit or a reminder: one picker, over whichever sheet opened it) */}
       <LinkPicker pn={pins} />
       <ReadingSheet rd={reading} dlg={readDlg} />
+      <NewsModal nw={news} pn={pins} dlg={newsDlg} />
       <FocusSheet fc={focus} dlg={focusDlg} />
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
       <QuickPalette dlg={quickDlg} ctx={quick} />
