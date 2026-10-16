@@ -517,7 +517,9 @@ wait, and the page says so.
   finishedAt, items, cost, error }`, its status kept 4 s) and `nextAt`; while a run is going the page asks every 8 s,
   and once it's done `latest.json` is asked again at once.
 - Whatever the agent writes is checked first (`lib/news.js`): known fields only, cut to size, links http(s) only,
-  importance 1–5; a story without a title or link is left out. `latest.json` is kept a minute, the archive's listing
+  importance 1–5; a story without a title or link is left out. `schema_version` isn't checked (1.2–1.5 so far, each
+  only adding fields). A film's `platform` (1.5: where to watch it, e.g. `["Netflix"]`, `["Rạp chiếu"]`) shows as pills
+  after its title (📺, 🎬 for the cinema; known services in their colour). `latest.json` is kept a minute, the archive's listing
   5 minutes, an archived digest for good (the newest 12). The page asks on load, when it shows again, every 10 minutes
   while on screen, when the modal opens, and when another device reads something (`news` on the live stream).
 - Read stories are kept 45 days (`news_reads`), the newest edition opened in `news_seen`.
