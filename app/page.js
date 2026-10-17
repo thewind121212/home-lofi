@@ -3670,38 +3670,74 @@ function HostStats({ name, st, offline, unit, skel = false, i }) {
 }
 
 // The gaming PC: its Moni telemetry (github.com/thewind121212/moni) through moni-relay on this host (lib/pc.js). On:
-// up / fan line, then CPU, RAM, GPU, Power tiles (CPU / GPU temperature in the tile's label, like "RAM 60%"). Off: red "offline · last seen", dimmed
-// tiles, and Wake (Wake-on-LAN) for the owner; anyone else gets "Sign in to wake": waking goes through
+// up / fan line, then CPU, RAM, GPU, Power tiles (CPU / GPU temperature in the tile's label, like "RAM 60%"), and Turn
+// off for the owner (a second click within a few seconds confirms; Windows shuts down 30 s later). Off: red "offline ·
+// last seen", dimmed tiles, and Wake (Wake-on-LAN) for the owner; anyone else gets "Sign in to wake". Both go through
 // /api/private/settings, which always asks for the login, even on the LAN where these numbers are open.
 function GamingPc({ pc, unit, owner }) {
   const [wake, setWake] = useState('idle') // idle | sending | sent | failed | login
+  const [off, setOff] = useState('idle') // idle | confirm | sending | sent | failed | login
   useEffect(() => {
     if (pc.online) setWake('idle')
+    else setOff('idle')
   }, [pc.online])
+  useEffect(() => {
+    if (off !== 'confirm') return
+    const id = setTimeout(() => setOff('idle'), 4000) // an unanswered "Turn off now?" goes back
+    return () => clearTimeout(id)
+  }, [off])
   const st = pc.stats ?? {}
   const t = (c) => (c == null ? '--' : `${Math.round(toUnit(c, unit))}°${unit}`)
   const pctText = (v) => (v == null ? '--' : `${Math.round(v)}%`)
   const waking = !pc.online && (pc.waking || wake === 'sent')
+  const stopping = pc.online && (pc.stopping || off === 'sent')
 
-  async function sendWake() {
-    setWake('sending')
+  // -> 'sent' | 'login' (a login redirect / 401: the session ended; 403 / 404: not the owner here) | 'failed'
+  async function send(action) {
     try {
       const r = await fetch('/api/private/settings/pc', {
         method: 'POST',
         cache: 'no-store',
         redirect: 'manual',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'wake' }),
+        body: JSON.stringify({ action }),
       })
-      // a login redirect / 401: the session ended; 403 / 404: not the owner here
-      if (r.ok) setWake('sent')
-      else setWake(r.type === 'opaqueredirect' || [401, 403, 404].includes(r.status) ? 'login' : 'failed')
+      if (r.ok) return 'sent'
+      return r.type === 'opaqueredirect' || [401, 403, 404].includes(r.status) ? 'login' : 'failed'
     } catch {
-      setWake('failed')
+      return 'failed'
     }
   }
+  const sendWake = async () => (setWake('sending'), setWake(await send('wake')))
+  const sendOff = async () => {
+    if (off !== 'confirm') return setOff('confirm')
+    setOff('sending')
+    setOff(await send('off'))
+  }
 
-  const action = pc.online || !pc.canWake ? null : owner && wake !== 'login' ? (
+  const pill = 'shrink-0 inline-flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-full border transition-colors disabled:opacity-60'
+  const offAction = !pc.online || !pc.canOff || !owner ? null : off === 'login' ? (
+    <a href={signIn()} aria-label="Sign in to turn off the gaming PC" className={`${pill} text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 border-lofi-primary/20`}>
+      Sign in to turn off
+    </a>
+  ) : (
+    <button
+      type="button"
+      onClick={sendOff}
+      disabled={off === 'sending' || stopping}
+      aria-label={off === 'confirm' ? 'Confirm: turn off the gaming PC now' : 'Turn off the gaming PC'}
+      className={`${pill} ${
+        off === 'confirm' || off === 'sending'
+          ? 'text-red-300 bg-red-500/15 hover:bg-red-500/25 border-red-400/30'
+          : 'text-lofi-muted hover:text-lofi-text bg-lofi-text/5 hover:bg-lofi-text/10 border-lofi-text/10'
+      }`}
+    >
+      <i className={`fa-solid ${off === 'sending' || stopping ? 'fa-spinner fa-spin' : 'fa-power-off'}`} aria-hidden="true" />
+      {stopping ? 'Turning off…' : off === 'confirm' || off === 'sending' ? 'Turn off now?' : off === 'failed' ? 'Retry turn off' : 'Turn off'}
+    </button>
+  )
+
+  const action = pc.online ? offAction : !pc.canWake ? null : owner && wake !== 'login' ? (
     <button
       type="button"
       onClick={sendWake}
@@ -3728,7 +3764,9 @@ function GamingPc({ pc, unit, owner }) {
         <p className="flex flex-wrap items-center gap-2 min-w-0">
           <i className="fa-solid fa-desktop text-lofi-text/80" aria-hidden="true" />
           <span className="text-lofi-text/80 uppercase tracking-widest">Gaming PC</span>
-          {pc.online ? (
+          {stopping ? (
+            <span className="text-amber-300" role="status">turning off…</span>
+          ) : pc.online ? (
             <span>
               up {st.up == null ? '--' : dur(st.up)}
               {st.fan != null && ` · fan ${Math.round(st.fan)} rpm`}

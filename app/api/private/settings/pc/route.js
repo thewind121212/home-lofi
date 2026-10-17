@@ -1,10 +1,11 @@
 import { ownerOf, sameOriginJson } from '../../../../../lib/gate.js'
-import { pcOn, wakeOn, wakePc } from '../../../../../lib/pc.js'
+import { offPc, pcOn, wakeOn, wakePc } from '../../../../../lib/pc.js'
 
-// Wake the gaming PC (Wake-on-LAN through moni-relay, lib/pc.js). Owner-only like the settings next door: the proxy's
-// /api/private/settings location always asks for the Authelia login, even on the LAN (where /api/private itself is
-// open), so nobody at home wakes the PC without signing in.
+// Wake or turn off the gaming PC (Wake-on-LAN / the PC's Moni service, through moni-relay, lib/pc.js). Owner-only like
+// the settings next door: the proxy's /api/private/settings location always asks for the Authelia login, even on the
+// LAN (where /api/private itself is open), so nobody at home wakes or turns off the PC without signing in.
 //   POST { action: 'wake' } -> { ok: true, sent } (sent false: it was on already)
+//   POST { action: 'off' }  -> { ok: true, sent } (sent false: it was off already; Windows shuts down 30 s later)
 // 404 = not set up (no PC_URL / PC_WAKE_TOKEN) / not through that location, 403 = someone else, 400 = a bad body,
 // 502 = the relay unreachable or refusing.
 const HEADERS = { 'cache-control': 'no-store, private' }
@@ -24,9 +25,10 @@ export async function POST(request) {
   } catch {
     return json({ error: 'not JSON' }, 400)
   }
-  if (body?.action !== 'wake') return json({ error: 'unknown action', field: 'action' }, 400)
+  const run = body?.action === 'wake' ? wakePc : body?.action === 'off' ? offPc : null
+  if (!run) return json({ error: 'unknown action', field: 'action' }, 400)
   try {
-    return json({ ok: true, ...(await wakePc()) })
+    return json({ ok: true, ...(await run()) })
   } catch {
     return json({ error: 'pc relay unreachable' }, 502)
   }
