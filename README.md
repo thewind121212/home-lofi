@@ -656,8 +656,8 @@ docker compose up -d --build
 
 ## Gaming PC
 
-The Server card shows the gaming PC under the machines: CPU and GPU load + temperature, motherboard and SSD
-temperature, uptime, RAM, CPU fan and ⚡ watts while it's on; a red **offline · last seen HH:MM** and dimmed tiles
+The Server card shows the gaming PC under the machines: CPU, RAM, GPU and power tiles (CPU and GPU temperature in
+their labels), with uptime and CPU fan on its line, while it's on; a red **offline · last seen HH:MM** and dimmed tiles
 while it's off. The numbers come from [Moni](https://github.com/thewind121212/moni): its Windows service broadcasts
 them once a second on the LAN (UDP 5005, for the Moni clock), and `moni-relay` (that repo's `relay/`, a container on
 this host with host networking) serves the latest at `GET /status`. `lib/pc.js` asks it at most every 2 s for all tabs,
