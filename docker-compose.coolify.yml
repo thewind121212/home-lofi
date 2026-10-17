@@ -38,6 +38,10 @@ services:
       KAVITA_API_KEY: ${KAVITA_API_KEY:-}
       KAVITA_PUBLIC_URL: ${KAVITA_PUBLIC_URL:-https://kavita.wliafdew.dev}
       KAVITA_TZ: ${KAVITA_TZ:-Asia/Ho_Chi_Minh}
+      # the gaming PC on the Server card: moni-relay on this host (host network, so the LAN address), see README
+      # "Gaming PC". PC_WAKE_TOKEN = the relay's MONI_WAKE_TOKEN: the owner's Wake button (empty = no button)
+      PC_URL: ${PC_URL:-http://10.10.0.217:5007}
+      PC_WAKE_TOKEN: ${PC_WAKE_TOKEN:-}
       # the owner's News: the news agent's digests on the LAN (latest.json, archive/), see README "News"
       NEWS_URL: ${NEWS_URL:-http://10.10.0.162:8090}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)

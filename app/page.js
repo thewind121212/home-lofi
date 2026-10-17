@@ -634,7 +634,7 @@ export default function Home() {
           </div>
           <div className="flex flex-col gap-6 lg:contents 2xl:flex 2xl:col-span-3 2xl:col-start-10 2xl:row-start-1 2xl:sticky 2xl:top-8">
             <div className="max-lg:order-1 lg:col-span-8 lg:col-start-5 lg:row-start-1">
-              <Hub status={status} priv={priv} privFailed={privFailed} />
+              <Hub status={status} priv={priv} privFailed={privFailed} owner={owner} />
             </div>
             <div className="lg:col-span-4 lg:col-start-1 lg:row-start-3">
               <Weather ctl={weather} status={status} setStatus={setStatus} setWx={setWx} cloudLoc={cloudLoc} onPick={() => cloud.touch(['location'])} />
@@ -2229,7 +2229,7 @@ function Stat({ icon, label, value, pct, title, fit }) {
 }
 
 // Top of the right column, so the server stats stay above the fold (1080p): status row, then Server below it.
-function Hub({ status, priv, privFailed }) {
+function Hub({ status, priv, privFailed, owner }) {
   const [latency, setLatency] = useState() // undefined = the first ping is on its way, null = it failed
 
   useEffect(() => {
@@ -2288,7 +2288,7 @@ function Hub({ status, priv, privFailed }) {
           </div>
         </div>
       </div>
-      <Server d={priv} failed={privFailed} />
+      <Server d={priv} failed={privFailed} owner={owner} />
     </div>
   )
 }
@@ -3468,7 +3468,7 @@ function usePrivate() {
 }
 
 // The Hub's second row: host stats when unlocked, otherwise a sign-in line. Internal services render inside Services.
-function Server({ d, failed }) {
+function Server({ d, failed, owner }) {
   const { unit } = useContext(Prefs)
   // next visit's skeleton: locked (0), or how many machines, and which show watts
   const hosts = d === undefined ? null : d ? 1 + (d.hosts?.length ?? 0) : 0
@@ -3500,13 +3500,16 @@ function Server({ d, failed }) {
   // this server, then the other machines from HOST_AGENTS (agent/ in this repo)
   const all = [{ name: d.name ?? 'Server', st: d.stats ?? {} }, ...(d.hosts ?? []).map((h) => ({ name: h.name, st: h.stats ?? {}, offline: !h.stats }))]
   const tiles = all.map((h, i) => <HostStats key={`${i}:${h.name}`} name={h.name} st={h.st} offline={h.offline} unit={unit} />)
-  if (all.length === 1) return <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">{tiles}</section>
+  // the gaming PC (PC_URL, lib/pc.js) under the machines; nothing while its relay doesn't answer
+  const pc = d.pc?.reachable && <GamingPc pc={d.pc} unit={unit} owner={owner} />
+  if (all.length === 1) return <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">{tiles}{pc}</section>
   // 2+ machines: a compact table while the Hub is narrow (the 2xl side column), so Weather still fits below it on a
   // 1080p screen; the tiles once it is wide
   return (
     <section aria-label="Server" className="z-10 border-t border-white/5 pt-4">
       <HostTable hosts={all} unit={unit} />
       <div className="hidden @lg:flex flex-col gap-3">{tiles}</div>
+      {pc && <div className="mt-3">{pc}</div>}
     </section>
   )
 }
@@ -3660,5 +3663,102 @@ function HostStats({ name, st, offline, unit, skel = false, i }) {
         <Stat fit icon="fa-hard-drive text-emerald-400" label={`Disk ${pctOf(st.disk) ?? '--'}%`} value={gbUsed(st.disk)} title={gb(st.disk)} pct={pctOf(st.disk)} />
       </div>
     </div>
+  )
+}
+
+// The gaming PC: its Moni telemetry (github.com/thewind121212/moni) through moni-relay on this host (lib/pc.js). On:
+// up / RAM / fan line with the ⚡ watts, then CPU, GPU, board, SSD tiles. Off: red "offline · last seen", dimmed
+// tiles, and Wake (Wake-on-LAN) for the owner; anyone else gets "Sign in to wake": waking goes through
+// /api/private/settings, which always asks for the login, even on the LAN where these numbers are open.
+function GamingPc({ pc, unit, owner }) {
+  const [wake, setWake] = useState('idle') // idle | sending | sent | failed | login
+  useEffect(() => {
+    if (pc.online) setWake('idle')
+  }, [pc.online])
+  const st = pc.stats ?? {}
+  const t = (c) => (c == null ? '--' : `${Math.round(toUnit(c, unit))}°${unit}`)
+  const load = (v, c) => (v == null ? '--' : `${Math.round(v)}% · ${t(c)}`)
+  const waking = !pc.online && (pc.waking || wake === 'sent')
+
+  async function sendWake() {
+    setWake('sending')
+    try {
+      const r = await fetch('/api/private/settings/pc', {
+        method: 'POST',
+        cache: 'no-store',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'wake' }),
+      })
+      // a login redirect / 401: the session ended; 403 / 404: not the owner here
+      if (r.ok) setWake('sent')
+      else setWake(r.type === 'opaqueredirect' || [401, 403, 404].includes(r.status) ? 'login' : 'failed')
+    } catch {
+      setWake('failed')
+    }
+  }
+
+  const action = pc.online || !pc.canWake ? null : owner && wake !== 'login' ? (
+    <button
+      type="button"
+      onClick={sendWake}
+      disabled={wake === 'sending' || waking}
+      aria-label="Wake the gaming PC (Wake-on-LAN)"
+      className="shrink-0 inline-flex items-center gap-1.5 text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 disabled:opacity-60 disabled:hover:bg-lofi-primary/10 px-3 py-1.5 rounded-full border border-lofi-primary/20 transition-colors"
+    >
+      <i className={`fa-solid ${wake === 'sending' || waking ? 'fa-spinner fa-spin' : 'fa-power-off'}`} aria-hidden="true" />
+      {waking ? 'Waking…' : wake === 'failed' ? 'Retry wake' : 'Wake'}
+    </button>
+  ) : (
+    <a
+      href={signIn()}
+      aria-label="Sign in to wake the gaming PC"
+      className="shrink-0 text-xs font-mono text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 px-3 py-1.5 rounded-full border border-lofi-primary/20 transition-colors"
+    >
+      Sign in to wake
+    </a>
+  )
+
+  return (
+    <section aria-label="Gaming PC" className="flex flex-col gap-3">
+      <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 text-[10px] font-mono text-lofi-muted">
+        <p className="flex flex-wrap items-center gap-2 min-w-0">
+          <i className="fa-solid fa-desktop text-lofi-text/80" aria-hidden="true" />
+          <span className="text-lofi-text/80 uppercase tracking-widest">Gaming PC</span>
+          {pc.online ? (
+            <>
+              <span>
+                up {st.up == null ? '--' : dur(st.up)} · RAM {st.ram == null ? '--' : `${Math.round(st.ram)}%`}
+                {st.fan != null && ` · fan ${Math.round(st.fan)} rpm`}
+              </span>
+              {st.sysw != null && (
+                <span
+                  title={pc.parts ? 'CPU + GPU packages, measured by the chips. The whole PC at the wall uses more.' : 'Whole PC, from its power supply'}
+                  className="inline-flex items-center gap-1 rounded-full border border-yellow-300/30 bg-yellow-300/10 px-2 py-0.5 text-yellow-200 shadow-[0_0_12px_-4px] shadow-yellow-300/60"
+                >
+                  <i className="fa-solid fa-bolt text-yellow-300" aria-hidden="true" />
+                  <span className="sr-only">power </span>
+                  {Math.round(st.sysw)} W
+                </span>
+              )}
+            </>
+          ) : waking ? (
+            <span className="text-amber-300" role="status">waking…</span>
+          ) : (
+            <span>
+              <span className="text-red-400">offline</span>
+              {pc.lastSeen && pc.lastSeen !== 'never' && ` · last seen ${pc.lastSeen}`}
+            </span>
+          )}
+        </p>
+        {action}
+      </div>
+      <div className={`grid grid-cols-4 gap-2 @lg:gap-3 transition-opacity ${pc.online ? '' : 'opacity-40'}`}>
+        <Stat fit icon="fa-microchip text-lofi-primary" label="CPU" value={load(st.cpu, st.ct)} pct={st.cpu ?? 0} />
+        <Stat fit icon="fa-display text-emerald-400" label="GPU" value={load(st.gpu, st.gt)} title={st.vram == null ? undefined : `VRAM ${st.vram.toFixed(1)} / ${Math.round(st.vramgb ?? 0)} GB`} pct={st.gpu ?? 0} />
+        <Stat fit icon="fa-temperature-half text-lofi-secondary" label="Board" value={t(st.mt)} pct={st.mt ?? 0} />
+        <Stat fit icon="fa-hard-drive text-blue-400" label="SSD" value={t(st.st)} pct={st.st ?? 0} />
+      </div>
+    </section>
   )
 }
