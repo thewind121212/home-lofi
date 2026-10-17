@@ -1572,11 +1572,14 @@ function Weather({ ctl, status, setStatus, setWx, cloudLoc, onPick }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 mt-auto z-10">
-        <Stat icon="fa-cloud-rain text-lofi-secondary" label="Rain Chance" value={w?.rainChance != null ? `${w.rainChance}%` : wait ? <Bone /> : '--'} />
-        <Stat icon="fa-sun text-lofi-highlight" label="UV Index" value={w?.uv != null ? `${w.uv} (${w.uvLabel})` : wait ? <Bone w="6ch" /> : '--'} />
-        <Stat icon="fa-droplet text-blue-400" label="Humidity" value={w ? `${w.humidity}%` : wait ? <Bone /> : '--'} />
-        <Stat icon="fa-wind text-gray-400" label="Wind" value={w ? `${w.wind} km/h` : wait ? <Bone w="6ch" /> : '--'} />
+      {/* one compact row (the icons once the card is wide), so the side column fits a 1080p desktop without scrolling */}
+      <div className="@container mt-auto z-10">
+        <div className="grid grid-cols-4 gap-2 @lg:gap-3">
+          <Stat fit icon="fa-cloud-rain text-lofi-secondary" label="Rain" title="Rain chance" value={w?.rainChance != null ? `${w.rainChance}%` : wait ? <Bone /> : '--'} />
+          <Stat fit icon="fa-sun text-lofi-highlight" label="UV" title={w?.uv != null ? `UV index ${w.uv} (${w.uvLabel})` : 'UV index'} value={w?.uv != null ? `${w.uv} (${w.uvLabel})` : wait ? <Bone w="6ch" /> : '--'} />
+          <Stat fit icon="fa-droplet text-blue-400" label="Humidity" value={w ? `${w.humidity}%` : wait ? <Bone /> : '--'} />
+          <Stat fit icon="fa-wind text-gray-400" label="Wind" value={w ? `${w.wind} km/h` : wait ? <Bone w="6ch" /> : '--'} />
+        </div>
       </div>
     </div>
 
@@ -3667,7 +3670,7 @@ function HostStats({ name, st, offline, unit, skel = false, i }) {
 }
 
 // The gaming PC: its Moni telemetry (github.com/thewind121212/moni) through moni-relay on this host (lib/pc.js). On:
-// up / RAM / fan line with the ⚡ watts, then CPU, GPU, board, SSD tiles. Off: red "offline · last seen", dimmed
+// up / fan line, then CPU, RAM, GPU, Power tiles (CPU / GPU temperature in the tile's label, like "RAM 60%"). Off: red "offline · last seen", dimmed
 // tiles, and Wake (Wake-on-LAN) for the owner; anyone else gets "Sign in to wake": waking goes through
 // /api/private/settings, which always asks for the login, even on the LAN where these numbers are open.
 function GamingPc({ pc, unit, owner }) {
@@ -3677,7 +3680,7 @@ function GamingPc({ pc, unit, owner }) {
   }, [pc.online])
   const st = pc.stats ?? {}
   const t = (c) => (c == null ? '--' : `${Math.round(toUnit(c, unit))}°${unit}`)
-  const load = (v, c) => (v == null ? '--' : `${Math.round(v)}% · ${t(c)}`)
+  const pctText = (v) => (v == null ? '--' : `${Math.round(v)}%`)
   const waking = !pc.online && (pc.waking || wake === 'sent')
 
   async function sendWake() {
@@ -3726,22 +3729,10 @@ function GamingPc({ pc, unit, owner }) {
           <i className="fa-solid fa-desktop text-lofi-text/80" aria-hidden="true" />
           <span className="text-lofi-text/80 uppercase tracking-widest">Gaming PC</span>
           {pc.online ? (
-            <>
-              <span>
-                up {st.up == null ? '--' : dur(st.up)} · RAM {st.ram == null ? '--' : `${Math.round(st.ram)}%`}
-                {st.fan != null && ` · fan ${Math.round(st.fan)} rpm`}
-              </span>
-              {st.sysw != null && (
-                <span
-                  title={pc.parts ? 'CPU + GPU packages, measured by the chips. The whole PC at the wall uses more.' : 'Whole PC, from its power supply'}
-                  className="inline-flex items-center gap-1 rounded-full border border-yellow-300/30 bg-yellow-300/10 px-2 py-0.5 text-yellow-200 shadow-[0_0_12px_-4px] shadow-yellow-300/60"
-                >
-                  <i className="fa-solid fa-bolt text-yellow-300" aria-hidden="true" />
-                  <span className="sr-only">power </span>
-                  {Math.round(st.sysw)} W
-                </span>
-              )}
-            </>
+            <span>
+              up {st.up == null ? '--' : dur(st.up)}
+              {st.fan != null && ` · fan ${Math.round(st.fan)} rpm`}
+            </span>
           ) : waking ? (
             <span className="text-amber-300" role="status">waking…</span>
           ) : (
@@ -3754,10 +3745,16 @@ function GamingPc({ pc, unit, owner }) {
         {action}
       </div>
       <div className={`grid grid-cols-4 gap-2 @lg:gap-3 transition-opacity ${pc.online ? '' : 'opacity-40'}`}>
-        <Stat fit icon="fa-microchip text-lofi-primary" label="CPU" value={load(st.cpu, st.ct)} pct={st.cpu ?? 0} />
-        <Stat fit icon="fa-display text-emerald-400" label="GPU" value={load(st.gpu, st.gt)} title={st.vram == null ? undefined : `VRAM ${st.vram.toFixed(1)} / ${Math.round(st.vramgb ?? 0)} GB`} pct={st.gpu ?? 0} />
-        <Stat fit icon="fa-temperature-half text-lofi-secondary" label="Board" value={t(st.mt)} pct={st.mt ?? 0} />
-        <Stat fit icon="fa-hard-drive text-blue-400" label="SSD" value={t(st.st)} pct={st.st ?? 0} />
+        <Stat fit icon="fa-microchip text-lofi-primary" label={`CPU ${t(st.ct)}`} value={pctText(st.cpu)} pct={st.cpu ?? 0} />
+        <Stat fit icon="fa-memory text-blue-400" label="RAM" value={pctText(st.ram)} title={st.ramgb == null ? undefined : `of ${Math.round(st.ramgb)} GB`} pct={st.ram ?? 0} />
+        <Stat fit icon="fa-display text-emerald-400" label={`GPU ${t(st.gt)}`} value={pctText(st.gpu)} title={st.vram == null ? undefined : `VRAM ${st.vram.toFixed(1)} / ${Math.round(st.vramgb ?? 0)} GB`} pct={st.gpu ?? 0} />
+        <Stat
+          fit
+          icon="fa-bolt text-yellow-300"
+          label="Power"
+          value={st.sysw == null ? '--' : `${Math.round(st.sysw)} W`}
+          title={pc.parts ? 'CPU + GPU packages, measured by the chips. The whole PC at the wall uses more.' : 'Whole PC, from its power supply'}
+        />
       </div>
     </section>
   )
