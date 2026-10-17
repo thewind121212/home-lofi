@@ -212,6 +212,7 @@ Change it for your own domain.
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
+| `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake button, see [Gaming PC](#gaming-pc) |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
@@ -652,6 +653,25 @@ docker compose up -d --build
 - It publishes port 3002 on `127.0.0.1` only, so nobody can bypass the proxy.
 - Create `private-services.json` before the first `up`. Otherwise Docker creates an empty directory in its place.
 - Server stats come from `/proc` and `/sys`, which show host values inside a normal container, so no extra mounts are needed.
+
+## Gaming PC
+
+The Server card shows the gaming PC under the machines: CPU and GPU load + temperature, motherboard and SSD
+temperature, uptime, RAM, CPU fan and ⚡ watts while it's on; a red **offline · last seen HH:MM** and dimmed tiles
+while it's off. The numbers come from [Moni](https://github.com/thewind121212/moni): its Windows service broadcasts
+them once a second on the LAN (UDP 5005, for the Moni clock), and `moni-relay` (that repo's `relay/`, a container on
+this host with host networking) serves the latest at `GET /status`. `lib/pc.js` asks it at most every 2 s for all tabs,
+and gives up after 1.5 s (a stopped relay is remembered 15 s), so `/api/private` never waits on it.
+
+**Wake** (Wake-on-LAN): while the PC is off the owner gets a Wake button. It posts to `/api/private/settings/pc`,
+which, like settings sync, is behind the Authelia login on every network (the LAN included, where the numbers
+themselves are open); a guest sees **Sign in to wake**. The server then calls the relay's `POST /wake` with
+`Authorization: Bearer PC_WAKE_TOKEN`; the relay sends the magic packet and reports **waking…** until the PC is back.
+
+| env | default | |
+| --- | --- | --- |
+| `PC_URL` | empty = off (Coolify: `http://10.10.0.217:5007`) | moni-relay. The host's LAN address: the relay uses host networking (LAN broadcasts don't reach a bridged container) |
+| `PC_WAKE_TOKEN` | empty = no Wake button | the relay's `MONI_WAKE_TOKEN` (≥ 16 chars). **Only in Coolify's env**: never in git, a log or a browser |
 
 ## Deploy (Coolify)
 
