@@ -212,7 +212,7 @@ Change it for your own domain.
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
-| `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake button, see [Gaming PC](#gaming-pc) |
+| `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake / Turn off buttons, see [Gaming PC](#gaming-pc) |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
 
@@ -668,10 +668,17 @@ which, like settings sync, is behind the Authelia login on every network (the LA
 themselves are open); a guest sees **Sign in to wake**. The server then calls the relay's `POST /wake` with
 `Authorization: Bearer PC_WAKE_TOKEN`; the relay sends the magic packet and reports **waking…** until the PC is back.
 
+**Turn off**: while the PC is on the owner gets a Turn off button; a second click within 4 s (**Turn off now?**)
+confirms. It posts `{ action: 'off' }` to the same route, the server calls the relay's `POST /shutdown` (same token),
+and the relay sends a signed request (HMAC with its `MONI_PC_KEY`, time-limited, single use) to the Moni service on the
+PC, which shuts Windows down 30 s later (`shutdown /a` on the PC cancels). The header shows **turning off…** until the
+PC stops reporting. The button only appears once the key is set both in the relay's `.env` and in the Moni app
+(Settings → Turn off from the home page); guests never see it.
+
 | env | default | |
 | --- | --- | --- |
 | `PC_URL` | empty = off (Coolify: `http://10.10.0.217:5007`) | moni-relay. The host's LAN address: the relay uses host networking (LAN broadcasts don't reach a bridged container) |
-| `PC_WAKE_TOKEN` | empty = no Wake button | the relay's `MONI_WAKE_TOKEN` (≥ 16 chars). **Only in Coolify's env**: never in git, a log or a browser |
+| `PC_WAKE_TOKEN` | empty = no Wake / Turn off button | the relay's `MONI_WAKE_TOKEN` (≥ 16 chars). **Only in Coolify's env**: never in git, a log or a browser |
 
 ## Deploy (Coolify)
 
