@@ -671,7 +671,7 @@ themselves are open); a guest sees **Sign in to wake**. The server then calls th
 **Turn off**: while the PC is on the owner gets a Turn off button; a second click within 4 s (**Turn off now?**)
 confirms. It posts `{ action: 'off' }` to the same route, the server calls the relay's `POST /shutdown` (same token),
 and the relay sends a signed request (HMAC with its `MONI_PC_KEY`, time-limited, single use) to the Moni service on the
-PC, which shuts Windows down 30 s later (`shutdown /a` on the PC cancels). The header shows **turning off…** until the
+PC, which shuts Windows down at once, closing open apps without saving. The header shows **turning off…** until the
 PC stops reporting. The button only appears once the key is set both in the relay's `.env` and in the Moni app
 (Settings → Turn off from the home page); guests never see it.
 

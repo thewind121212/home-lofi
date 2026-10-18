@@ -3671,7 +3671,7 @@ function HostStats({ name, st, offline, unit, skel = false, i }) {
 
 // The gaming PC: its Moni telemetry (github.com/thewind121212/moni) through moni-relay on this host (lib/pc.js). On:
 // up / fan line, then CPU, RAM, GPU, Power tiles (CPU / GPU temperature in the tile's label, like "RAM 60%"), and Turn
-// off for the owner (a second click within a few seconds confirms; Windows shuts down 30 s later). Off: red "offline ·
+// off for the owner (a second click within a few seconds confirms; Windows shuts down at once). Off: red "offline ·
 // last seen", dimmed tiles, and Wake (Wake-on-LAN) for the owner; anyone else gets "Sign in to wake". Both go through
 // /api/private/settings, which always asks for the login, even on the LAN where these numbers are open.
 function GamingPc({ pc, unit, owner }) {
