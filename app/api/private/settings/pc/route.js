@@ -5,7 +5,7 @@ import { offPc, pcOn, wakeOn, wakePc } from '../../../../../lib/pc.js'
 // the settings next door: the proxy's /api/private/settings location always asks for the Authelia login, even on the
 // LAN (where /api/private itself is open), so nobody at home wakes or turns off the PC without signing in.
 //   POST { action: 'wake' } -> { ok: true, sent } (sent false: it was on already)
-//   POST { action: 'off' }  -> { ok: true, sent } (sent false: it was off already; Windows shuts down 30 s later)
+//   POST { action: 'off' }  -> { ok: true, sent } (sent false: it was off already; Windows shuts down at once)
 // 404 = not set up (no PC_URL / PC_WAKE_TOKEN) / not through that location, 403 = someone else, 400 = a bad body,
 // 502 = the relay unreachable or refusing.
 const HEADERS = { 'cache-control': 'no-store, private' }
