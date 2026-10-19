@@ -5,8 +5,9 @@
 //   every 5 s when the stream can't stay open (and trying the stream again every 30 s).
 // - usePlayerAudio(): one <audio> element. Listen gets a 10-minute ticket (a new one a minute before it ends, only
 //   while listening) and plays Tavarian's audio straight from Tavarian; a new streamId (song change, seek, resume)
-//   swaps the source; paused / idle / loading on Tavarian lets the element go, and it comes back by itself when the
-//   station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
+//   swaps the source; between songs (a stream ended, loading, a short paused / idle) the element loops silence so a
+//   locked iPhone keeps the page running and the next song can start, and lets go if nothing comes; it comes back by
+//   itself when the station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
 // - PlayerPanel (the tab), PlayerSheet (a <dialog> like Settings: queue, recent, and for the owner: Add — Search or
 //   link · Import playlist —, playlists, the Tavarian link) and PlayerMini (ambient bar and lock screen). Guests listen and watch; the owner's
 //   buttons post to /api/private/settings/tavarian, lock while it's in flight and spin until a state shows the change.
@@ -33,6 +34,10 @@ const POLL_MS = 5000 // fallback polling of /api/tavarian/state
 const SSE_RETRY_MS = 30_000 // while polling, try the event stream again this often
 const SSE_ERRORS = 3 // this many errors in a row (no event in between): the stream can't stay open here
 const FADE_IN = 600
+// between songs, silence holds the phone's audio while the next one loads (GAP_HOLD_MS), or a short while when the
+// station says paused / stopped (it may be the moment before autoplay's next pick); then the element lets go
+const GAP_HOLD_MS = 120_000
+const GAP_SHORT_MS = 30_000
 const CONFIRM_MS = 15_000 // an owner's button gives up spinning after this
 const TOKEN_DEAD = ['invalid_token', 'token_revoked', 'token_expired', 'owner_gone']
 
@@ -253,7 +258,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   const [note, setNote] = useState(null)
   const [fixedVolume, setFixedVolume] = useState(false)
   const audio = useRef(null)
-  const m = useRef({ want: false, id: null, ticket: null, pending: null, stream: null, haltAt: 0, tries: 0, renew: 0, retry: 0, ended: 0, ramp: 0, level: 50, gain: 1, fixed: false }).current
+  const m = useRef({ want: false, id: null, ticket: null, pending: null, stream: null, haltAt: 0, tries: 0, renew: 0, retry: 0, ended: 0, hold: 0, ramp: 0, level: 50, gain: 1, fixed: false }).current
   const live = useRef({})
   live.current = { tv, owner, onListen }
   const fn = useRef({})
@@ -277,6 +282,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   function halt() {
     clearInterval(m.ramp)
     clearTimeout(m.ended)
+    clearTimeout(m.hold)
     m.stream = null
     const a = audio.current
     if (!a?.getAttribute('src')) return
@@ -285,6 +291,22 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     a.pause()
     a.removeAttribute('src') // a live stream keeps downloading while paused: let it go
     a.load()
+  }
+  // a gap between songs: loop silence on the element instead of letting it stop. On a locked iPhone a page whose audio
+  // stopped is frozen within seconds, so the next song's event never arrives and its play() is refused until the phone
+  // is unlocked; while the silence plays, the page keeps running and the next stream swaps in (sync). ms: how long to
+  // hold before letting go if no song comes. (m.stream is left as it is: the caller says whether that stream is done.)
+  function hold(ms = GAP_HOLD_MS) {
+    clearInterval(m.ramp)
+    const a = audio.current
+    if (!a.getAttribute('src')?.startsWith('data:')) {
+      m.haltAt = Date.now() // (the stream's 'pause' from the swap is ours)
+      a.loop = true
+      a.src = silentWav()
+      a.play().catch(() => {})
+    }
+    clearTimeout(m.hold)
+    m.hold = setTimeout(() => m.want && audio.current?.getAttribute('src')?.startsWith('data:') && halt(), ms)
   }
   const now = () => Date.now() + (live.current.tv.offset || 0) // Tavarian's clock, about
 
@@ -329,7 +351,9 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     if (!m.want) return
     const s = live.current.tv.state
     if (!(s?.status === 'playing' && s.streamId)) {
-      if (m.stream) halt() // (not the silent unlock of a tap that's still playing)
+      // that stream is done: silence until the next song (hold), not a stop (not the silent unlock of a tap, which
+      // already loops until the stream comes)
+      if (m.stream) (m.stream = null), hold(s?.status === 'loading' ? GAP_HOLD_MS : GAP_SHORT_MS)
       setPhase(live.current.tv.revoked || live.current.tv.off ? 'off' : s?.status === 'loading' ? 'connecting' : 'waiting')
       return
     }
@@ -341,6 +365,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     const s2 = live.current.tv.state
     if (!t || !m.want || !(s2?.status === 'playing' && s2.streamId) || (m.stream === s2.streamId && a.getAttribute('src'))) return
     clearTimeout(m.ended)
+    clearTimeout(m.hold)
     clearInterval(m.ramp)
     m.stream = s2.streamId
     m.gain = 0
@@ -363,7 +388,9 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     m.retry = setTimeout(async () => {
       if (!m.want) return
       if (m.tries >= 2 && !(m.ticket && now() - m.ticket.at < 30_000)) await getTicket(true)
-      halt()
+      if (!m.want) return
+      m.stream = null // (silence while it joins again, so a locked phone keeps playing: hold)
+      hold()
       sync()
     }, 1500 * m.tries)
   }
@@ -432,10 +459,12 @@ export function usePlayerAudio(tv, { owner, onListen }) {
       const id = m.stream
       ours() && setTimeout(() => ours() && m.stream === id && (a.paused || a.readyState < 3) && fn.current.retry(), 4000)
     })
-    // this song's stream ran out: the next one's comes with a new streamId; if none comes, join again
+    // this song's stream ran out: the next one's comes with a new streamId (silence meanwhile, so a locked phone keeps
+    // the page playing: hold); if none comes, join again
     a.addEventListener('ended', () => {
       if (!ours()) return
       const id = m.stream
+      hold()
       setPhase('connecting')
       clearTimeout(m.ended)
       m.ended = setTimeout(() => {
@@ -449,6 +478,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
       clearTimeout(m.retry)
       clearTimeout(m.renew)
       clearTimeout(m.ended)
+      clearTimeout(m.hold)
       clearInterval(m.ramp)
       a.pause()
       a.removeAttribute('src')
@@ -508,7 +538,9 @@ export function usePlayerAudio(tv, { owner, onListen }) {
             ? [{ src: art, sizes: art.startsWith('https://i.ytimg.com/') ? '320x180' : '640x640', type: 'image/jpeg' }] // (YouTube 16:9, Spotify square)
             : [{ src: stationCover(), sizes: '256x256', type: 'image/png' }],
         })
-      ms.playbackState = st?.status === 'playing' ? 'playing' : 'paused' // (loading, stopped, nothing to play: not playing)
+      // (loading the next song still says playing, so the lock screen doesn't flash ▶ between songs; stopped, nothing
+      // to play: not playing)
+      ms.playbackState = st?.status === 'playing' || st?.status === 'loading' ? 'playing' : 'paused'
     }
     put()
     // back from the lock screen / another app: say it again (a song change while iOS held the page back may be lost)
