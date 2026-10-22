@@ -425,6 +425,9 @@ long_job && scripts/notify.sh -l success "Job done" || scripts/notify.sh -l erro
   only*. Info and success go after 30 minutes; warnings and errors stay until read.
 - **Lock screen**: the newest 3 unread as cards above the music, then "+N more". By default **titles only** (no message
   text: anyone walking past sees the lock screen); Settings can show the full text, only a count, or nothing.
+  **Swipe** a card left or right to dismiss it (like ✕ in the inbox), or the "+N more" / count pill to mark them all
+  read (they leave the lock screen; the inbox keeps them). It happens on every device: there the card fades and the
+  rest glide up. An upward swipe still unlocks (which way a press goes is settled in its first 8 px).
 
 **How they arrive**: the notice goes into Postgres (two small tables, created on first use; the newest 200 are kept,
 none older than 30 days). The server then says `notify` on the owner's live stream (`/api/private/settings/events`,

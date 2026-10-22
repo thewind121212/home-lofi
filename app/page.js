@@ -650,7 +650,7 @@ export default function Home() {
       </div>
 
       {softLock && (
-        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || lockNote) && <div className="flex flex-col items-center gap-2">{remDue && <LockReminders rm={reminders} />}{lockNote && <LockNotices notes={lockNote} now={tNow} />}</div>}>
+        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || (hub.on && places.lock)) && <>{remDue && <LockReminders rm={reminders} />}{hub.on && places.lock && <LockNotices notes={lockNote} now={tNow} onDismiss={hub.dismiss} onSeen={hub.markAllRead} />}</>}>
           {(set.lockMusic !== 'hide' || snd.on || focusOn) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
@@ -1116,7 +1116,9 @@ function LockScreen({ onUnlock, set, update, full, screen, notices, children }) 
       </div>
       {/* bottom center: notifications (app/notify.js LockNotices), what's playing, then the breathing hint */}
       <div className="absolute z-30 inset-x-0 bottom-0 pb-[max(2rem,env(safe-area-inset-bottom))] flex flex-col items-center px-4">
-        {notices && <div className="mb-3">{notices}</div>}
+        {/* (empty:hidden: the notifications keep their place mounted while a stack read elsewhere fades out, then
+            render nothing) */}
+        {notices && <div className="mb-3 flex flex-col items-center gap-2 empty:hidden">{notices}</div>}
         {children && (
           <div
             onPointerEnter={() => hover('music', true)}
