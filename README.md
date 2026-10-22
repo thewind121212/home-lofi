@@ -499,8 +499,8 @@ newspaper** (the look of [ThariqS/ai-newtab](https://github.com/ThariqS/ai-newta
 columns, one red. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens
 it over the **whole window** (100% wide and high, not the browser's full screen; ✕, Esc or, on a phone, a drag of
 its top down close it). On tablets and desktops the ⤡ button by ✕ makes it a panel again (⤢ back), remembered per device.
-On top, a **masthead**: the folio (*Vol. I · No. 295*: the year and the day of the year), the paper's name by the time
-of the newest edition (*The Morning / Afternoon / Evening Lofi*), the dateline (the day, its editions, what's unread);
+On top, a **masthead**: the folio (*Vol. I · No. 295*: the year and the day of the year), the paper's name (*The Dalater*), the
+dateline (the day; *Morning Edition* before noon, *Afternoon Edition* after, and how many updates; what's unread);
 the name folds away while you scroll down a page. It shows **a whole day** (the agent's clock): every edition of it
 merged, each story once in its newest words (the agent repeats stories from run to run); stories that came since you
 last looked are marked **New**; older days (the archive keeps 30) in the menu at the top, and a new day takes over at
