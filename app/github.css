@@ -1,7 +1,7 @@
 /* GitHub (app/github.js): the agent's repos of the day in a .wx-sheet dialog, sized and dressed like News' (.nw-modal,
    app/news.css: the header, the brief, the chips, the meta row and its buttons are News' own); gh- is what's its own:
    the filter bar under the header, the cards (one column, two or three side by side as the panel widens), and what a
-   card opens into. */
+   card opens into. On News' paper now (.nw-paper, news-paper.css): the last part below dresses gh- for it. */
 .gh-mark { background: rgb(255 255 255 / 0.08); color: #fff; }
 .gh-mark-i { font-size: 17px; }
 
@@ -79,3 +79,66 @@
 .gh-home { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.35); text-decoration: none; }
 .gh-home:hover { border-color: rgb(255 138 92 / 0.7); }
 .gh-home:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+
+/* ---- on the paper (.nw-paper): the filters as small capitals under the masthead, the repos in ruled columns like a
+   section's stories (not cards), the details in the paper's type, the quick start in a boxed monospace line ---- */
+.nw-paper .gh-bar { gap: 10px; padding: 12px 0; margin: 0 20px; border-bottom: 1px solid var(--hair-2); }
+@media (min-width: 640px) { .nw-paper .gh-bar { margin: 0 28px; } }
+@media (min-width: 1024px) { .nw-paper .gh-bar { margin: 0 36px; } }
+.nw-paper .gh-seg { padding: 0; gap: 0; border-radius: 999px; border: 1px solid var(--ink); background: transparent; overflow: hidden; }
+.nw-paper .gh-seg button {
+  height: 30px; padding: 0 14px; border-radius: 0; color: var(--ink-2); font: 600 10.5px var(--nw-label); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.nw-paper .gh-seg button + button { border-left: 1px solid var(--hair-2); }
+.nw-paper .gh-seg button > span { font: inherit; letter-spacing: 0.04em; color: var(--ink-3); opacity: 1; }
+.nw-paper .gh-seg button:hover { color: var(--ink); }
+.nw-paper .gh-seg button[aria-pressed='true'] { background: var(--ink); color: var(--pp); }
+.nw-paper .gh-seg button[aria-pressed='true'] > span { color: rgb(241 237 228 / 0.7); }
+.nw-paper .gh-top > svg { color: currentColor; }
+.nw-paper .gh-cats { margin: 0 -20px; padding: 0 20px; }
+@media (min-width: 640px) { .nw-paper .gh-cats { margin: 0; padding: 0; } }
+.nw-paper .gh-cats .nw-chip { margin: 0; }
+
+.nw-paper .gh-scroll { gap: 20px; padding: 18px 20px calc(30px + env(safe-area-inset-bottom)); }
+@media (min-width: 640px) { .nw-paper .gh-scroll { padding: 20px 28px 34px; } }
+@media (min-width: 1024px) { .nw-paper .gh-scroll { padding: 22px 36px 40px; } }
+.nw-paper .gh-late { color: var(--red); }
+
+.nw-paper .gh-list { display: block; columns: 22rem 3; column-gap: 40px; column-rule: 1px solid var(--hair-2); }
+.nw-paper .gh-repo {
+  break-inside: avoid; gap: 6px; padding: 14px 0 6px; border: 0; border-bottom: 1px solid var(--hair); border-radius: 0; background: none;
+}
+.nw-paper .gh-repo:hover, .nw-paper .gh-repo:focus-within { border-color: var(--hair); }
+.nw-paper .gh-rank { font: 700 10.5px var(--nw-label); letter-spacing: 0.06em; color: var(--ink); }
+.nw-paper .gh-worth i.on { background: var(--ink-2); }
+.nw-paper .gh-repo .gh-name { font-size: 21px; line-height: 1.2; overflow-wrap: anywhere; }
+.nw-paper .gh-owner { font-weight: 400; color: var(--ink-3); }
+.nw-paper .gh-stats { font: 600 10px var(--nw-label); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.nw-paper .gh-stats svg { color: var(--ink-3); }
+.nw-paper .gh-lang { box-shadow: 0 0 0 1px rgb(27 25 21 / 0.2); }
+.nw-paper .gh-week { color: var(--red); }
+.nw-paper .gh-sum { -webkit-line-clamp: 4; }
+
+.nw-paper .gh-part h5 { font: 700 10.5px var(--nw-label); letter-spacing: 0.16em; color: var(--red); }
+.nw-paper .gh-when { font: 15px/1.55 var(--nw-text); color: var(--ink-2); opacity: 1; }
+.nw-paper .gh-code { border-radius: 3px; background: var(--pp-2); border: 1px solid var(--hair-2); }
+.nw-paper .gh-code code { color: var(--ink); }
+.nw-paper .gh-code code::before { color: var(--ink-3); }
+.nw-paper .gh-topics > span, .nw-paper .gh-home {
+  height: 21px; border-radius: 999px; background: transparent; border: 1px solid var(--hair-2); color: var(--ink-2);
+  font: 600 9.5px var(--nw-label); letter-spacing: 0.06em;
+}
+.nw-paper .gh-home { color: var(--red); border-color: rgb(168 56 42 / 0.4); }
+.nw-paper .gh-home:hover { border-color: var(--red); }
+/* (phones: the folio just the paper's name, the list and ★ 4+ on one row) */
+@media (max-width: 639px) {
+  .nw-paper .gh-folio-no { display: none; }
+  .nw-paper .gh-seg button { padding: 0 10px; letter-spacing: 0.08em; }
+  .nw-paper .gh-row { flex-wrap: nowrap; }
+  .nw-paper .gh-top { flex: none; padding: 0 10px; }
+}
+/* (desktops: the week in brief set in columns, all of it: a line across the whole page is too long to read) */
+@media (min-width: 1024px) {
+  .nw-paper .gh .nw-brief p { display: block; -webkit-line-clamp: unset; columns: 3 18rem; column-gap: 36px; column-rule: 1px solid var(--hair-2); }
+  .nw-paper .gh .nw-brief-more { display: none; }
+}

@@ -20,7 +20,7 @@
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
 import './news-paper.css'
-import { Component, useEffect, useRef, useState } from 'react'
+import { Component, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ArrowRight, ArrowUp, Check, ChevronDown, Clapperboard, Clock, Maximize2, MessageSquare, Minimize2, Newspaper, Pin, RefreshCw, Tv, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, motionOff, useStillPage } from './settings'
@@ -36,6 +36,41 @@ const POLL = 8000 // a run going: asked this often
 const FAILED_FOR = 30 * 60_000 // a run that failed: said for this long
 const TZ = 'Asia/Ho_Chi_Minh' // (the agent's editions are this home's mornings and evenings)
 const FULL_KEY = 'home-lofi:news-full' // this device's choice: the paper over the whole window ('1', the default) or a panel ('0')
+
+// The paper over the whole window (100% × 100%, not the browser's full screen: ✕ / Esc / a drag down close it as ever),
+// or the panel it was; phones are always the whole window. One choice per device for News and the GitHub list
+// (app/github.js), kept in localStorage: -> [full, size(on)]
+const sizeSubs = new Set()
+let fullNow = null // (null: not read yet)
+function readFull() {
+  if (fullNow == null) {
+    try {
+      fullNow = localStorage.getItem(FULL_KEY) !== '0'
+    } catch {
+      fullNow = true
+    }
+  }
+  return fullNow
+}
+export function usePaperSize() {
+  const full = useSyncExternalStore((f) => (sizeSubs.add(f), () => sizeSubs.delete(f)), readFull, () => true)
+  const size = (on) => {
+    fullNow = on
+    try {
+      localStorage.setItem(FULL_KEY, on ? '1' : '0')
+    } catch {}
+    for (const f of sizeSubs) f()
+  }
+  return [full, size]
+}
+// ⤡ / ⤢ in the masthead (tablets and desktops)
+export function SizeButton({ full, onSize }) {
+  return (
+    <button type="button" className="hb-iconbtn nw-size" aria-pressed={full} aria-label={full ? 'Smaller: a panel' : 'Whole window'} title={full ? 'Smaller' : 'Whole window'} onClick={() => onSize(!full)}>
+      {full ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}
+    </button>
+  )
+}
 
 // ---- state: the server's, the page only draws it ----
 
@@ -256,20 +291,7 @@ export function NewsModal({ nw, pn, dlg }) {
   // the page shown: 'top' or a section's key (kept across editions and openings: a sheet dragged shut by mistake opens
   // where it was)
   const [tab, setTab] = useState('top')
-  // the whole window (100% × 100%, not the browser's full screen: ✕ / Esc / a drag down close it as ever), or the
-  // panel it was; phones are always the whole window. Kept per device
-  const [full, setFull] = useState(true)
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(FULL_KEY) === '0') setFull(false)
-    } catch {}
-  }, [])
-  const size = (on) => {
-    setFull(on)
-    try {
-      localStorage.setItem(FULL_KEY, on ? '1' : '0')
-    } catch {}
-  }
+  const [full, size] = usePaperSize()
   useStillPage(dlg, open)
   useEffect(() => {
     const d = dlg.current
@@ -399,6 +421,7 @@ export class NewsCatch extends Component {
 
 const smooth = () => (motionOff() ? 'auto' : 'smooth')
 const FOLD = 64 // px down a page: the masthead folds
+export const PAPER_FOLD = FOLD
 
 // The edition as pages, side by side: the front page, then one per section. The section bar under the masthead and a
 // swipe both move between them; each page scrolls on its own, so a section is a short read, not a long scroll past the others.
@@ -536,9 +559,7 @@ function NewsBody({ nw, pn, dlg, tab, setTab, full, onSize, onClose }) {
           <div className="nw-tools">
             {nw.refresh.can && <RefreshButton nw={nw} />}
             {days.length > 0 && <DayMenu nw={nw} days={days} now={now} />}
-            <button type="button" className="hb-iconbtn nw-size" aria-pressed={full} aria-label={full ? 'Smaller: a panel' : 'Whole window'} title={full ? 'Smaller' : 'Whole window'} onClick={() => onSize(!full)}>
-              {full ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}
-            </button>
+            <SizeButton full={full} onSize={onSize} />
             <button type="button" className="hb-iconbtn" aria-label="Close" title="Close (Esc)" onClick={onClose}><X size={18} aria-hidden="true" /></button>
           </div>
         </div>

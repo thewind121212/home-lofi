@@ -2,8 +2,9 @@
 
 // GitHub: the repos the news agent picks each morning (GitHub's weekly trending, and new ones from the last 7 days),
 // each explained in Vietnamese: what it is, what it can do, how it helps when building an app, how to try it. An icon
-// next to News' in the header (a dot: a list not opened yet); a tap opens it the way News opens (app/news.js: a bottom
-// sheet on phones, a panel on bigger screens). Rules in lib/github.js; the route is app/api/private/settings/github
+// next to News' in the header (a dot: a list not opened yet); a tap opens it the way News opens, on the same paper
+// (app/news.js, news-paper.css: the whole window or a panel, a masthead, serif type, columns; github.css's paper part
+// for what's its own). Rules in lib/github.js; the route is app/api/private/settings/github
 // (owner-only: guests get 404 / 403 and never see the icon; NEWS_URL not set: no icon either).
 // - Filters on top: All / Trending / New, ★ 4+ (the agent's "worth trying"), a category. Kept across openings.
 // - A repo's name opens it (a new tab) and marks it read: read ones are dimmed, on every device (the server keeps
@@ -15,10 +16,11 @@ import './github.css'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, ExternalLink, GitFork, Pin, Star, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
-import { DayMenu, NewsCatch, useDragClose } from './news'
+import { DayMenu, NewsCatch, PAPER_FOLD, SizeButton, useDragClose, usePaperSize } from './news'
+import { paperFonts } from './news-fonts'
 import { closeDialog, motionOff, useStillPage } from './settings'
 import { DIFFICULTY, GH_CATEGORIES, GH_RETRY, MATURITY, compact } from '../lib/github'
-import { dayName } from '../lib/news'
+import { PAPER, dayName, folio, longDay } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
 
 const URL_ = '/api/private/settings/github'
@@ -200,6 +202,7 @@ const FILTERS = { list: 'all', top: false, cat: null }
 export function GithubModal({ gh, pn, dlg }) {
   const [open, setOpen] = useState(false)
   const [f, setF] = useState(FILTERS) // (kept across days and openings)
+  const [full, size] = usePaperSize()
   useStillPage(dlg, open)
   useEffect(() => {
     const d = dlg.current
@@ -221,23 +224,24 @@ export function GithubModal({ gh, pn, dlg }) {
       onClick={(e) => e.target === dlg.current && close()}
       onCancel={(e) => (e.preventDefault(), close())}
       onClose={() => (delete dlg.current.dataset.closing, gh.reset())}
-      className="wx-sheet nw-modal gh-modal glass-panel text-lofi-text"
+      className={`wx-sheet nw-modal nw-paper gh-modal${full ? ' is-full' : ''} ${paperFonts}`}
     >
       {gh.on && (
         <NewsCatch key={gh.data.day} nw={gh} onClose={close} name="GitHub" mark={<Mark />} titleId="gh-title" tag="github">
-          <GhBody gh={gh} pn={pn} dlg={dlg} f={f} setF={setF} onClose={close} />
+          <GhBody gh={gh} pn={pn} dlg={dlg} f={f} setF={setF} full={full} onSize={size} onClose={close} />
         </NewsCatch>
       )}
     </dialog>
   )
 }
 
-function GhBody({ gh, pn, dlg, f, setF, onClose }) {
+function GhBody({ gh, pn, dlg, f, setF, full, onSize, onClose }) {
   const { digest, days } = gh.data
   const now = Date.now()
   const head = useRef(null)
   const scroller = useRef(null)
   const [brief, setBrief] = useState(false)
+  const [folded, setFolded] = useState(false) // the masthead's name tucked away: the list scrolled down
   useDragClose(dlg, head)
   const pinned = new Set(pn?.on ? pn.data.pins.map((p) => p.url) : [])
   const repos = digest.repos
@@ -254,26 +258,41 @@ function GhBody({ gh, pn, dlg, f, setF, onClose }) {
   // (a filter changed: back to the top of what's left)
   useEffect(() => void scroller.current?.scrollTo({ top: 0, behavior: motionOff() ? 'auto' : 'smooth' }), [f.list, f.top, cat])
   useEffect(() => void (scroller.current && (scroller.current.scrollTop = 0)), [digest.at])
+  // (as News' pages: folded once scrolled PAPER_FOLD down with room to scroll, back at the top)
+  function onScroll(e) {
+    const el = e.currentTarget
+    setFolded((x) => (x ? el.scrollTop > 8 : el.scrollTop > PAPER_FOLD && el.scrollHeight - el.clientHeight > 3 * PAPER_FOLD))
+  }
 
   const newest = gh.view == null
   const lateNote = newest && gh.data.late
   const since = dayName(digest.date, now, TZ) ?? digest.date
   const sinceText = /^(Today|Yesterday)$/.test(since) ? since.toLowerCase() : since
   return (
-    <section aria-labelledby="gh-title" className="nw gh">
-      <header ref={head} className="nw-head">
+    <section aria-labelledby="gh-title" className={`nw gh${folded ? ' is-folded' : ''}`}>
+      {/* the masthead, News' (app/news.js): the paper's name and the day over the supplement's */}
+      <header ref={head} className="nw-head nw-mast">
         <span className="nw-grip" aria-hidden="true" />
-        <span className="nw-mark gh-mark" aria-hidden="true"><Mark /></span>
-        <div className="nw-title">
-          <h2 id="gh-title">GitHub</h2>
-          {/* (phones: only how many are left, beside the day menu) */}
-          <span className="nw-sub">
-            <span className="nw-sub-ed">{repos.length} repos{repos.length ? ' · ' : ''}</span>
-            {repos.length ? (unread ? `${unread} unread` : 'all read') : ''}
-          </span>
+        <div className="nw-strip">
+          <span className="nw-folio">{PAPER}<span className="gh-folio-no"> · {folio(digest.date) ?? 'Supplement'}</span></span>
+          <span className="nw-motto" aria-hidden="true">The repos supplement</span>
+          <div className="nw-tools">
+            {days.length > 0 && <DayMenu nw={gh} days={days} now={now} note={(d) => d.last ?? ''} />}
+            <SizeButton full={full} onSize={onSize} />
+            <button type="button" className="hb-iconbtn" aria-label="Close" title="Close (Esc)" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+          </div>
         </div>
-        {days.length > 0 && <DayMenu nw={gh} days={days} now={now} note={(d) => d.last ?? ''} />}
-        <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+        <div className="nw-title">
+          <div className="nw-title-in">
+            <h2 id="gh-title" className="nw-flag">GitHub</h2>
+            <p className="nw-slogan" aria-hidden="true">“Trending and new this week, read for you.”</p>
+          </div>
+        </div>
+        <div className="nw-dateline">
+          <span className="nw-date">{longDay(digest.date) ?? ''}</span>
+          <span className="nw-sub-ed">{repos.length} repos</span>
+          <span className="nw-sub">{repos.length ? (unread ? `${unread} unread` : 'all read') : ''}</span>
+        </div>
       </header>
 
       <div className="gh-bar">
@@ -301,7 +320,7 @@ function GhBody({ gh, pn, dlg, f, setF, onClose }) {
         )}
       </div>
 
-      <div ref={scroller} className={`nw-scroll gh-scroll${gh.loading ? ' is-loading' : ''}`} aria-busy={gh.loading} data-scroll>
+      <div ref={scroller} className={`nw-scroll gh-scroll${gh.loading ? ' is-loading' : ''}`} aria-busy={gh.loading} data-scroll onScroll={onScroll}>
         {(gh.error || gh.data.stale) && <p className="nw-run is-warn" role="status"><span>The news machine isn't answering: this is the last list it sent.</span></p>}
         {lateNote && (
           <p className="nw-run is-warn" role="status">
@@ -312,7 +331,7 @@ function GhBody({ gh, pn, dlg, f, setF, onClose }) {
           </p>
         )}
         {digest.overview && (
-          <div className={`nw-brief${brief ? ' is-open' : ''}`}>
+          <div className={`nw-box nw-brief${brief ? ' is-open' : ''}`}>
             <span className="nw-kicker">This week</span>
             <p>{digest.overview}</p>
             <button type="button" className="nw-brief-more" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>{brief ? 'Less' : 'More'}</button>
