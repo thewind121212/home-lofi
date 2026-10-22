@@ -547,8 +547,9 @@ wait, and the page says so.
 ### GitHub (owner only)
 
 The same agent's GitHub picks of the day, behind a GitHub icon next to 📰 (a dot: a list not opened yet). It opens like
-News (a bottom sheet on phones, a panel on bigger screens): *This week* (the agent's overview), then the repos as
-cards: rank, category, *New* (new on the list today), worth trying (●●●●○), name (opens it and marks it read), language,
+News, on the same paper (the whole window or a panel, one ⤡ / ⤢ choice for both; a masthead: *The Dalater*, *GitHub*,
+the day, how many repos and unread; the name folds away as you scroll): *This week* (the agent's overview, in columns
+on a desktop), then the repos in ruled columns: rank, category, *New* (new on the list today), worth trying (●●●●○), name (opens it and marks it read), language,
 ★ stars, +★ this week, forks, licence, and a summary in Vietnamese. ▾ opens *Tính năng*, *Giúp gì khi làm app*, *Khi
 nào dùng*, the quick start (copied with a tap), its homepage and topics; 📌 pins it, ✓ marks it read. Filters on top:
 All / Trending / New, ★ 4+, a category (kept across openings). Older days in the menu at the top (the agent keeps 30).
