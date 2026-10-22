@@ -1016,7 +1016,7 @@ function OpsLine({ line, ops, wrap, className = '' }) {
   const [, tick] = useState(0)
   useEffect(() => {
     if (!line?.ticks) return
-    const t = setInterval(() => tick((n) => n + 1), 1000) // the countdown
+    const t = setInterval(() => document.visibilityState === 'visible' && tick((n) => n + 1), 1000) // the countdown (on screen)
     return () => clearInterval(t)
   }, [line?.ticks])
   return (
@@ -1412,7 +1412,7 @@ export function PlayerPanel({ p, owner, vol, openQueue = 0 }) {
   const [, tick] = useState(0)
   useEffect(() => {
     if (!playing) return
-    const t = setInterval(() => tick((n) => n + 1), 1000)
+    const t = setInterval(() => document.visibilityState === 'visible' && tick((n) => n + 1), 1000) // (not while hidden: a locked phone)
     return () => clearInterval(t)
   }, [playing])
 
@@ -2286,7 +2286,7 @@ function ImportBox({ url, what, ops }) {
   const [, tick] = useState(0)
   useEffect(() => {
     if (!mine) return
-    const t = setInterval(() => tick((n) => n + 1), 1000)
+    const t = setInterval(() => document.visibilityState === 'visible' && tick((n) => n + 1), 1000) // (not while hidden: a locked phone)
     return () => clearInterval(t)
   }, [mine])
   return (

@@ -86,17 +86,24 @@ export function claimMediaSession(owner, handlers) {
   }
 }
 
-// a tiny silent WAV: played once inside the first tap that starts a YouTube station, so the <audio> element is
-// "unlocked" on iOS for a later switch to a stream station that doesn't come from a tap (lock screen ⏭, a skip)
+// Two seconds of silent WAV (8 kHz, 8-bit mono; made once). Played once inside the first tap that starts a YouTube
+// station, so the <audio> element is "unlocked" on iOS for a later switch to a stream station that doesn't come from a
+// tap (lock screen ⏭, a skip); and looped by the Player while a phone's audio has to keep going with nothing to play.
+// Two seconds, not a tenth: a locked iPhone keeps the page running for it, and a tiny clip restarted its audio
+// pipeline ten times a second the whole time
+let silent = null
 export function silentWav() {
-  const n = 800
+  if (silent) return silent
+  const n = 16000
   const b = new Uint8Array(44 + n)
   const v = new DataView(b.buffer)
   const str = (o, t) => [...t].forEach((c, i) => (b[o + i] = c.charCodeAt(0)))
   str(0, 'RIFF'), v.setUint32(4, 36 + n, true), str(8, 'WAVEfmt '), v.setUint32(16, 16, true), v.setUint16(20, 1, true)
   v.setUint16(22, 1, true), v.setUint32(24, 8000, true), v.setUint32(28, 8000, true), v.setUint16(32, 1, true), v.setUint16(34, 8, true)
   str(36, 'data'), v.setUint32(40, n, true), b.fill(128, 44)
-  return `data:audio/wav;base64,${btoa(String.fromCharCode(...b))}`
+  let bin = ''
+  for (let i = 0; i < b.length; i += 4096) bin += String.fromCharCode(...b.subarray(i, i + 4096))
+  return (silent = `data:audio/wav;base64,${btoa(bin)}`)
 }
 
 // The player. `station` is the picked one (kept by the page, so the ambient bar and the lock screen show it too);
