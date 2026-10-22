@@ -1,0 +1,308 @@
+/* News as a morning newspaper (app/news.js; the look of ThariqS/ai-newtab): cream paper, black ink, one red, serif
+   headlines (news-fonts.js), hairline and double rules, columns. Over news.css, which the GitHub list shares: every rule
+   here is under .nw-paper (the News dialog only). The theme's tokens are redefined on the paper, so news.css's accents
+   and focus rings come out in its red and ink. */
+.nw-paper {
+  --pp: #f1ede4; /* the paper */
+  --pp-2: #e8e2d5; /* boxes on it */
+  --ink: #1b1915;
+  --ink-2: #3c3830;
+  --ink-3: #716a5d;
+  --hair: rgb(27 25 21 / 0.14);
+  --hair-2: rgb(27 25 21 / 0.28);
+  --red: #a8382a;
+  --color-lofi-primary: var(--red);
+  --color-lofi-text: var(--ink-2);
+  --color-lofi-muted: var(--ink-3);
+  --color-lofi-highlight: var(--red);
+  --nw-display: var(--font-nw-display), 'Bodoni 72', Didot, Georgia, serif;
+  --nw-text: var(--font-nw-text), Georgia, 'Times New Roman', serif;
+  --nw-label: var(--font-nw-label), 'Helvetica Neue', Arial, sans-serif;
+  color-scheme: light;
+  color: var(--ink-2);
+  font-family: var(--nw-text);
+}
+.nw-modal.nw-paper { background: var(--pp); border: 0; box-shadow: 0 30px 80px rgb(0 0 0 / 0.55); }
+@media (min-width: 640px) { .nw-modal.nw-paper { border-radius: 10px; } }
+@media (max-width: 639px) { .nw-modal.nw-paper { border-radius: 16px 16px 0 0; } }
+@media (min-width: 1024px) { .nw-modal.nw-paper { max-width: 76rem; height: min(94svh, 60rem); } }
+.nw-paper ::selection { background: rgb(168 56 42 / 0.2); color: var(--ink); }
+
+/* ---- the masthead ---- */
+.nw-paper .nw-mast { display: block; padding: 14px 20px 0; border-bottom: 0; }
+@media (min-width: 640px) { .nw-paper .nw-mast { padding: 16px 28px 0; } }
+@media (min-width: 1024px) { .nw-paper .nw-mast { padding: 18px 36px 0; } }
+@media (max-width: 639px) { .nw-paper .nw-mast { padding-top: 22px; } }
+.nw-paper .nw-grip { background: var(--hair-2); }
+.nw-paper .nw-strip {
+  display: flex; align-items: center; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--hair-2);
+  font: 500 10.5px/1 var(--nw-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2);
+}
+.nw-paper .nw-folio { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nw-paper .nw-motto { display: none; }
+.nw-paper .nw-tools { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+@media (min-width: 1024px) {
+  .nw-paper .nw-motto { display: block; flex: 1; text-align: center; white-space: nowrap; }
+  .nw-paper .nw-tools { flex: 1; }
+}
+.nw-paper .nw-title { display: grid; grid-template-rows: 1fr; text-align: center; transition: grid-template-rows 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.nw-paper .nw-title-in { min-height: 0; overflow: hidden; }
+/* (the error card's plain header too: ink, not news.css's white) */
+.nw-paper .nw-title h2 { color: var(--ink); }
+.nw-paper .nw-head:not(.nw-mast) { border-bottom-color: var(--hair-2); }
+/* (scrolled down a page: the name tucked away, the folio, the tools and the dateline stay) */
+.nw-paper .nw.is-folded .nw-title { grid-template-rows: 0fr; }
+@media (prefers-reduced-motion: reduce) { .nw-paper .nw-title { transition: none; } }
+.nw-paper .nw-title h2.nw-flag {
+  margin: 10px 0 2px; font-family: var(--nw-display); font-weight: 700; color: var(--ink);
+  font-size: clamp(2.15rem, 9.5vw, 2.6rem); line-height: 1.02; letter-spacing: -0.015em;
+}
+@media (min-width: 640px) { .nw-paper .nw-title h2.nw-flag { font-size: 3.4rem; margin-top: 12px; } }
+@media (min-width: 1024px) { .nw-paper .nw-title h2.nw-flag { font-size: 4.1rem; } }
+.nw-paper .nw-slogan { display: none; margin: 0 0 10px; font-family: var(--nw-text); font-style: italic; font-size: 15px; color: var(--ink-2); }
+@media (min-width: 640px) { .nw-paper .nw-slogan { display: block; } }
+@media (max-width: 639px) { .nw-paper .nw-title-in { padding-bottom: 8px; } }
+.nw-paper .nw-dateline {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px 16px; padding: 6px 0 5px;
+  border-top: 3px double var(--ink); border-bottom: 2px solid var(--ink);
+  font-family: var(--nw-text); font-variant: small-caps; font-size: 14.5px; letter-spacing: 0.04em; color: var(--ink);
+}
+.nw-paper .nw-dateline > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nw-paper .nw-sub-ed { flex: 1; text-align: center; }
+.nw-paper .nw-sub { margin: 0; font: inherit; color: var(--red); }
+@media (max-width: 639px) { .nw-paper .nw-dateline { font-size: 13.5px; } }
+
+/* the tools in the strip: ink outlines */
+.nw-paper .nw-refresh, .nw-paper .nw-menu-btn, .nw-paper .hb-iconbtn {
+  height: 32px; border-radius: 999px; border: 1px solid var(--hair-2); background: transparent; color: var(--ink);
+}
+.nw-paper .nw-refresh, .nw-paper .hb-iconbtn { width: 32px; }
+.nw-paper .nw-menu-btn { font: 500 11px var(--nw-label); letter-spacing: 0.04em; text-transform: none; }
+.nw-paper .nw-menu-btn > svg:first-child, .nw-paper .nw-refresh { color: var(--ink); }
+.nw-paper .nw-menu-btn .chev { color: var(--ink-3); }
+.nw-paper .nw-refresh:hover:not(:disabled), .nw-paper .nw-menu-btn:hover, .nw-paper .nw-menu-btn.is-open, .nw-paper .hb-iconbtn:hover {
+  border-color: var(--ink); color: var(--ink); background: rgb(27 25 21 / 0.05);
+}
+.nw-paper .nw-refresh.is-busy { color: var(--red); }
+/* the day list: a slip of the same paper */
+.nw-paper .nw-menu-list { background: var(--pp); border: 1px solid var(--ink); border-radius: 4px; box-shadow: 0 14px 34px rgb(27 25 21 / 0.28); padding: 4px; }
+.nw-paper .nw-menu-item { border-radius: 2px; color: var(--ink-2); font: 500 12px var(--nw-label); }
+.nw-paper .nw-menu-item:hover, .nw-paper .nw-menu-item:focus-visible { background: var(--pp-2); color: var(--ink); }
+.nw-paper .nw-menu-item[aria-checked='true'] { color: var(--red); }
+.nw-paper .nw-menu-n { color: var(--ink-3); font-family: var(--nw-label); }
+.nw-paper .nw-menu-item.is-first-old::before { background: var(--hair); }
+
+/* ---- the section bar: small capitals under the masthead, the page shown underlined in red (every width: the paper
+   has no side column) ---- */
+.nw-paper .nw-body { flex-direction: column; }
+.nw-paper .nw-side { width: auto; display: flex; flex-direction: row; align-items: center; border: 0; border-bottom: 1px solid var(--hair-2); margin: 0 20px; }
+@media (min-width: 640px) { .nw-paper .nw-side { margin: 0 28px; } }
+@media (min-width: 1024px) { .nw-paper .nw-side { margin: 0 36px; } }
+.nw-paper .nw-nav { flex: 1; min-width: 0; flex-direction: row; gap: 0; padding: 0; overflow-x: auto; }
+.nw-paper .nw-tab {
+  position: relative; width: auto; height: 42px; gap: 6px; padding: 0 14px; border: 0; border-radius: 0; background: transparent;
+  font: 600 11px var(--nw-label); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3);
+}
+.nw-paper .nw-tab:first-child { padding-left: 0; }
+.nw-paper .nw-tab:not(:has(.nw-tab-n)) { padding-right: 14px; }
+.nw-paper .nw-tab + .nw-tab::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 1px; background: var(--hair-2); }
+.nw-paper .nw-tab:hover { color: var(--ink); background: transparent; border-color: transparent; }
+.nw-paper .nw-tab[aria-selected='true'] { color: var(--ink); background: transparent; border-color: transparent; }
+.nw-paper .nw-tab[aria-selected='true']::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 3px; background: var(--red); }
+.nw-paper .nw-tab:first-child[aria-selected='true']::after { left: 0; }
+.nw-paper .nw-tab:focus-visible { outline-offset: -4px; }
+.nw-paper .nw-tab-name { flex: none; }
+.nw-paper .nw-tab-n, .nw-paper .nw-tab[aria-selected='true'] .nw-tab-n:not(.is-done) {
+  min-width: 0; height: auto; padding: 0; background: transparent; color: var(--red); font: 600 10.5px var(--nw-label); letter-spacing: 0.04em;
+}
+.nw-paper .nw-tab-n.is-done { color: var(--ink-3); }
+/* the keys, at the end of the bar */
+@media (min-width: 1024px) {
+  .nw-paper .nw-keys { flex: none; flex-direction: row; gap: 14px; margin: 0 0 0 16px; padding: 0; font: 500 10px var(--nw-label); letter-spacing: 0.04em; color: var(--ink-3); }
+  .nw-paper .nw-keys kbd { border-color: var(--hair-2); color: var(--ink); background: transparent; border-radius: 3px; }
+}
+
+/* ---- the pages ---- */
+.nw-paper .nw-notes { padding: 14px 20px 0; }
+@media (min-width: 640px) { .nw-paper .nw-notes { padding: 14px 28px 0; } }
+@media (min-width: 1024px) { .nw-paper .nw-notes { padding: 16px 36px 0; } }
+.nw-paper .nw-page { gap: 18px; padding: 18px 20px calc(30px + env(safe-area-inset-bottom)); }
+@media (min-width: 640px) { .nw-paper .nw-page { padding: 20px 28px 34px; } }
+@media (min-width: 1024px) { .nw-paper .nw-page { padding: 22px 36px 40px; } }
+.nw-paper .nw-note { font: 500 11px var(--nw-label); color: var(--red); }
+.nw-paper .nw-empty { font-family: var(--nw-text); font-style: italic; color: var(--ink-3); }
+.nw-paper .nw-run { border-radius: 3px; background: var(--pp-2); border: 1px solid var(--hair-2); color: var(--ink-2); font: 500 11.5px/1.5 var(--nw-label); }
+.nw-paper .nw-run.is-warn { color: var(--red); background: var(--pp-2); border-color: rgb(168 56 42 / 0.35); }
+.nw-paper .nw-run-bar { background: var(--red); }
+.nw-paper .nw-run-go { border-radius: 999px; border-color: var(--ink); color: var(--ink); font-family: var(--nw-label); }
+
+/* a heading over a rule (the front page's, the brief's): small capitals; a section's own page: its name large over a
+   heavy rule */
+.nw-paper .nw-sec-head { gap: 12px; }
+.nw-paper .nw-sec-head h3 { font: 700 11px var(--nw-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink); }
+.nw-paper .nw-rule { background: var(--ink); }
+.nw-paper .nw-count { font: 500 10.5px var(--nw-label); letter-spacing: 0.06em; color: var(--ink-3); }
+.nw-paper .nw-allread {
+  height: 26px; border-radius: 999px; border-color: var(--hair-2); color: var(--ink); font: 600 10px var(--nw-label); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.nw-paper .nw-allread:hover { border-color: var(--ink); color: var(--ink); background: rgb(27 25 21 / 0.05); }
+.nw-paper .nw-sec-head.is-big { align-items: flex-end; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 3px double var(--ink); }
+.nw-paper .nw-sec-head.is-big h3 {
+  flex: 1; min-width: 0; font: 700 clamp(1.8rem, 6vw, 2.4rem)/1.05 var(--nw-display); letter-spacing: -0.01em; text-transform: none; color: var(--ink);
+}
+.nw-paper .nw-sec-head.is-big .nw-rule { display: none; }
+.nw-paper .nw-sec-head.is-big .nw-count { margin-bottom: 5px; }
+.nw-paper .nw-sec-head.is-big .nw-allread { margin-bottom: 1px; }
+
+/* the boxes beside the front page (the day in brief, the sections): bordered, a shade darker, a heavy rule under the
+   name */
+.nw-paper .nw-box { border: 1px solid var(--ink); border-radius: 0; background: var(--pp-2); padding: 14px 18px 16px; }
+.nw-paper .nw-box > .nw-kicker {
+  display: block; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 2px solid var(--ink);
+  font: 700 11.5px var(--nw-label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink);
+}
+.nw-paper .nw-brief p { font: 15.5px/1.6 var(--nw-text); color: var(--ink-2); }
+@media (max-width: 639px) { .nw-paper .nw-brief p { font-size: 15px; } }
+/* (beside the lead too: a dozen lines of it, the rest behind More, so the sections box stays near the top) */
+@media (min-width: 640px) {
+  .nw-paper .nw-brief p { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 11; -webkit-box-orient: vertical; }
+  .nw-paper .nw-brief.is-open p { display: block; -webkit-line-clamp: unset; }
+  .nw-paper .nw-brief-more { display: inline-flex; align-items: center; }
+}
+.nw-paper .nw-brief-more {
+  border-radius: 999px; border-color: var(--hair-2); color: var(--ink); font: 600 10px var(--nw-label); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.nw-paper .nw-secs { min-width: 0; display: flex; flex-direction: column; }
+.nw-paper .nw-sl {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; min-width: 0; padding: 9px 0; border: 0; border-radius: 0; background: transparent;
+  text-align: left; color: var(--ink); cursor: pointer;
+}
+.nw-paper .nw-sl + .nw-sl { border-top: 1px solid var(--hair-2); }
+.nw-paper .nw-sl:focus-visible { outline-offset: 1px; }
+.nw-paper .nw-sl-top { display: flex; align-items: baseline; gap: 10px; width: 100%; }
+.nw-paper .nw-sl-name { flex: 1; min-width: 0; font: 600 16px/1.3 var(--nw-text); color: var(--ink); }
+.nw-paper .nw-sl:hover .nw-sl-name { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.nw-paper .nw-sl-n { flex: none; display: inline-flex; align-items: center; gap: 4px; font: 600 11px var(--nw-label); letter-spacing: 0.04em; color: var(--red); font-variant-numeric: tabular-nums; }
+.nw-paper .nw-sl-n:has(svg) { color: var(--ink-3); }
+.nw-paper .nw-sl-line {
+  display: block; max-width: 100%; font: italic 13.5px/1.4 var(--nw-text); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- the front page: phones one column (the brief first); from 640px the lead with the boxes beside it and the next
+   stories under them; from 1024px three columns, a hairline between them (the lead, the next two, the boxes), the rest
+   in two columns under the first two ---- */
+.nw-paper .nw-front { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'brief' 'lead' 'more' 'rest' 'secs'; gap: 20px; }
+.nw-paper .nw-f-rest { grid-area: rest; min-width: 0; border-top: 2px solid var(--ink); }
+.nw-paper .nw-f-lead { grid-area: lead; min-width: 0; }
+.nw-paper .nw-f-more { grid-area: more; min-width: 0; display: flex; flex-direction: column; }
+.nw-paper .nw-f-side { display: contents; }
+.nw-paper .nw-f-side > .nw-brief { grid-area: brief; }
+.nw-paper .nw-f-side > .nw-secs { grid-area: secs; }
+.nw-paper .nw-f-more > .nw-story.is-deck { border-top: 1px solid var(--ink); padding-top: 14px; }
+.nw-paper .nw-f-more > .nw-story.is-deck:first-child { border-top: 0; padding-top: 0; }
+@media (max-width: 639px) {
+  .nw-paper .nw-f-lead { padding-bottom: 6px; border-bottom: 1px solid var(--ink); }
+  .nw-paper .nw-f-more > .nw-story.is-deck:first-child { padding-top: 0; }
+}
+@media (min-width: 640px) {
+  .nw-paper .nw-front {
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); grid-template-rows: auto 1fr auto auto;
+    grid-template-areas: 'lead brief' 'lead secs' 'more more' 'rest rest'; column-gap: 26px; row-gap: 18px;
+  }
+  .nw-paper .nw-f-side > .nw-secs { align-self: start; }
+  .nw-paper .nw-f-more { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 26px; padding-top: 16px; border-top: 2px solid var(--ink); }
+  .nw-paper .nw-f-more > .nw-story.is-deck { border-top: 0; padding-top: 0; }
+  .nw-paper .nw-f-more > .nw-story.is-deck + .nw-story.is-deck { border-left: 1px solid var(--hair-2); padding-left: 26px; margin-left: -13px; }
+  /* (just one: the whole width) */
+  .nw-paper .nw-f-more > .nw-story.is-deck:only-child { grid-column: 1 / -1; }
+}
+@media (min-width: 1024px) {
+  .nw-paper .nw-front {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) 18rem; grid-template-rows: auto 1fr;
+    grid-template-areas: 'lead more side' 'rest rest side'; column-gap: 0; row-gap: 18px; align-items: start;
+  }
+  .nw-paper .nw-f-lead { padding-right: 30px; }
+  .nw-paper .nw-f-more { display: flex; padding: 0 30px; border-top: 0; border-left: 1px solid var(--hair-2); }
+  .nw-paper .nw-f-more > .nw-story.is-deck + .nw-story.is-deck { border-left: 0; padding-left: 0; margin-left: 0; border-top: 1px solid var(--ink); padding-top: 14px; }
+  .nw-paper .nw-f-rest { margin-right: 30px; }
+  .nw-paper .nw-f-side { grid-area: side; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+  .nw-paper .nw-f-side > .nw-secs { align-self: stretch; } /* (start, in a flex column, would size it to its longest line) */
+}
+
+/* ---- a section's page: its 5/5 stories on top (the lead, the next beside it), the rest in two columns from 1024px ---- */
+.nw-paper .nw-sec { gap: 0; }
+.nw-paper .nw-leads { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+@media (min-width: 640px) {
+  .nw-paper .nw-leads.is-two { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 0; }
+  .nw-paper .nw-leads.is-two > .nw-story + .nw-story { border-left: 1px solid var(--hair-2); padding-left: 24px; margin-left: 24px; }
+}
+@media (max-width: 639px) { .nw-paper .nw-leads.is-two > .nw-story + .nw-story { padding-top: 16px; border-top: 1px solid var(--ink); } }
+.nw-paper .nw-list > li + li { border-top: 1px solid var(--hair); }
+@media (min-width: 1024px) {
+  .nw-paper .nw-cols { display: block; columns: 2; column-gap: 44px; column-rule: 1px solid var(--hair-2); }
+  .nw-paper .nw-cols > li { break-inside: avoid; border-top: 0; border-bottom: 1px solid var(--hair); }
+  .nw-paper .nw-cols > li + li { border-top: 0; }
+}
+
+/* the category chips: small boxed capitals, the one picked in ink */
+.nw-paper .nw-chips { margin: 14px 0 2px; }
+.nw-paper .nw-chip {
+  height: 28px; border-radius: 999px; border-color: var(--hair-2); background: transparent; color: var(--ink-2);
+  font: 600 10.5px var(--nw-label); letter-spacing: 0.1em; text-transform: uppercase;
+}
+.nw-paper .nw-chip > span { color: var(--ink-3); }
+.nw-paper .nw-chip:hover { border-color: var(--ink); }
+.nw-paper .nw-chip[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--pp); }
+.nw-paper .nw-chip[aria-pressed='true'] > span { color: rgb(241 237 228 / 0.7); }
+@media (hover: none) { .nw-paper .nw-chip { height: 32px; } }
+/* (phones: one row, slid sideways, not three rows over the stories) */
+@media (max-width: 639px) {
+  .nw-paper .nw-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; margin: 14px -20px 2px; padding: 0 20px; }
+  .nw-paper .nw-chips::-webkit-scrollbar { display: none; }
+  .nw-paper .nw-chip { flex: none; }
+}
+.nw-paper .nw-next {
+  margin-top: 22px; height: 40px; border-radius: 999px; border: 1px solid var(--ink); background: transparent; color: var(--ink);
+  font: 600 11px var(--nw-label); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.nw-paper .nw-next:hover { background: var(--ink); border-color: var(--ink); color: var(--pp); }
+
+/* ---- a story: the kicker in red capitals, the headline in the display serif, the summary in the text serif, the
+   byline in small grey capitals ---- */
+.nw-paper .nw-story { gap: 6px; padding: 14px 0; }
+.nw-paper .nw-story.is-lead, .nw-paper .nw-story.is-deck { padding: 0; border: 0; border-radius: 0; background: none; }
+.nw-paper .nw-f-more > .nw-story.is-deck, .nw-paper .nw-leads > .nw-story.is-deck { padding-bottom: 14px; }
+.nw-paper .nw-story.is-read { opacity: 0.5; }
+.nw-paper .nw-cat { font: 700 10.5px var(--nw-label); letter-spacing: 0.16em; text-transform: uppercase; color: var(--red); }
+.nw-paper .nw-imp i { border-radius: 0; background: var(--hair-2); }
+.nw-paper .nw-imp i.on { background: var(--ink-2); }
+.nw-paper .nw-new { border-radius: 2px; background: var(--red); color: var(--pp); font: 700 9px var(--nw-label); letter-spacing: 0.12em; }
+.nw-paper .nw-h { font-family: var(--nw-display); font-weight: 700; font-size: 19px; line-height: 1.22; color: var(--ink); }
+.nw-paper .nw-h a, .nw-paper .nw-h a:visited { color: var(--ink); }
+.nw-paper .nw-h a:hover { color: var(--ink); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.nw-paper .nw-story.is-lead .nw-h { font-size: clamp(1.85rem, 7.5vw, 2.15rem); line-height: 1.08; letter-spacing: -0.012em; font-weight: 700; }
+@media (min-width: 640px) { .nw-paper .nw-story.is-lead .nw-h { font-size: 2.5rem; } }
+@media (min-width: 1024px) { .nw-paper .nw-story.is-lead .nw-h { font-size: 2.85rem; } }
+.nw-paper .nw-story.is-deck .nw-h { font-size: 1.5rem; line-height: 1.14; letter-spacing: -0.005em; }
+.nw-paper .nw-sum { font: 15.5px/1.6 var(--nw-text); color: var(--ink-2); opacity: 1; }
+.nw-paper .nw-story.is-lead .nw-sum { margin-top: 8px; font-size: 17px; line-height: 1.62; }
+/* (the lead's first letter dropped over three lines) */
+.nw-paper .nw-story.is-lead .nw-sum::first-letter {
+  float: left; margin: 0.06em 0.1em 0 0; font-family: var(--nw-display); font-weight: 700; font-size: 4.15em; line-height: 0.82; color: var(--ink);
+}
+.nw-paper .nw-story.is-deck .nw-sum { -webkit-line-clamp: 5; }
+.nw-paper .nw-story.is-deck .nw-sum.is-open { -webkit-line-clamp: unset; }
+.nw-paper .nw-points li { font: 15px/1.5 var(--nw-text); color: var(--ink-2); opacity: 1; }
+.nw-paper .nw-points li::before { border-radius: 0; background: var(--red); top: 0.6em; width: 5px; height: 5px; }
+.nw-paper .nw-orig { font: italic 14px/1.45 var(--nw-text); color: var(--ink-3); }
+.nw-paper .nw-meta { font: 600 10px var(--nw-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.nw-paper .nw-src { color: var(--ink-2); }
+.nw-paper .nw-src::before { content: 'via '; }
+.nw-paper .nw-com:hover { color: var(--red); }
+.nw-paper .nw-act { color: var(--ink-3); }
+.nw-paper .nw-act:hover:not(:disabled) { color: var(--ink); border-color: var(--hair-2); }
+.nw-paper .nw-act.is-on { color: var(--red); }
+.nw-paper .nw-plat {
+  height: 19px; border-radius: 999px; background: transparent; border: 1px solid var(--hair-2); color: var(--ink-2);
+  font: 600 9.5px var(--nw-label); letter-spacing: 0.08em; text-transform: uppercase;
+}

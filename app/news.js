@@ -1,10 +1,11 @@
 'use client'
 
 // News: the digest an agent on another machine writes twice a day (Vietnam and tech, summarised in Vietnamese), read
-// here as a small magazine: a bottom sheet on phones, a panel on bigger screens. An icon next to the header's bell (a
-// dot: an edition not opened yet); a tap opens it on pages: Top (the day in brief, the stories that matter most, a card
-// per section), then one per section (its most important stories as lead cards, the rest as rows), swiped or picked
-// from the nav. Rules in lib/news.js; the route is app/api/private/settings/news (owner-only: guests get
+// here as a morning newspaper on cream paper (the look of ThariqS/ai-newtab: a masthead, serif headlines, columns and
+// rules; news-paper styles in news.css, its type in news-fonts.js): a bottom sheet on phones, a panel on bigger screens.
+// An icon next to the header's bell (a dot: an edition not opened yet); a tap opens it on pages: the front page (a lead
+// story, a column of the next ones, the day in brief and the sections beside them), then one per section (its most
+// important stories on top, the rest in columns), swiped or picked from the section bar. Rules in lib/news.js; the route is app/api/private/settings/news (owner-only: guests get
 // 404 / 403 and never see the icon; NEWS_URL not set: no icon either).
 // - A story's title opens it (a new tab) and marks it read: read ones are dimmed, on every device (the server keeps
 //   them). ✓ marks one read / unread by hand; "Mark all read" a whole section.
@@ -18,11 +19,13 @@
 // - Asked when the owner's known, when the page shows again (MIN_GAP apart), every REFRESH while it's on screen (a new
 //   edition's dot), when the modal opens, and when another device reads something ('news' on the live stream).
 import './news.css'
-import { Component, useEffect, useId, useRef, useState } from 'react'
-import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronRight, Clapperboard, Clock, Cpu, Flag, Globe, Hash, MessageSquare, Newspaper, Pin, RefreshCw, Sparkles, Tv, X } from 'lucide-react'
+import './news-paper.css'
+import { Component, useEffect, useRef, useState } from 'react'
+import { ArrowRight, ArrowUp, Check, ChevronDown, Clapperboard, Clock, MessageSquare, Newspaper, Pin, RefreshCw, Tv, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, motionOff, useStillPage } from './settings'
-import { CATEGORIES, ago, dayName, editionLine, inCinemas, runGoing, waitFor } from '../lib/news'
+import { CATEGORIES, ago, dayName, editionLine, folio, inCinemas, longDay, paperName, runGoing, waitFor } from '../lib/news'
+import { paperFonts } from './news-fonts'
 import { privateAnswer } from '../lib/private-poll'
 import { reportError } from './report-error'
 
@@ -236,8 +239,6 @@ export function NewsIcon({ nw, wait = false, force = false, onOpen, className = 
 
 // ---- the modal ----
 
-// a colour per category (the tag's tint)
-const HUE = { 'thoi-su': 18, 'kinh-te': 140, 'cong-nghe': 205, ai: 265, 'khoa-hoc': 180, 'the-gioi': 225, 'xa-hoi': 35, 'the-thao': 100, 'giai-tri': 320, 'lap-trinh': 190, 'bao-mat': 0, khac: 240 }
 const domainOf = (u) => {
   try {
     return new URL(u).hostname.replace(/^www\./, '')
@@ -282,7 +283,7 @@ export function NewsModal({ nw, pn, dlg }) {
       onClick={(e) => e.target === dlg.current && close()}
       onCancel={(e) => (e.preventDefault(), close())}
       onClose={() => (delete dlg.current.dataset.closing, nw.reset())}
-      className="wx-sheet nw-modal glass-panel text-lofi-text"
+      className={`wx-sheet nw-modal nw-paper ${paperFonts}`}
     >
       {nw.on && (
         <NewsCatch key={nw.data.day} nw={view} onClose={close}>
@@ -381,13 +382,11 @@ export class NewsCatch extends Component {
   }
 }
 
-// a section's icon in the nav (by the agent's keys; anything else a #)
-const SEC_ICON = { top: Sparkles, vietnam: Flag, 'viet-nam': Flag, tech: Cpu, 'cong-nghe': Cpu, world: Globe, 'the-gioi': Globe, movies: Clapperboard, 'phim-anh': Clapperboard }
 const smooth = () => (motionOff() ? 'auto' : 'smooth')
+const FOLD = 64 // px down a page: the masthead folds
 
-// The edition as pages, side by side: Top (the day in brief, the stories that matter most, each section's card), then
-// one per section. The nav (chips over the pages below lg, a column beside them from lg) and a swipe both move between
-// them; each page scrolls on its own, so a section is a short read, not a long scroll past the others.
+// The edition as pages, side by side: the front page, then one per section. The section bar under the masthead and a
+// swipe both move between them; each page scrolls on its own, so a section is a short read, not a long scroll past the others.
 // Keys (from lg, focus in the modal): ← → the pages, j / k the stories, m read / unread
 function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
   const { digest, days } = nw.data
@@ -398,8 +397,9 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
   const aim = useRef({ i: null, t: 0 }) // a page being scrolled to (its scroll events aren't a swipe)
   const want = useRef(null) // where the focus goes once the page asked for is shown: 'tab' | 'page'
   const [brief, setBrief] = useState(false) // (phones: the brief folded to a few lines until tapped)
+  const [folded, setFolded] = useState(false) // the paper's name tucked away: the page shown scrolled down
   useDragClose(dlg, head)
-  const pages = [{ key: 'top', title: 'Top' }, ...digest.sections]
+  const pages = [{ key: 'top', title: 'Front page' }, ...digest.sections]
   const at = Math.max(0, pages.findIndex((p) => p.key === tab))
   const atRef = useRef(at)
   atRef.current = at
@@ -469,6 +469,17 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
     if (!b || n.scrollWidth <= n.clientWidth + 1) return
     n.scrollTo({ left: b.offsetLeft - (n.clientWidth - b.offsetWidth) / 2, behavior: smooth() })
   }, [at])
+  // the masthead folds once the page shown is scrolled FOLD down (and has room to scroll: folding grows the page), and
+  // comes back at its top; a page turned to says where it is
+  function onPageScroll(e) {
+    const p = e.target
+    if (!p.classList?.contains('nw-page') || p !== pager.current?.children[atRef.current]) return
+    setFolded((f) => (f ? p.scrollTop > 8 : p.scrollTop > FOLD && p.scrollHeight - p.clientHeight > 3 * FOLD))
+  }
+  useEffect(() => {
+    const p = pager.current?.children[at]
+    setFolded(Boolean(p && p.scrollTop > FOLD))
+  }, [at])
   // a newer copy of the latest: every page back to its top
   useEffect(() => {
     for (const p of pager.current?.children ?? []) p.scrollTop = 0
@@ -500,28 +511,36 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
 
   const notes = nw.error || nw.data.stale || nw.refresh.can
   return (
-    <section aria-labelledby="nw-title" className="nw" onKeyDown={onKey}>
-      <header ref={head} className="nw-head">
+    <section aria-labelledby="nw-title" className={`nw${folded ? ' is-folded' : ''}`} onKeyDown={onKey}>
+      {/* the masthead: the folio and the tools, the paper's name, the dateline (the day, its editions, what's left) */}
+      <header ref={head} className="nw-head nw-mast">
         <span className="nw-grip" aria-hidden="true" />
-        <span className="nw-mark" aria-hidden="true"><Newspaper size={17} strokeWidth={1.9} /></span>
-        <div className="nw-title">
-          <h2 id="nw-title">News</h2>
-          {/* (with the edition menu there, the time is on its button) */}
-          <span className="nw-sub">
-            <span className="nw-sub-ed">{digest.updates > 1 ? `${digest.updates} updates` : editionLine(digest, now, TZ)}{total ? ' · ' : ''}</span>
-            {total ? (unread ? `${unread} unread` : 'all read') : ''}
-          </span>
+        <div className="nw-strip">
+          <span className="nw-folio">{folio(nw.data.day) ?? 'News'}</span>
+          <span className="nw-motto" aria-hidden="true">Your corner of the internet</span>
+          <div className="nw-tools">
+            {nw.refresh.can && <RefreshButton nw={nw} />}
+            {days.length > 0 && <DayMenu nw={nw} days={days} now={now} />}
+            <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+          </div>
         </div>
-        {nw.refresh.can && <RefreshButton nw={nw} />}
-        {days.length > 0 && <DayMenu nw={nw} days={days} now={now} />}
-        <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+        <div className="nw-title">
+          <div className="nw-title-in">
+            <h2 id="nw-title" className="nw-flag">{paperName(digest, TZ)}</h2>
+            <p className="nw-slogan" aria-hidden="true">“All the news that fits between songs.”</p>
+          </div>
+        </div>
+        <div className="nw-dateline">
+          <span className="nw-date">{longDay(nw.data.day) ?? ''}</span>
+          <span className="nw-sub-ed">{digest.updates > 1 ? `${digest.updates} updates` : editionLine(digest, now, TZ)}</span>
+          <span className="nw-sub">{total ? (unread ? `${unread} unread` : 'all read') : ''}</span>
+        </div>
       </header>
 
       <div className="nw-body">
         <div className="nw-side">
           <div ref={nav} className="nw-nav" role="tablist" aria-label="Sections">
             {pages.map((p, i) => {
-              const Icon = SEC_ICON[p.key] ?? Hash
               const n = p.items ? left(p) : null
               return (
                 <button
@@ -535,7 +554,6 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
                   className="nw-tab"
                   onClick={() => go(i)}
                 >
-                  <Icon size={14} strokeWidth={2} aria-hidden="true" />
                   <span className="nw-tab-name">{p.title}</span>
                   {n != null && <span className={`nw-tab-n${n ? '' : ' is-done'}`} aria-label={n ? `${n} unread` : 'all read'}>{n || <Check size={11} strokeWidth={3} />}</span>}
                 </button>
@@ -556,7 +574,7 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
               {nw.refresh.can && <RunNote nw={nw} />}
             </div>
           )}
-          <div ref={pager} className="nw-pager" onScroll={onScroll}>
+          <div ref={pager} className="nw-pager" onScroll={onScroll} onScrollCapture={onPageScroll}>
             {pages.map((p, i) => (
               <div key={p.key} id={`nw-page-${p.key}`} role="tabpanel" aria-labelledby={`nw-tab-${p.key}`} tabIndex={-1} inert={i !== at} className="nw-page" data-scroll>
                 {p.key === 'top' ? (
@@ -573,56 +591,69 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
   )
 }
 
-const LEADS = 2 // lead cards at most (importance 5)
+const LEADS = 2 // lead stories at most (importance 5)
+const DECKS = 2 // the front page's second column: the stories after the lead with more of their summaries
 
-// Top: the day in brief and the stories that matter most (both the newest edition's: lib/news.js topIds), then a card
-// per section of the whole day (its unread, its first headlines) that opens it
+// Top, a front page: the first of the stories that matter most as the lead (a big headline, its summary under a drop
+// cap), the next two down a second column, the rest under them, and a column beside them with the day in brief and the sections (each one's
+// unread and its first headline: it opens it). Phones: one column, the brief first. (The brief and the top stories are
+// the newest edition's: lib/news.js topIds)
 function TopPage({ digest, brief, setBrief, nw, pn, pinned, now, left, go }) {
   const byId = new Map(digest.sections.flatMap((s) => s.items.map((i) => [i.id, i])))
   const top = digest.top.map((id) => byId.get(id)).filter(Boolean)
+  const [lead, ...more] = top
   const props = { nw, pn, pinned, now }
   return (
     <>
-      {digest.overview && (
-        <div className={`nw-brief${brief ? ' is-open' : ''}`}>
-          <span className="nw-kicker">In brief</span>
-          <p>{digest.overview}</p>
-          <button type="button" className="nw-brief-more" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>{brief ? 'Less' : 'More'}</button>
+      {top.length > 0 && <SecHead title="Top stories" ids={top.map((i) => i.id)} nw={nw} />}
+      <div className="nw-front">
+        {lead && <div className="nw-f-lead"><Story it={lead} kind="lead" {...props} /></div>}
+        {more.length > 0 && (
+          <div className="nw-f-more">
+            {more.slice(0, DECKS).map((it) => <Story key={it.id} it={it} kind="deck" {...props} />)}
+          </div>
+        )}
+        {more.length > DECKS && (
+          <ul className="nw-list nw-cols nw-f-rest">
+            {more.slice(DECKS).map((it) => <li key={it.id}><Story it={it} {...props} /></li>)}
+          </ul>
+        )}
+        {/* (the column beside: on phones and tablets its two boxes go where the grid puts them) */}
+        <div className="nw-f-side">
+          {digest.overview && (
+            <div className={`nw-box nw-brief${brief ? ' is-open' : ''}`}>
+              <span className="nw-kicker">In brief</span>
+              <p>{digest.overview}</p>
+              <button type="button" className="nw-brief-more" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>{brief ? 'Less' : 'More'}</button>
+            </div>
+          )}
+          {digest.sections.length > 0 && (
+            <nav className="nw-box nw-secs" aria-labelledby="nw-s-index">
+              <h3 id="nw-s-index" className="nw-kicker">Sections</h3>
+              {digest.sections.map((s, i) => {
+                const n = left(s)
+                const head = s.items.find((it) => !nw.isRead(it.id))
+                return (
+                  <button key={s.key} type="button" className="nw-sl" onClick={() => go(i + 1, 'page')}>
+                    <span className="nw-sl-top">
+                      <span className="nw-sl-name">{s.title}</span>
+                      <span className="nw-sl-n">{n ? `${n} unread` : <><Check size={12} strokeWidth={2.6} aria-hidden="true" />all read</>}</span>
+                    </span>
+                    {head && <span className="nw-sl-line">{head.title}</span>}
+                  </button>
+                )
+              })}
+            </nav>
+          )}
         </div>
-      )}
-      {top.length > 0 && <Stories title="Top stories" items={top} {...props} />}
-      {digest.sections.length > 0 && (
-        <section className="nw-sec" aria-labelledby="nw-s-index">
-          <div className="nw-sec-head">
-            <h3 id="nw-s-index">Sections</h3>
-            <span className="nw-rule" aria-hidden="true" />
-          </div>
-          <div className="nw-index">
-            {digest.sections.map((s, i) => {
-              const Icon = SEC_ICON[s.key] ?? Hash
-              const n = left(s)
-              const heads = s.items.filter((it) => !nw.isRead(it.id)).slice(0, 2)
-              return (
-                <button key={s.key} type="button" className="nw-card" onClick={() => go(i + 1, 'page')}>
-                  <span className="nw-card-top">
-                    <Icon size={15} strokeWidth={2} aria-hidden="true" />
-                    <span className="nw-card-name">{s.title}</span>
-                    <span className="nw-card-n">{n ? `${n} unread` : 'all read'}</span>
-                    <ChevronRight size={16} aria-hidden="true" />
-                  </span>
-                  {heads.map((it) => <span key={it.id} className="nw-card-line">{it.title}</span>)}
-                </button>
-              )
-            })}
-          </div>
-        </section>
-      )}
+      </div>
       {!digest.sections.length && <p className="nw-empty">Nothing in this edition.</p>}
     </>
   )
 }
 
-// A section's page: its stories (filtered by category when it has more than one), then on to the next
+// A section's page: its name over a heavy rule, its stories (filtered by category when it has more than one), then on
+// to the next
 function SectionPage({ section, next, onNext, onTop, nw, pn, pinned, now }) {
   const [picked, setCat] = useState(null)
   const cats = Object.entries(section.items.reduce((m, i) => ((m[i.category] = (m[i.category] ?? 0) + 1), m), {}))
@@ -630,50 +661,57 @@ function SectionPage({ section, next, onNext, onTop, nw, pn, pinned, now }) {
   const cat = cats.some(([k]) => k === picked) ? picked : null
   const items = cat ? section.items.filter((i) => i.category === cat) : section.items
   const chip = (key, label, n) => (
-    <button key={key ?? 'all'} type="button" className="nw-chip" aria-pressed={cat === key} onClick={() => setCat(key)} style={key ? { '--nw-h': HUE[key] ?? 240 } : undefined}>
+    <button key={key ?? 'all'} type="button" className="nw-chip" aria-pressed={cat === key} onClick={() => setCat(key)}>
       {label}
       {n != null && <span>{n}</span>}
     </button>
   )
   return (
     <>
+      <SecHead title={section.title} ids={section.items.map((i) => i.id)} nw={nw} big />
       {cats.length > 1 && (
         <div className="nw-chips" role="group" aria-label="Category">
           {chip(null, 'All', section.items.length)}
           {cats.map(([k, n]) => chip(k, CATEGORIES[k] ?? k, n))}
         </div>
       )}
-      <Stories title={section.title} items={items} all={section.items} nw={nw} pn={pn} pinned={pinned} now={now} />
+      <Stories items={items} nw={nw} pn={pn} pinned={pinned} now={now} />
       <button type="button" className="nw-next" onClick={next ? onNext : onTop}>
-        {next ? <>Next: {next.title}<ArrowRight size={15} aria-hidden="true" /></> : <>Back to Top<ArrowUp size={15} aria-hidden="true" /></>}
+        {next ? <>Next: {next.title}<ArrowRight size={15} aria-hidden="true" /></> : <>Back to the front page<ArrowUp size={15} aria-hidden="true" /></>}
       </button>
     </>
   )
 }
 
-// a run of stories under a heading: their unread, Mark all read, the 5/5 ones as lead cards (LEADS at most), the rest as
-// rows (all: what Mark all read covers, when a filter shows fewer)
-function Stories({ title, items, all = items, nw, pn, pinned, now }) {
-  const left = all.filter((i) => !nw.isRead(i.id)).map((i) => i.id)
+// a heading over a rule: how many of ids are left, Mark all read (big: a section's own page, its name large)
+function SecHead({ title, ids, nw, big = false }) {
+  const left = ids.filter((id) => !nw.isRead(id))
+  return (
+    <div className={`nw-sec-head${big ? ' is-big' : ''}`}>
+      <h3>{title}</h3>
+      <span className="nw-rule" aria-hidden="true" />
+      <span className="nw-count">{left.length ? `${left.length} unread` : 'all read'}</span>
+      {left.length > 0 && <button type="button" className="nw-allread" onClick={() => nw.read(left)}>Mark all read</button>}
+    </div>
+  )
+}
+
+// a section's stories: the 5/5 ones on top (LEADS at most: the first as the lead, the next beside it), the rest in
+// columns
+function Stories({ items, nw, pn, pinned, now }) {
   const leads = items.filter((i) => i.importance >= 5).slice(0, LEADS)
   const rest = items.filter((i) => !leads.includes(i))
-  const id = useId()
+  const props = { nw, pn, pinned, now }
   return (
-    <section className="nw-sec" aria-labelledby={id}>
-      <div className="nw-sec-head">
-        <h3 id={id}>{title}</h3>
-        <span className="nw-rule" aria-hidden="true" />
-        <span className="nw-count">{left.length ? `${left.length} unread` : 'all read'}</span>
-        {left.length > 0 && <button type="button" className="nw-allread" onClick={() => nw.read(left)}>Mark all read</button>}
-      </div>
+    <section className="nw-sec" aria-label="Stories">
       {leads.length > 0 && (
-        <div className="nw-leads">
-          {leads.map((it) => <Story key={it.id} it={it} lead nw={nw} pn={pn} pinned={pinned} now={now} />)}
+        <div className={`nw-leads${leads.length > 1 ? ' is-two' : ''}`}>
+          {leads.map((it, i) => <Story key={it.id} it={it} kind={i ? 'deck' : 'lead'} {...props} />)}
         </div>
       )}
       {rest.length > 0 && (
-        <ul className="nw-list">
-          {rest.map((it) => <li key={it.id}><Story it={it} nw={nw} pn={pn} pinned={pinned} now={now} /></li>)}
+        <ul className="nw-list nw-cols">
+          {rest.map((it) => <li key={it.id}><Story it={it} {...props} /></li>)}
         </ul>
       )}
     </section>
@@ -807,16 +845,14 @@ export function DayMenu({ nw, days, now, note = updatesOf }) {
   )
 }
 
-// a film's platforms after its title: 📺 Netflix, 🎬 for the cinema (a known service in its own colour)
-const PLATFORM_HUE = { netflix: 357, 'disney+': 220, hulu: 145, 'prime video': 195, 'amazon prime video': 195, max: 265, 'hbo max': 265, 'apple tv+': 0, 'fpt play': 25, vieon: 330, 'galaxy play': 280, 'tv360': 200, youtube: 0 }
+// a film's platforms after its title: 📺 Netflix, 🎬 for the cinema
 function Platforms({ names }) {
   return (
     <span className="nw-plats" aria-label={`Where to watch: ${names.join(', ')}`}>
       {names.map((n) => {
         const Icon = inCinemas(n) ? Clapperboard : Tv
-        const h = PLATFORM_HUE[n.toLowerCase()]
         return (
-          <span key={n} className={`nw-plat${h == null ? '' : ' is-known'}`} style={h == null ? undefined : { '--nw-ph': h }}>
+          <span key={n} className="nw-plat">
             <Icon size={11} strokeWidth={2.2} aria-hidden="true" />
             {n}
           </span>
@@ -826,7 +862,10 @@ function Platforms({ names }) {
   )
 }
 
-function Story({ it, lead = false, nw, pn, pinned, now }) {
+// kind: 'lead' (a big headline, the summary all there under a drop cap), 'deck' (a bigger headline, more of the
+// summary), or a row
+function Story({ it, kind = 'row', nw, pn, pinned, now }) {
+  const lead = kind === 'lead'
   const [more, setMore] = useState(false)
   const [pinning, setPinning] = useState(false)
   const read = nw.isRead(it.id)
@@ -834,7 +873,7 @@ function Story({ it, lead = false, nw, pn, pinned, now }) {
   const isPinned = pinned.has(it.url)
   const open = () => nw.read([it.id])
   return (
-    <article data-id={it.id} className={`nw-story${lead ? ' is-lead' : ''}${read ? ' is-read' : ''}`} style={{ '--nw-h': HUE[it.category] ?? 240 }}>
+    <article data-id={it.id} className={`nw-story is-${kind}${read ? ' is-read' : ''}`}>
       <div className="nw-tags">
         <span className="nw-cat">{CATEGORIES[it.category]}</span>
         {nw.isNew?.(it) && <span className="nw-new">New</span>}
