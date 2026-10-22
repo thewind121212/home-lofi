@@ -880,18 +880,38 @@ function Platforms({ names }) {
   )
 }
 
+// a story's photo, through this server (app/api/private/settings/news/image: the agent is on the LAN). The lead's under
+// its headline with the credit, a deck's over it, a row's a thumbnail beside it; a film's poster stays upright. It opens
+// the story like the title (not a stop of its own for the keyboard). One that won't load just isn't there
+const PHOTO = '/api/private/settings/news/image?f='
+function Photo({ it, kind, open, onFail }) {
+  const { name, width, height, alt, credit } = it.image
+  const link = { href: it.url, target: '_blank', rel: 'noopener noreferrer', referrerPolicy: 'no-referrer', onClick: open, onAuxClick: (e) => e.button === 1 && open() }
+  return (
+    <figure className={`nw-fig is-${kind}${height > width ? ' is-tall' : ''}`}>
+      <a {...link} tabIndex={-1} aria-hidden="true">
+        <img src={PHOTO + encodeURIComponent(name)} alt={alt} width={width} height={height} loading={kind === 'row' ? 'lazy' : 'eager'} decoding="async" onError={onFail} />
+      </a>
+      {kind !== 'row' && credit && <figcaption>{credit}</figcaption>}
+    </figure>
+  )
+}
+
 // kind: 'lead' (a big headline, the summary all there under a drop cap), 'deck' (a bigger headline, more of the
 // summary), or a row
 function Story({ it, kind = 'row', nw, pn, pinned, now }) {
   const lead = kind === 'lead'
   const [more, setMore] = useState(false)
+  const [noPhoto, setNoPhoto] = useState(false)
+  const photo = it.image && !noPhoto
   const [pinning, setPinning] = useState(false)
   const read = nw.isRead(it.id)
   const when = ago(it.publishedAt, now)
   const isPinned = pinned.has(it.url)
   const open = () => nw.read([it.id])
   return (
-    <article data-id={it.id} className={`nw-story is-${kind}${read ? ' is-read' : ''}`}>
+    <article data-id={it.id} className={`nw-story is-${kind}${read ? ' is-read' : ''}${photo ? ' has-photo' : ''}`}>
+      {photo && kind !== 'lead' && <Photo it={it} kind={kind} open={open} onFail={() => setNoPhoto(true)} />}
       <div className="nw-tags">
         <span className="nw-cat">{CATEGORIES[it.category]}</span>
         {nw.isNew?.(it) && <span className="nw-new">New</span>}
@@ -903,6 +923,7 @@ function Story({ it, kind = 'row', nw, pn, pinned, now }) {
         <a href={it.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={open} onAuxClick={(e) => e.button === 1 && open()}>{it.title}</a>
         {it.platform && <Platforms names={it.platform} />}
       </h4>
+      {photo && lead && <Photo it={it} kind={kind} open={open} onFail={() => setNoPhoto(true)} />}
       {it.summary && (
         <p className={`nw-sum${more || lead ? ' is-open' : ''}`} onClick={() => !lead && setMore((m) => !m)}>{it.summary}</p>
       )}

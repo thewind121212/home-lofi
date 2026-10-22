@@ -316,3 +316,25 @@
   height: 19px; border-radius: 999px; background: transparent; border: 1px solid var(--hair-2); color: var(--ink-2);
   font: 600 9.5px var(--nw-label); letter-spacing: 0.08em; text-transform: uppercase;
 }
+
+/* ---- a story's photo (app/news.js Photo): the lead's under its headline and the deck's over it, the column's width
+   with the credit under it; a row's a thumbnail on its right; a film's poster upright and narrower. A read story's in
+   grey ---- */
+.nw-paper .nw-fig { margin: 0; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.nw-paper .nw-fig a { display: block; }
+.nw-paper .nw-fig img { display: block; width: 100%; height: auto; background: var(--pp-2); filter: saturate(0.92) contrast(1.02); transition: filter 0.3s; }
+.nw-paper .nw-fig figcaption { font: 600 9.5px var(--nw-label); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); text-align: right; }
+.nw-paper .nw-fig.is-lead { margin: 8px 0 2px; }
+.nw-paper .nw-fig.is-deck { margin-bottom: 4px; }
+.nw-paper .nw-fig.is-tall:not(.is-row) { width: min(100%, 15rem); }
+.nw-paper .nw-story.is-read .nw-fig img { filter: grayscale(1); }
+.nw-paper .nw-story.is-row.has-photo { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 14px; row-gap: 6px; align-items: start; }
+.nw-paper .nw-story.is-row.has-photo > * { grid-column: 1; }
+.nw-paper .nw-story.is-row.has-photo > .nw-fig { grid-column: 2; grid-row: 1 / span 3; }
+.nw-paper .nw-story.is-row.has-photo > .nw-meta { grid-column: 1 / -1; }
+.nw-paper .nw-fig.is-row img { width: 96px; height: 64px; object-fit: cover; }
+.nw-paper .nw-fig.is-row.is-tall img { width: 60px; height: 90px; }
+@media (min-width: 640px) {
+  .nw-paper .nw-fig.is-row img { width: 132px; height: 88px; }
+  .nw-paper .nw-fig.is-row.is-tall img { width: 72px; height: 108px; }
+}
