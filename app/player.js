@@ -38,6 +38,11 @@ const FADE_IN = 600
 // station says paused / stopped (it may be the moment before autoplay's next pick); then the element lets go
 const GAP_HOLD_MS = 120_000
 const GAP_SHORT_MS = 30_000
+// a broken stream: tries again after 1.5 s, 3 s, … (at most RETRY_MAX_MS apart); gives up after RETRIES on screen, or
+// RETRIES_HIDDEN (about a minute and a half) while the phone is locked
+const RETRIES = 4
+const RETRIES_HIDDEN = 12
+const RETRY_MAX_MS = 10_000
 const CONFIRM_MS = 15_000 // an owner's button gives up spinning after this
 const TOKEN_DEAD = ['invalid_token', 'token_revoked', 'token_expired', 'owner_gone']
 
@@ -258,13 +263,14 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   const [note, setNote] = useState(null)
   const [fixedVolume, setFixedVolume] = useState(false)
   const audio = useRef(null)
-  const m = useRef({ want: false, id: null, ticket: null, pending: null, stream: null, haltAt: 0, tries: 0, renew: 0, retry: 0, ended: 0, hold: 0, ramp: 0, level: 50, gain: 1, fixed: false }).current
+  const m = useRef({ want: false, id: null, ticket: null, pending: null, stream: null, haltAt: 0, tries: 0, renew: 0, retry: 0, retrying: false, ended: 0, hold: 0, ramp: 0, level: 50, gain: 1, fixed: false }).current
   const live = useRef({})
   live.current = { tv, owner, onListen }
   const fn = useRef({})
   // the Media Session handlers while this tab listens (claimed from the radio in listen())
   // (play / pause follow the one button's rule: for the owner they also resume / pause the station)
-  const media = useRef({ play: () => m.want || fn.current.press(), pause: () => m.want && fn.current.press(), stop: () => fn.current.stop() }).current
+  // (▶ while still listening: nothing may be coming out, so it joins again: kick)
+  const media = useRef({ play: () => (m.want ? fn.current.kick() : fn.current.press()), pause: () => m.want && fn.current.press(), stop: () => fn.current.stop() }).current
 
   const apply = () => {
     if (audio.current) audio.current.volume = m.fixed ? 1 : Math.max(0, Math.min(1, (m.level / 100) * m.gain))
@@ -303,10 +309,25 @@ export function usePlayerAudio(tv, { owner, onListen }) {
       m.haltAt = Date.now() // (the stream's 'pause' from the swap is ours)
       a.loop = true
       a.src = silentWav()
-      a.play().catch(() => {})
     }
+    if (a.paused) a.play().catch(() => {}) // (also silence that iOS paused, e.g. a call or another app's sound)
     clearTimeout(m.hold)
     m.hold = setTimeout(() => m.want && audio.current?.getAttribute('src')?.startsWith('data:') && halt(), ms)
+  }
+  // still listening but no song is coming out (a dropped stream, a retry iOS froze, silence it paused): join the
+  // station again now. From ▶ on the lock screen (inside it: play() is allowed there) or the page showing again.
+  function kick() {
+    if (!m.want) return
+    const a = audio.current
+    const src = a.getAttribute('src')
+    if (src && !src.startsWith('data:') && !a.paused) return // a song plays
+    clearTimeout(m.retry)
+    clearTimeout(m.ended)
+    m.retrying = false
+    m.tries = 0
+    m.stream = null
+    hold()
+    sync()
   }
   const now = () => Date.now() + (live.current.tv.offset || 0) // Tavarian's clock, about
 
@@ -380,19 +401,26 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   }
   // the stream broke: try again soon (a fresh ticket from the second try), give up after a few
   function retry() {
-    if (!m.want) return
-    clearTimeout(m.retry)
+    // (one break is one try: the element's 'error' and the rejected play() both report the same one)
+    if (!m.want || m.retrying) return
+    m.retrying = true
     m.tries++
-    if (m.tries > 4) return setNote("Can't play the home station right now"), stop()
+    // locked (hidden): keep trying longer (a phone between networks, a lift); on screen, give up sooner and say so
+    if (m.tries > (document.visibilityState === 'hidden' ? RETRIES_HIDDEN : RETRIES)) return setNote("Can't play the home station right now"), stop()
     setPhase('connecting')
+    // silence at once, not after the wait: a locked iPhone freezes a page whose audio stopped, so the wait's timer
+    // would never fire (the song stopped mid-way until the phone was unlocked)
+    m.stream = null
+    hold()
     m.retry = setTimeout(async () => {
+      m.retrying = false
       if (!m.want) return
       if (m.tries >= 2 && !(m.ticket && now() - m.ticket.at < 30_000)) await getTicket(true)
       if (!m.want) return
-      m.stream = null // (silence while it joins again, so a locked phone keeps playing: hold)
+      m.stream = null
       hold()
       sync()
-    }, 1500 * m.tries)
+    }, Math.min(1500 * m.tries, RETRY_MAX_MS))
   }
 
   function listen() {
@@ -419,6 +447,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   function stop() {
     m.want = false
     clearTimeout(m.retry)
+    m.retrying = false
     clearTimeout(m.renew)
     setListening(false)
     setPhase('off')
@@ -435,7 +464,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     if (owner && a.posts) (act ?? ((k) => tavarianPost({ action: k }).then((r) => r.ok && live.current.tv.takeState(r.data.state))))(a.kind)
     return a.kind
   }
-  fn.current = { sync, retry, stop, listen, press }
+  fn.current = { sync, retry, stop, listen, press, kick }
 
   useEffect(() => {
     m.id = newClientId()
@@ -448,6 +477,8 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     a.addEventListener('playing', () => {
       if (!ours()) return
       m.tries = 0
+      clearTimeout(m.retry) // (a song came on during a retry's wait, from a state event: nothing to try again)
+      m.retrying = false
       setPhase('playing')
       setNote(null)
       fadeIn()
@@ -474,10 +505,14 @@ export function usePlayerAudio(tv, { owner, onListen }) {
     })
     // paused from outside (headphones unplugged, the phone's lock screen): that's stop listening
     a.addEventListener('pause', () => Date.now() - m.haltAt > 1000 && ours() && !a.ended && fn.current.stop())
+    // back on screen (unlocked) while listening and nothing plays: join again at once
+    const onVis = () => document.visibilityState === 'visible' && fn.current.kick()
+    document.addEventListener('visibilitychange', onVis)
     return () => {
       clearTimeout(m.retry)
       clearTimeout(m.renew)
       clearTimeout(m.ended)
+      document.removeEventListener('visibilitychange', onVis)
       clearTimeout(m.hold)
       clearInterval(m.ramp)
       a.pause()
