@@ -511,6 +511,11 @@ edition's, its overview covering the day so far), then one per section (its name
 rest in two columns on a desktop, each with its category, importance dots, source, how long ago, Hacker News points
 and comments, ▾ for the key points; category chips to narrow it, *Next* at the bottom). Swipe between pages on a
 phone; on a desktop ← → change pages, j / k move between stories, m marks one read or unread.
+**Photos** (the agent's schema 1.6, `item.image`): the lead's under its headline and the next two's over theirs, each
+with its credit; the rest a thumbnail on the right; a film's poster stays upright; a read story's photo turns grey. A
+newer edition without a story's photo keeps the earlier one's; older editions (no `image`) just have none. The browser
+gets them from this server (`GET /api/private/settings/news/image?f=<name>`, owner-only: the agent's `images/<name>`,
+an image type only, 3 MB at most, kept privately a week), since a phone out of the house can't reach the agent.
 A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
 read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
 days in the menu at the top. Also in ⌘K (*Open news*).
