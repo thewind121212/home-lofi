@@ -24,7 +24,7 @@ import { Component, useEffect, useRef, useState } from 'react'
 import { ArrowRight, ArrowUp, Check, ChevronDown, Clapperboard, Clock, Maximize2, MessageSquare, Minimize2, Newspaper, Pin, RefreshCw, Tv, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, motionOff, useStillPage } from './settings'
-import { CATEGORIES, ago, dayName, editionLine, folio, inCinemas, longDay, paperName, runGoing, waitFor } from '../lib/news'
+import { CATEGORIES, ago, dayName, editionLine, PAPER, editionName, folio, inCinemas, longDay, runGoing, waitFor } from '../lib/news'
 import { paperFonts } from './news-fonts'
 import { privateAnswer } from '../lib/private-poll'
 import { reportError } from './report-error'
@@ -527,7 +527,7 @@ function NewsBody({ nw, pn, dlg, tab, setTab, full, onSize, onClose }) {
   const notes = nw.error || nw.data.stale || nw.refresh.can
   return (
     <section aria-labelledby="nw-title" className={`nw${folded ? ' is-folded' : ''}`} onKeyDown={onKey}>
-      {/* the masthead: the folio and the tools, the paper's name, the dateline (the day, its editions, what's left) */}
+      {/* the masthead: the folio and the tools, the paper's name, the dateline (the day, which edition and how many, what's left) */}
       <header ref={head} className="nw-head nw-mast">
         <span className="nw-grip" aria-hidden="true" />
         <div className="nw-strip">
@@ -544,13 +544,13 @@ function NewsBody({ nw, pn, dlg, tab, setTab, full, onSize, onClose }) {
         </div>
         <div className="nw-title">
           <div className="nw-title-in">
-            <h2 id="nw-title" className="nw-flag">{paperName(digest, TZ)}</h2>
+            <h2 id="nw-title" className="nw-flag">{PAPER}</h2>
             <p className="nw-slogan" aria-hidden="true">“All the news that fits between songs.”</p>
           </div>
         </div>
         <div className="nw-dateline">
           <span className="nw-date">{longDay(nw.data.day) ?? ''}</span>
-          <span className="nw-sub-ed">{digest.updates > 1 ? `${digest.updates} updates` : editionLine(digest, now, TZ)}</span>
+          <span className="nw-sub-ed">{editionName(digest, TZ)} · {digest.updates > 1 ? `${digest.updates} updates` : editionLine(digest, now, TZ).split(' · ').pop()}</span>
           <span className="nw-sub">{total ? (unread ? `${unread} unread` : 'all read') : ''}</span>
         </div>
       </header>
