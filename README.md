@@ -497,7 +497,8 @@ The digest a news agent on another machine writes (Vietnam and tech, summarised 
 newspaper** (the look of [ThariqS/ai-newtab](https://github.com/ThariqS/ai-newtab)): cream paper, serif headlines
 (Libre Bodoni, Newsreader and Libre Franklin, all with Vietnamese, loaded only when it opens), hairline rules and
 columns, one red. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens
-it: a **bottom sheet** on phones (drag its top down to close), a centered panel on tablets, a wide one on desktops.
+it over the **whole window** (100% wide and high, not the browser's full screen; ✕, Esc or, on a phone, a drag of
+its top down close it). On tablets and desktops the ⤡ button by ✕ makes it a panel again (⤢ back), remembered per device.
 On top, a **masthead**: the folio (*Vol. I · No. 295*: the year and the day of the year), the paper's name by the time
 of the newest edition (*The Morning / Afternoon / Evening Lofi*), the dateline (the day, its editions, what's unread);
 the name folds away while you scroll down a page. It shows **a whole day** (the agent's clock): every edition of it
