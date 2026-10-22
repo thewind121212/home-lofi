@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { LEVEL_LOOK, NO_PENDING, TOAST_MAX, TOAST_MS, ago, alive, byDay, left, look, maxId, settle, sticky, toastsFor, unreadOf } from '../lib/notify'
-import { closeDialog, useStillPage } from './settings'
+import { closeDialog, motionOff, useStillPage } from './settings'
 import { useFlip } from './flip'
 import { flipSig } from '../lib/flip'
 import { PushControl } from './push'
@@ -506,39 +506,147 @@ export function SaverNote({ note, now, pill = false }) {
 
 // The lock screen: the newest few unread as small cards above the music (title, source, time; the body only when
 // Settings › Lock screen = Full), then "+N more". 'count', and short screens (a landscape phone): one pill with the
-// count. Not buttons: a swipe over them still unlocks. notes: lib/notify.js lockNotes()
-export function LockNotices({ notes, now }) {
+// count. Not buttons: an upward swipe over them still unlocks. A sideways one (Swipe) throws a card off = dismissed
+// (gone here, from the inbox and from every device, like ✕ there), or the pill = everything read (the stack leaves
+// every lock screen; the inbox keeps them all). Changes from another device move the same way: a dismissed card fades
+// and the rest glide up (useFlip), a stack read elsewhere fades out (it stays on screen a moment for that).
+// notes: lib/notify.js lockNotes() | null; onDismiss(id), onSeen(): the hub's dismiss / markAllRead
+const LEAVE_STACK_MS = 260
+export function LockNotices({ notes, now, onDismiss, onSeen }) {
   const t = now ?? Date.now()
-  const pill = (n, more) => (
-    <div className="glass-panel h-9 px-3.5 rounded-full flex items-center gap-2 font-mono text-xs text-white">
+  // the last stack shown, kept while it fades out (read everywhere: notes became null)
+  const [last, setLast] = useState(notes)
+  const leaving = !notes && Boolean(last)
+  useEffect(() => {
+    if (notes) return void setLast(notes)
+    if (!last) return
+    const id = setTimeout(() => setLast(null), reduced() ? 0 : LEAVE_STACK_MS)
+    return () => clearTimeout(id)
+  }, [notes])
+  const n = notes ?? last
+  const rows = useRef(null)
+  useFlip(rows, flipSig([...(n?.show ?? []).map((i) => i.id), n?.more > 0 ? '~more' : '']))
+  if (!n) return null
+  const pill = (count, more) => (
+    <Swipe onGone={onSeen} label="Swipe sideways to mark them all read" className="glass-panel h-9 px-3.5 rounded-full flex items-center gap-2 font-mono text-xs text-white">
       <i className="fa-solid fa-bell text-lofi-primary text-[11px]" aria-hidden="true" />
-      {more ? `+${n} more` : `${n} new notification${n === 1 ? '' : 's'}`}
-    </div>
+      {more ? `+${count} more` : `${count} new notification${count === 1 ? '' : 's'}`}
+    </Swipe>
   )
   return (
-    <div role="group" aria-label="Notifications" className="flex flex-col items-center gap-2 w-[min(22rem,calc(100vw-2rem))]">
-      {notes.show.length > 0 && (
+    <div
+      role="group"
+      aria-label="Notifications"
+      className={`flex flex-col items-center gap-2 w-[min(22rem,calc(100vw-2rem))] transition-[opacity,translate,scale] duration-[260ms] ease-in ${leaving ? 'opacity-0 translate-y-2 scale-[0.98]' : ''}`}
+    >
+      {n.show.length > 0 && (
         <>
-          <ul className="short:hidden w-full flex flex-col gap-2">
-            {notes.show.map((i) => (
-              <li key={i.id} className="glass-panel rounded-2xl px-3 py-2.5 flex items-start gap-3 text-left motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]">
-                <NoticeIcon item={i} className="w-8 h-8 text-xs" />
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-baseline gap-2 min-w-0">
-                    <span className="min-w-0 truncate text-sm text-white">{i.title}</span>
-                    <span className="ml-auto shrink-0 text-[10px] font-mono text-lofi-muted">{ago(i.at, t)}</span>
-                  </p>
-                  {i.source && <p className="text-[10px] font-mono text-lofi-muted truncate">{i.source}</p>}
-                  {notes.details && i.body && <p className="mt-0.5 text-xs text-lofi-text/80 line-clamp-2 whitespace-pre-line wrap-break-word">{i.body}</p>}
-                </div>
-              </li>
-            ))}
-          </ul>
-          {notes.more > 0 && <div className="short:hidden">{pill(notes.more, true)}</div>}
-          <div className="hidden short:block">{pill(notes.total)}</div>
+          <div ref={rows} className="short:hidden relative w-full flex flex-col items-center gap-2">
+            <ul className="w-full flex flex-col gap-2">
+              {n.show.map((i) => (
+                <Swipe
+                  key={i.id}
+                  as="li"
+                  flipKey={i.id}
+                  onGone={() => onDismiss(i.id)}
+                  label="Swipe sideways to dismiss"
+                  className="glass-panel rounded-2xl px-3 py-2.5 flex items-start gap-3 text-left motion-safe:animate-[panel-in_0.35s_cubic-bezier(0.2,0.8,0.2,1)]"
+                >
+                  <NoticeIcon item={i} className="w-8 h-8 text-xs" />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-baseline gap-2 min-w-0">
+                      <span className="min-w-0 truncate text-sm text-white">{i.title}</span>
+                      <span className="ml-auto shrink-0 text-[10px] font-mono text-lofi-muted">{ago(i.at, t)}</span>
+                    </p>
+                    {i.source && <p className="text-[10px] font-mono text-lofi-muted truncate">{i.source}</p>}
+                    {n.details && i.body && <p className="mt-0.5 text-xs text-lofi-text/80 line-clamp-2 whitespace-pre-line wrap-break-word">{i.body}</p>}
+                  </div>
+                </Swipe>
+              ))}
+            </ul>
+            {n.more > 0 && <div data-flip-key="~more">{pill(n.more, true)}</div>}
+          </div>
+          <div className="hidden short:block">{pill(n.total)}</div>
         </>
       )}
-      {!notes.show.length && pill(notes.total)}
+      {!n.show.length && pill(n.total)}
     </div>
+  )
+}
+
+const reduced = () => motionOff() || matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+// A card (or the pill) a finger or the mouse can throw sideways. Which way the press goes is settled in its first 8 px:
+// sideways is ours (the lock's unlock never sees it), up stays the unlock swipe, a tap does nothing. Past a third of
+// its width, or flicked, it flies off that way and onGone() runs; less, it springs back. Its flip key comes off before
+// onGone, so the list's glide (useFlip) leaves no fading copy of a card that has already flown away; the rest glide up.
+const SLOP = 8
+const FLY_MS = 200
+function Swipe({ onGone, label, className, children, as: Tag = 'div', flipKey }) {
+  const el = useRef(null)
+  const g = useRef(null) // the press: { id, x, y, last: [x, t], v, mine }
+  const [dx, setDx] = useState(0)
+  const [mode, setMode] = useState('rest') // rest | drag | out
+  const down = (e) => {
+    if (mode === 'out' || (e.pointerType === 'mouse' && e.button !== 0)) return
+    g.current = { id: e.pointerId, x: e.clientX, y: e.clientY, last: [e.clientX, e.timeStamp], v: 0, mine: false }
+  }
+  const move = (e) => {
+    const p = g.current
+    if (!p || p.id !== e.pointerId) return
+    const x = e.clientX - p.x
+    const y = e.clientY - p.y
+    if (!p.mine) {
+      if (Math.abs(x) < SLOP || Math.abs(x) <= Math.abs(y)) {
+        if (Math.abs(y) >= SLOP) g.current = null // up / down first: the lock screen's
+        return
+      }
+      p.mine = true
+      el.current?.setPointerCapture?.(e.pointerId)
+      setMode('drag')
+    }
+    e.stopPropagation()
+    const dt = e.timeStamp - p.last[1]
+    if (dt > 0) p.v = (e.clientX - p.last[0]) / dt // px / ms
+    p.last = [e.clientX, e.timeStamp]
+    setDx(x)
+  }
+  const up = (e) => {
+    const p = g.current
+    if (!p || p.id !== e.pointerId) return
+    g.current = null
+    if (!p.mine) return
+    e.stopPropagation()
+    const x = e.clientX - p.x
+    const w = el.current?.offsetWidth || 300
+    const flick = Math.abs(p.v) > 0.5 && e.timeStamp - p.last[1] < 120 && Math.abs(x) > 30
+    if (Math.abs(x) < w / 3 && !flick) return setMode('rest'), setDx(0)
+    const dir = Math.sign(flick ? p.v : x) || 1
+    const gone = () => (el.current?.removeAttribute('data-flip-key'), onGone())
+    if (reduced()) return gone()
+    setMode('out')
+    setDx(dir * (w + 48))
+    setTimeout(gone, FLY_MS)
+  }
+  const cancel = () => g.current?.mine && ((g.current = null), setMode('rest'), setDx(0))
+  const w = el.current?.offsetWidth || 300
+  return (
+    <Tag
+      ref={el}
+      data-flip-key={flipKey}
+      aria-description={label}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={cancel}
+      className={`${className} ${mode === 'drag' ? 'cursor-grabbing' : ''}`}
+      style={{
+        transform: dx ? `translateX(${dx}px)` : undefined,
+        opacity: mode === 'out' ? 0 : dx ? 1 - Math.min(1, Math.abs(dx) / w) * 0.7 : undefined,
+        transition: mode === 'drag' ? 'none' : `transform ${FLY_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity ${FLY_MS}ms ease-out`,
+      }}
+    >
+      {children}
+    </Tag>
   )
 }
