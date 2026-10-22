@@ -601,9 +601,12 @@ browser <──────────── audio, with a 10-minute ticket ─
 - The tab (`app/player.js`, pure helpers in `lib/player.js`): one `EventSource` while the page shows (or this tab
   listens); if it can't stay open (errors, 429) it polls `/api/tavarian/state` every 5 s and tries the stream again
   every 30 s. Listen gets one ticket per tab (a random `clientId` per page load), a new one a minute before it ends
-  and only while listening; a new `streamId` (song change, seek, resume) swaps the audio source, paused / loading /
-  idle lets it go and it comes back by itself; a broken stream is retried a few times (with a fresh ticket from the
-  second try).
+  and only while listening. **Continuous listening** (a Tavarian that sends `linkId`): one connection
+  (`streamUrl?linkId=…`) plays song after song, with Tavarian's own silence while the next one loads, so a phone's
+  audio never stops between songs; a cut (skip, seek, previous, play now, pause) moves the link on, Tavarian closes the
+  connection and the page joins the new link at once (the jump is heard right away). An older Tavarian: a new
+  `streamId` (song change, seek, resume) swaps the audio source. Paused / idle lets it go and it comes back by itself;
+  a broken stream is retried a few times (with a fresh ticket from the second try).
 
 Routes:
 
@@ -611,7 +614,7 @@ Routes:
 | --- | --- | --- |
 | `GET /api/tavarian/events` | public | Server-Sent Events: `status`, `state`, `queue`, `audio-ready`, `song-error`, `revoked`; status, state and queue right away, `: ping` every 20 s. 4 open per IP (429), 503 `tavarian_off` when not set up |
 | `GET /api/tavarian/state` | public | `{ state, queue, live }` for the first paint and as the fallback when the stream can't stay open |
-| `POST /api/tavarian/ticket` | public, same-origin JSON | `{ clientId }` → `{ ticket, expiresAt, streamUrl }`; audio: `streamUrl?streamId=…&clientId=…&ticket=…`. 10 a minute per IP |
+| `POST /api/tavarian/ticket` | public, same-origin JSON | `{ clientId }` → `{ ticket, expiresAt, streamUrl }`; audio: `streamUrl?linkId=…&clientId=…&ticket=…` (continuous) or `?streamId=…` (one song). 10 a minute per IP |
 | `POST /api/private/settings/tavarian` | owner | `{ action, … }`: `add` (`youtubeUrl`, `placement`: `end` / `next` / `now`), `import` (`url`, `placement`), `play-now` / `next` (`id`), `remove`, `remove-bulk` (`ids`: 1-200 song ids → `removed`, `skipped`, `queue`), `clear` (`includeCurrent`), `reorder`, `search`, `play` / `pause` / `resume` / `skip` / `stop`, `seek`, `playlists`, `playlist-songs`, `from-playlist`, `token`, `revoke` |
 
 The owner route sits in the owner-only proxy location of [Settings sync](#settings-sync-owner-only), like Spotify's

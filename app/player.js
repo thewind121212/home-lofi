@@ -4,10 +4,13 @@
 // - useTavarian(): the live state and queue from /api/tavarian/events (EventSource), polling /api/tavarian/state
 //   every 5 s when the stream can't stay open (and trying the stream again every 30 s).
 // - usePlayerAudio(): one <audio> element. Listen gets a 10-minute ticket (a new one a minute before it ends, only
-//   while listening) and plays Tavarian's audio straight from Tavarian; a new streamId (song change, seek, resume)
-//   swaps the source; between songs (a stream ended, loading, a short paused / idle) the element loops silence so a
-//   locked iPhone keeps the page running and the next song can start, and lets go if nothing comes; it comes back by
-//   itself when the station plays again (if this tab still listens). Volume and mute follow the radio's (Music passes them in).
+//   while listening) and plays Tavarian's audio straight from Tavarian. Continuous (Tavarian sends a linkId): one
+//   connection plays song after song, Tavarian's own silence between them; a cut (skip, seek, previous, pause…) moves
+//   the link on and the element joins the new one at once (lib/player.js streamPlan). An older Tavarian: a new
+//   streamId (song change, seek, resume) swaps the source. Whenever no stream plays (one ended, a cut, loading, a
+//   short paused / idle) the element loops silence so a locked iPhone keeps the page running and the next song can
+//   start, and lets go if nothing comes; it comes back by itself when the station plays again (if this tab still
+//   listens). Volume and mute follow the radio's (Music passes them in).
 // - PlayerPanel (the tab), PlayerSheet (a <dialog> like Settings: queue, recent, and for the owner: Add — Search or
 //   link · Import playlist —, playlists, the Tavarian link) and PlayerMini (ambient bar and lock screen). Guests listen and watch; the owner's
 //   buttons post to /api/private/settings/tavarian, lock while it's in flight and spin until a state shows the change.
@@ -18,7 +21,7 @@
 // - The lists (the sheet's Now + Up next, Recent, the card's Up next) glide when they change: useFlip() (app/flip.js).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
-  allPicked, audioUrl, autoplayPicks, autoplayText, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
+  allPicked, audioUrl, streamPlan, autoplayPicks, autoplayText, mainAction, classifyLink, clockOffset, confirms, fullTitle, gapAt, gapIndex, importSummary, insertAt, mmss, moveId, moveTo, newClientId, overflows, pickedIds, pickedText,
   placedText, placementIcon, placementLabel, plain, positionAt, reasonText, remapOrder, renewIn, restoreOrder, sameOrder, bulkRemovedLine, songErrorText, sourceLabel, statusInfo, cardList,
   songLink, thumbOf, ticketOk, toggleIn, transitionLine, undoPlan, videoUrl,
 } from '../lib/player'
@@ -206,7 +209,7 @@ export function useTavarian({ keep = false } = {}) {
         put((p) =>
           p.state
             ? {
-                state: { ...p.state, streamId: v.streamId ?? p.state.streamId, startedAtMs: v.startedAtMs ?? p.state.startedAtMs, serverNowMs: v.serverNowMs ?? p.state.serverNowMs, status: p.state.status === 'loading' ? 'playing' : p.state.status },
+                state: { ...p.state, streamId: v.streamId ?? p.state.streamId, linkId: v.linkId ?? p.state.linkId ?? null, startedAtMs: v.startedAtMs ?? p.state.startedAtMs, serverNowMs: v.serverNowMs ?? p.state.serverNowMs, status: p.state.status === 'loading' ? 'playing' : p.state.status },
                 offset: clockOffset(v.serverNowMs),
               }
             : {},
@@ -263,7 +266,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   const [note, setNote] = useState(null)
   const [fixedVolume, setFixedVolume] = useState(false)
   const audio = useRef(null)
-  const m = useRef({ want: false, id: null, ticket: null, pending: null, stream: null, haltAt: 0, tries: 0, renew: 0, retry: 0, retrying: false, ended: 0, hold: 0, ramp: 0, level: 50, gain: 1, fixed: false }).current
+  const m = useRef({ want: false, id: null, ticket: null, pending: null, stream: null, haltAt: 0, tries: 0, renew: 0, retry: 0, retrying: false, ended: 0, hold: 0, linked: false, ramp: 0, level: 50, gain: 1, fixed: false }).current
   const live = useRef({})
   live.current = { tv, owner, onListen }
   const fn = useRef({})
@@ -368,32 +371,39 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   }
 
   // put the element on what the station plays now (or let it go while it doesn't)
+  // follow the station (lib/player.js streamPlan): continuous, one connection on the station's link for song after
+  // song (Tavarian's silence between them), joined again after a cut; or one stream per song (an older Tavarian)
   async function sync() {
     if (!m.want) return
-    const s = live.current.tv.state
-    if (!(s?.status === 'playing' && s.streamId)) {
+    const a = audio.current
+    // (on: what the element is on, its silence included: a stream that just ended waits for what comes next, 'ended')
+    const plan = () => streamPlan(live.current.tv.state, { on: a.getAttribute('src') ? m.stream : null, linked: m.linked })
+    const p = plan()
+    if (p.act === 'keep') return
+    if (p.act !== 'join') {
       // that stream is done: silence until the next song (hold), not a stop (not the silent unlock of a tap, which
       // already loops until the stream comes)
-      if (m.stream) (m.stream = null), hold(s?.status === 'loading' ? GAP_HOLD_MS : GAP_SHORT_MS)
+      const s = live.current.tv.state
+      if (m.stream) (m.stream = null), hold(p.act === 'wait' ? GAP_HOLD_MS : GAP_SHORT_MS)
+      if (p.act === 'off') m.linked = false
       setPhase(live.current.tv.revoked || live.current.tv.off ? 'off' : s?.status === 'loading' ? 'connecting' : 'waiting')
       return
     }
-    const a = audio.current
-    if (m.stream === s.streamId && a.getAttribute('src')) return // already on it
     setPhase('connecting')
     // no await when the ticket is still good: play() stays inside the tap that called listen() (iOS)
     const t = ticketOk(m.ticket, now()) ? m.ticket : await getTicket()
-    const s2 = live.current.tv.state
-    if (!t || !m.want || !(s2?.status === 'playing' && s2.streamId) || (m.stream === s2.streamId && a.getAttribute('src'))) return
+    const p2 = plan()
+    if (!t || !m.want || p2.act !== 'join') return
     clearTimeout(m.ended)
     clearTimeout(m.hold)
     clearInterval(m.ramp)
-    m.stream = s2.streamId
+    m.stream = p2.key
+    m.linked = Boolean(p2.which.linkId)
     m.gain = 0
     apply()
     m.haltAt = Date.now() // a 'pause' from swapping the source is ours too
     a.loop = false // (the silence that held the phone's audio while it waited, listen())
-    a.src = audioUrl(t.streamUrl, s2.streamId, m.id, t.ticket)
+    a.src = audioUrl(t.streamUrl, p2.which, m.id, t.ticket)
     a.play().catch((e) => {
       if (e?.name === 'NotAllowedError') return setNote('Tap Listen to start'), fn.current.stop()
       if (e?.name !== 'AbortError') fn.current.retry()
@@ -446,6 +456,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   }
   function stop() {
     m.want = false
+    m.linked = false
     clearTimeout(m.retry)
     m.retrying = false
     clearTimeout(m.renew)
@@ -490,8 +501,9 @@ export function usePlayerAudio(tv, { owner, onListen }) {
       const id = m.stream
       ours() && setTimeout(() => ours() && m.stream === id && (a.paused || a.readyState < 3) && fn.current.retry(), 4000)
     })
-    // this song's stream ran out: the next one's comes with a new streamId (silence meanwhile, so a locked phone keeps
-    // the page playing: hold); if none comes, join again
+    // the stream ran out (silence meanwhile, so a locked phone keeps the page playing: hold). One song's: the next
+    // one's comes with a new streamId. The link's (continuous): Tavarian closed it for a cut, and the new link comes
+    // in the state a moment later (sync joins it). Either way, if nothing new comes, it broke: join again
     a.addEventListener('ended', () => {
       if (!ours()) return
       const id = m.stream
@@ -499,9 +511,8 @@ export function usePlayerAudio(tv, { owner, onListen }) {
       setPhase('connecting')
       clearTimeout(m.ended)
       m.ended = setTimeout(() => {
-        const s = live.current.tv.state
-        if (m.want && m.stream === id && s?.status === 'playing' && s.streamId === id) fn.current.retry()
-      }, 5000)
+        if (m.want && m.stream === id && streamPlan(live.current.tv.state, { on: id, linked: true }).act === 'keep') fn.current.retry()
+      }, id.startsWith('link:') ? 2000 : 5000)
     })
     // paused from outside (headphones unplugged, the phone's lock screen): that's stop listening
     a.addEventListener('pause', () => Date.now() - m.haltAt > 1000 && ours() && !a.ended && fn.current.stop())
@@ -524,7 +535,7 @@ export function usePlayerAudio(tv, { owner, onListen }) {
   const st = tv.state
   useEffect(() => {
     if (listening) fn.current.sync()
-  }, [listening, st?.status, st?.streamId])
+  }, [listening, st?.status, st?.streamId, st?.linkId])
   // gone for good (revoked / not set up): stop
   useEffect(() => {
     if ((tv.revoked || tv.off) && m.want) setNote(tv.off ? 'The player is not set up' : 'The player was disconnected'), stop()
