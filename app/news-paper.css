@@ -26,6 +26,16 @@
 @media (min-width: 640px) { .nw-modal.nw-paper { border-radius: 10px; } }
 @media (max-width: 639px) { .nw-modal.nw-paper { border-radius: 16px 16px 0 0; } }
 @media (min-width: 1024px) { .nw-modal.nw-paper { max-width: 76rem; height: min(94svh, 60rem); } }
+/* the whole window (app/news.js full; phones always): 100% × 100%, square corners; the paper's columns kept to a
+   readable width in the middle of it */
+.nw-modal.nw-paper.is-full { inset: 0; width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; box-shadow: none; }
+@media (max-width: 639px) {
+  .nw-modal.nw-paper { inset: 0; width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  .nw-paper .nw-mast { padding-top: calc(22px + env(safe-area-inset-top)); }
+  .nw-paper .nw-grip { top: calc(9px + env(safe-area-inset-top)); }
+  .nw-paper .nw-size { display: none; } /* (phones: the whole window only) */
+}
+.nw-paper.is-full .nw { max-width: 96rem; margin-inline: auto; }
 .nw-paper ::selection { background: rgb(168 56 42 / 0.2); color: var(--ink); }
 
 /* ---- the masthead ---- */

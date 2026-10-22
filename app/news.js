@@ -21,7 +21,7 @@
 import './news.css'
 import './news-paper.css'
 import { Component, useEffect, useRef, useState } from 'react'
-import { ArrowRight, ArrowUp, Check, ChevronDown, Clapperboard, Clock, MessageSquare, Newspaper, Pin, RefreshCw, Tv, X } from 'lucide-react'
+import { ArrowRight, ArrowUp, Check, ChevronDown, Clapperboard, Clock, Maximize2, MessageSquare, Minimize2, Newspaper, Pin, RefreshCw, Tv, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, motionOff, useStillPage } from './settings'
 import { CATEGORIES, ago, dayName, editionLine, folio, inCinemas, longDay, paperName, runGoing, waitFor } from '../lib/news'
@@ -35,6 +35,7 @@ const REFRESH = 10 * 60_000
 const POLL = 8000 // a run going: asked this often
 const FAILED_FOR = 30 * 60_000 // a run that failed: said for this long
 const TZ = 'Asia/Ho_Chi_Minh' // (the agent's editions are this home's mornings and evenings)
+const FULL_KEY = 'home-lofi:news-full' // this device's choice: the paper over the whole window ('1', the default) or a panel ('0')
 
 // ---- state: the server's, the page only draws it ----
 
@@ -255,6 +256,20 @@ export function NewsModal({ nw, pn, dlg }) {
   // the page shown: 'top' or a section's key (kept across editions and openings: a sheet dragged shut by mistake opens
   // where it was)
   const [tab, setTab] = useState('top')
+  // the whole window (100% × 100%, not the browser's full screen: ✕ / Esc / a drag down close it as ever), or the
+  // panel it was; phones are always the whole window. Kept per device
+  const [full, setFull] = useState(true)
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(FULL_KEY) === '0') setFull(false)
+    } catch {}
+  }, [])
+  const size = (on) => {
+    setFull(on)
+    try {
+      localStorage.setItem(FULL_KEY, on ? '1' : '0')
+    } catch {}
+  }
   useStillPage(dlg, open)
   useEffect(() => {
     const d = dlg.current
@@ -283,11 +298,11 @@ export function NewsModal({ nw, pn, dlg }) {
       onClick={(e) => e.target === dlg.current && close()}
       onCancel={(e) => (e.preventDefault(), close())}
       onClose={() => (delete dlg.current.dataset.closing, nw.reset())}
-      className={`wx-sheet nw-modal nw-paper ${paperFonts}`}
+      className={`wx-sheet nw-modal nw-paper${full ? ' is-full' : ''} ${paperFonts}`}
     >
       {nw.on && (
         <NewsCatch key={nw.data.day} nw={view} onClose={close}>
-          <NewsBody nw={view} pn={pn} dlg={dlg} tab={tab} setTab={setTab} onClose={close} />
+          <NewsBody nw={view} pn={pn} dlg={dlg} tab={tab} setTab={setTab} full={full} onSize={size} onClose={close} />
         </NewsCatch>
       )}
     </dialog>
@@ -388,7 +403,7 @@ const FOLD = 64 // px down a page: the masthead folds
 // The edition as pages, side by side: the front page, then one per section. The section bar under the masthead and a
 // swipe both move between them; each page scrolls on its own, so a section is a short read, not a long scroll past the others.
 // Keys (from lg, focus in the modal): ← → the pages, j / k the stories, m read / unread
-function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
+function NewsBody({ nw, pn, dlg, tab, setTab, full, onSize, onClose }) {
   const { digest, days } = nw.data
   const now = Date.now()
   const head = useRef(null)
@@ -521,7 +536,10 @@ function NewsBody({ nw, pn, dlg, tab, setTab, onClose }) {
           <div className="nw-tools">
             {nw.refresh.can && <RefreshButton nw={nw} />}
             {days.length > 0 && <DayMenu nw={nw} days={days} now={now} />}
-            <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
+            <button type="button" className="hb-iconbtn nw-size" aria-pressed={full} aria-label={full ? 'Smaller: a panel' : 'Whole window'} title={full ? 'Smaller' : 'Whole window'} onClick={() => onSize(!full)}>
+              {full ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}
+            </button>
+            <button type="button" className="hb-iconbtn" aria-label="Close" title="Close (Esc)" onClick={onClose}><X size={18} aria-hidden="true" /></button>
           </div>
         </div>
         <div className="nw-title">
