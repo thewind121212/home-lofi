@@ -493,17 +493,23 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
 
 ### News (owner only)
 
-The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as a small
-magazine. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens it: a
-**bottom sheet** on phones (drag its top down to close), a centered panel on tablets, a wide one on desktops with the
-sections down the side. It shows **a whole day** (the agent's clock): every edition of it merged, each story once in
-its newest words (the agent repeats stories from run to run); stories that came since you last looked are marked
-**New**; older days (the archive keeps 30) in the menu at the top, and a new day takes over at midnight. The day comes
-in **pages**: *Top* (the day **in brief** and the top stories, both from the newest edition:
-its overview covers the day so far; a card per section), then one per section (its 5/5 stories as lead cards, the rest as rows with their
-category, importance dots, source, how long ago, Hacker News points and comments, ▾ for the key points; category chips to narrow it, *Next*
-at the bottom). Swipe between pages on a phone, or pick one from the chips / the side; on a desktop ← → change pages,
-j / k move between stories, m marks one read or unread.
+The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as a **morning
+newspaper** (the look of [ThariqS/ai-newtab](https://github.com/ThariqS/ai-newtab)): cream paper, serif headlines
+(Libre Bodoni, Newsreader and Libre Franklin, all with Vietnamese, loaded only when it opens), hairline rules and
+columns, one red. A 📰 icon by the header's bell, with a dot when an edition you haven't opened has come in; a tap opens
+it: a **bottom sheet** on phones (drag its top down to close), a centered panel on tablets, a wide one on desktops.
+On top, a **masthead**: the folio (*Vol. I · No. 295*: the year and the day of the year), the paper's name by the time
+of the newest edition (*The Morning / Afternoon / Evening Lofi*), the dateline (the day, its editions, what's unread);
+the name folds away while you scroll down a page. It shows **a whole day** (the agent's clock): every edition of it
+merged, each story once in its newest words (the agent repeats stories from run to run); stories that came since you
+last looked are marked **New**; older days (the archive keeps 30) in the menu at the top, and a new day takes over at
+midnight. The day comes in **pages**, picked from the section bar under the masthead: the *Front page* (the lead story
+under a big headline and a drop cap, the next two down a second column, the rest under them; beside them the day **in
+brief** and the sections, each with its unread and first headline; the brief and the top stories are the newest
+edition's, its overview covering the day so far), then one per section (its name large, its 5/5 stories on top, the
+rest in two columns on a desktop, each with its category, importance dots, source, how long ago, Hacker News points
+and comments, ▾ for the key points; category chips to narrow it, *Next* at the bottom). Swipe between pages on a
+phone; on a desktop ← → change pages, j / k move between stories, m marks one read or unread.
 A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
 read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
 days in the menu at the top. Also in ⌘K (*Open news*).

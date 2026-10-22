@@ -150,24 +150,6 @@
 @media (min-width: 640px) { .nw-page { padding: 20px 26px 32px; } }
 @media (min-width: 1024px) { .nw-page { padding: 22px 30px 36px; } }
 
-/* Top's section cards */
-.nw-index { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 10px; }
-.nw-card {
-  display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 14px 16px; border-radius: 16px; cursor: pointer; text-align: left;
-  border: 1px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.45); color: var(--color-lofi-text); transition: border-color 0.2s, transform 0.2s;
-}
-.nw-card:hover { border-color: rgb(255 138 92 / 0.5); transform: translateY(-1px); }
-.nw-card:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
-.nw-card { overflow: hidden; }
-.nw-card > * { min-width: 0; max-width: 100%; }
-.nw-card-top { display: flex; align-items: center; gap: 8px; width: 100%; }
-.nw-card-top > svg:first-child { color: var(--color-lofi-primary); flex: none; }
-.nw-card-top > svg:last-child { color: var(--color-lofi-muted); flex: none; }
-.nw-card-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; color: #fff; }
-.nw-card-n { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); }
-.nw-card-line { display: block; font-size: 13px; line-height: 1.45; opacity: 0.8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nw-card-line::before { content: '·'; margin-right: 8px; color: var(--color-lofi-primary); }
-
 /* a section's category chips */
 .nw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: -8px; }
 .nw-chip {
