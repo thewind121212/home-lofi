@@ -254,6 +254,8 @@ export default function Home() {
     const events = ['pointermove', 'pointerdown', 'keydown', 'touchstart', 'wheel']
     events.forEach((n) => addEventListener(n, input, { capture: true, passive: n !== 'keydown' }))
     const t = setInterval(() => {
+      // a hidden page (another tab, a locked phone still playing music) has no Ambient to show: no work, no render
+      if (document.visibilityState !== 'visible') return
       if (lockRef.current) lastInput.current = Date.now() // locked time isn't time away: the lock has its own screen
       const a = document.activeElement
       const held = barHover.current || Boolean([barRef, dockRef].some((r) => r.current?.contains(a)) && a.matches(':focus-visible'))
