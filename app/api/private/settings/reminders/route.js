@@ -14,6 +14,7 @@ import { notifyStore } from '../../../../../lib/notify-store.js'
 //   POST { action: 'add', text }       a new one (409 at MAX_OPEN open)
 //        { action: 'done', id }        held done: off the list (409: done already, by another tab / device)
 //        { action: 'undo', id }        right after done (UNDO_MS): back on the list
+//        { action: 'reopen', id }      a done one back on the list, any time later (the sheet's Done section; 409 at MAX_OPEN)
 //   DELETE { id }                      a mistaken entry, gone for good (not "done": it never was)
 //   -> the fresh state { tz, today, now (minutes since midnight), at (the server's ms), due (the pop-up's hours have
 //      begun: 06:00 in the owner's zone), from (06:00 in minutes), max, items (the open ones, oldest first) }; the
@@ -83,6 +84,8 @@ export async function POST(request) {
     } else if (action === 'done') {
       // done already (another tab, a stale one, two holds at once): the first one stands
       if (!(await store.done(who, id, ms))) return conflict('already done (or gone)')
+    } else if (action === 'reopen') {
+      if (!(await store.reopen(who, id, MAX_OPEN))) return conflict(`can't bring it back: not done, gone, or ${MAX_OPEN} open already`)
     } else {
       const cur = await store.get(who, id)
       const gone = 'the undo window has passed'
