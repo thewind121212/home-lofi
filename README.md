@@ -14,7 +14,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Dock** (bottom right): on the dashboard the owner's ⏱ Focus, ⛰ Ambient (**H**) and 🔒 Lock (**L**); in Ambient 👁 Show
   panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as on
   a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
-- **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading, 📰 News and the 🔔 bell.
+- **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading, 📰 News, 🤖 Agents and the 🔔 bell.
   Reminders have no icon there: their pop-up / pill (bottom left, the pill at any hour while one is open), Ambient's chip and ⌘K open them.
 - **Links**: pins can go on habits and reminders (several on one, one on several). A reminder's 🔗 button (on its row,
   in the pop-up or the list) or a routine's *Links* (Habits › routines › edit) opens the picker: tick pins on or off,
@@ -212,6 +212,7 @@ Change it for your own domain.
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
+| `REMIND_URL` | empty = off (Coolify: `http://10.10.0.162:8098`) | Reminders with a time, see [Reminders with a time](#reminders-with-a-time-owner-only) |
 | `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake / Turn off buttons, see [Gaming PC](#gaming-pc) |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
@@ -485,6 +486,38 @@ needs-you on a permission prompt or idle, and done with Claude's last message, o
 
 The page: `app/agents.js` (the 🤖 and its inbox), rules in `lib/agents.js`; the owner's route is the bell's with
 `?ch=agents` (`GET`, and `POST` read / dismiss / clear, each only on its own channel).
+
+### Reminders with a time (owner only)
+
+Optional (`REMIND_URL`). Reminders get times: the owner's **reminders API** on the Razer (`http://10.10.0.162:8098`: a
+small model reads a sentence in Vietnamese or English, SQLite keeps the reminders) does the timed ones, and Reminders'
+own carry-over list keeps the ones without a time. **One box** for both, in the Reminders sheet and pop-up:
+
+- **"nhắc tôi 7h tối gọi mẹ"**, "mai 8h sáng đi khám răng", "uống thuốc 9h tối mỗi ngày": it has a time, so it's saved in
+  the API (the model's title, its time, a repeat).
+- **"buy milk"**, "mua sữa": no time, so it goes on the carry-over list **as typed** (the model would translate an English
+  line into Vietnamese), on screen from 06:00 until it's held done, as before.
+- The model takes ~5 s when it's waking up (the box says so), then ~1 s. If it fails, the text stays and **Save
+  without a time** puts it on the carry-over list.
+
+The sheet groups them: **Due now** (highlighted, with **Done** and **Snooze 10 min**), **Today**, **Coming up** (times
+as "19:00 today", "tomorrow 08:00", "Fri 30/10 19:00", ↻ for a repeat; ✓, ✎ edit the title / day / time / repeat, a
+two-tap delete), **No time** (the carry-over list), then **Done** (folded: both lists' last 50, with **Reopen**).
+
+**When one is due**: the pop-up opens with it at any hour (Done / Snooze; tucking it holds until something else rings),
+and it shows on Ambient's chip, under the big clock and on the lock screen. The server checks the API every 30 s
+(`lib/timed-ticker.js`, page open or not) and sends each time a reminder rings **once** through the notification hub:
+the 🔔, a pop-up, and a **push to the phones**. Done, snooze or delete takes that notice off; a snooze ending or a
+repeat's next time rings again. A repeating one done moves to its next time (the API's rule).
+
+- Only this server talks to the API: it's on the LAN with no login, so never expose port 8098 or put it behind a proxy.
+  The browser asks `/api/private/settings/reminders/timed` (owner-only): `GET` (open ones), `GET ?history=1`, `POST`
+  `{ action: 'add', text, plain? }` / `done` / `reopen` / `delete` / `snooze` (`minutes`) / `edit` (`title`, `when`:
+  `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM` in +07:00, `repeat`). 502 when the API is down; 503 `{ plain: true }` when the
+  model couldn't read the sentence.
+- Rules in `lib/timed.js`, the API client in `lib/timed-fetch.js` (8 s per call, 60 s for a sentence, 1 MB, no
+  redirects, never says the address), the page in `app/timed.js`. Without `REMIND_URL` Reminders is the carry-over list
+  alone, as before.
 
 ### Spotify now playing
 

@@ -11,4 +11,7 @@ export async function register() {
   // and the focus sessions' phase changes, on the second (lib/focus-ticker.js): the push when a focus phase ends
   const { startFocus } = await import('./lib/focus-ticker.js')
   startFocus()
+  // and the timed reminders' due notices, every 30 s (lib/timed-ticker.js; off without REMIND_URL)
+  const { startTimed } = await import('./lib/timed-ticker.js')
+  startTimed()
 }

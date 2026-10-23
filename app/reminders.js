@@ -22,6 +22,7 @@ import { LinkButton, PinChips } from './pins'
 import { localNow } from '../lib/habits'
 import { MAX_TEXT, TUCK_KEY, UNDO_MS, carried, tuckHolds } from '../lib/reminders'
 import { closeDialog, motionOff, useStillPage } from './settings'
+import { DoneSection, DueRow, Group, TimedAdd, TimedRow } from './timed'
 
 const URL_ = '/api/private/settings/reminders'
 const NUDGE_EVERY = 60 * 60_000 // tucked into its pill: it glows this often, so it's not forgotten
@@ -32,9 +33,11 @@ const still = () => motionOff() || matchMedia?.('(prefers-reduced-motion: reduce
 
 // ---- state: the server's, with the device only drawing it ----
 
-// owner: settings sync answered as the owner (the page's `owner`); clientId(): this tab's live-stream id.
-// -> { on, pending, data, note, undoing, panel ('none' | 'pill' | 'open'), live, add, done, undo, remove, tuck, untuck }
-export function useReminders(owner, clientId) {
+// owner: settings sync answered as the owner (the page's `owner`); clientId(): this tab's live-stream id; due: the timed
+// reminders ringing now (app/timed.js useTimed().due): they open the pop-up at any hour, and count in its tuck.
+// -> { on, pending, data, due, note, undoing, panel ('none' | 'pill' | 'open'), live, pull, add, done, undo, reopen,
+//      remove, tuck, untuck }
+export function useReminders(owner, clientId, due = []) {
   const [data, setData] = useState(null)
   const [off, setOff] = useState(false)
   const [tried, setTried] = useState(false) // a load was tried (so a failed one ends the skeleton)
@@ -191,18 +194,34 @@ export function useReminders(owner, clientId) {
   // the pop-up: something is open (or the last one was just done: its Undo, briefly). Once the server says it's due
   // (06:00) it opens by itself; all done, it shows open (the "all clear" with its Undo) even when tucked. Before
   // 06:00 it's the pill, open only when tapped here
-  const tucked = Boolean(data) && tuckHolds(tuck, items, data.today)
-  const panel = !on || (!items.length && !undoing) ? 'none' : !data.due ? (peek ? 'open' : items.length ? 'pill' : 'none') : tucked && items.length ? 'pill' : 'open'
+  // (the timed ones ringing count in the tuck by their ring: a new one, or a snooze ending, opens it again)
+  const tucked = Boolean(data) && tuckHolds(tuck, [...items, ...due.map((d) => ({ id: d.key }))], data.today)
+  const panel = !on
+    ? 'none'
+    : due.length
+      ? tucked ? 'pill' : 'open'
+      : !items.length && !undoing ? 'none' : !data.due ? (peek ? 'open' : items.length ? 'pill' : 'none') : tucked && items.length ? 'pill' : 'open'
 
   return {
     on,
     pending: Boolean(owner && !data && !off && !tried), // the owner's first load is on its way: the skeleton
     data,
+    due,
     note,
     undoing,
     panel,
     // 'reminders': another tab changed something; 'hello': the stream (re)connected, a pull unless one just went out
     live: (kind) => (kind === 'reminders' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
+    pull: () => api.current.pull?.(),
+    // a done one back on the list (the sheet's Done section) -> null or what was wrong
+    async reopen(id) {
+      try {
+        await enqueue(() => call('POST', { action: 'reopen', id }))
+        return null
+      } catch (e) {
+        return e?.status === 409 ? e.message.charAt(0).toUpperCase() + e.message.slice(1) : "Couldn't bring it back: check the connection and try again"
+      }
+    },
     // -> null (added) or what was wrong
     async add(text) {
       try {
@@ -230,7 +249,7 @@ export function useReminders(owner, clientId) {
       write(item.id, null, 'DELETE', { id: item.id }).catch(fail)
     },
     // (before 06:00 a tuck isn't kept: the morning still opens it)
-    tuck: () => data && (data.due ? keepTuck({ day: data.today, ids: items.map((i) => i.id) }) : setPeek(false)),
+    tuck: () => data && (data.due || due.length ? keepTuck({ day: data.today, ids: [...items.map((i) => i.id), ...due.map((d) => d.key)] }) : setPeek(false)),
     untuck: () => (setPeek(true), keepTuck(null)),
   }
 }
@@ -367,8 +386,10 @@ function AddForm({ rm, compact = false }) {
 
 // ---- the sheet ----
 
-// The whole list in a sheet (opened from Ambient's chip or ⌘K): the open ones, the add field, hold to mark one done, the two-tap delete
-export function RemindersSheet({ rm, dlg, pn }) {
+// The whole list in a sheet (opened from Ambient's chip or ⌘K): the open ones, the add field, hold to mark one done, the two-tap delete.
+// tm: the timed ones (app/timed.js useTimed): with them on, one box adds to either, and the sheet groups them: Due now,
+// Today, Coming up, No time (the carry-over list), then Done (folded)
+export function RemindersSheet({ rm, dlg, pn, tm }) {
   const [open, setOpen] = useState(false)
   useStillPage(dlg, open)
   useEffect(() => {
@@ -388,17 +409,21 @@ export function RemindersSheet({ rm, dlg, pn }) {
       onClose={() => delete dlg.current.dataset.closing}
       className="wx-sheet sm:max-w-xl glass-panel text-lofi-text overscroll-contain"
     >
-      {rm.on && <RemindersBody rm={rm} pn={pn} onClose={close} />}
+      {rm.on && <RemindersBody rm={rm} pn={pn} tm={tm} onClose={close} />}
     </dialog>
   )
 }
 
-function RemindersBody({ rm, pn, onClose }) {
+function RemindersBody({ rm, pn, tm, onClose }) {
   const { data } = rm
   const items = data.items
   const rows = useLeaving(items)
-  const n = items.length
-  const sub = n ? `${n} open` : 'nothing left'
+  const timed = Boolean(tm?.on)
+  const g = timed ? tm.groups : { due: [], today: [], soon: [], none: [] }
+  const n = items.length + (timed ? tm.items.length : 0)
+  const sub = [n ? `${n} open` : 'nothing left', g.due.length && `${g.due.length} due`].filter(Boolean).join(' · ')
+  const full = items.length >= data.max
+  const noTime = rows.length + g.none.length
   return (
     <section aria-labelledby="rm-title" className="p-5 sm:p-6 rm">
       <div className="rm-head">
@@ -409,16 +434,38 @@ function RemindersBody({ rm, pn, onClose }) {
         </div>
         <button type="button" className="hb-iconbtn" aria-label="Close" onClick={onClose}><X size={18} aria-hidden="true" /></button>
       </div>
-      <AddForm rm={rm} />
-      {rows.length ? (
-        <ul className="rm-list">
-          {rows.map((r) => <Row key={r.item.id} item={r.item} today={data.today} leaving={r.leaving} onDone={rm.done} onRemove={rm.remove} pn={pn} />)}
-        </ul>
+      {timed ? <TimedAdd tm={tm} full={full} /> : <AddForm rm={rm} />}
+      {timed && (
+        <>
+          <Group label="Due now" n={g.due.length} warm>{g.due.map((i) => <DueRow key={i.id} item={i} tm={tm} />)}</Group>
+          <Group label="Today" n={g.today.length}>{g.today.map((i) => <TimedRow key={i.id} item={i} tm={tm} />)}</Group>
+          <Group label="Coming up" n={g.soon.length}>{g.soon.map((i) => <TimedRow key={i.id} item={i} tm={tm} />)}</Group>
+        </>
+      )}
+      {noTime > 0 ? (
+        <section className="tm-group" aria-label="No time">
+          {timed && (
+            <h3>
+              No time <span>{noTime}</span>
+            </h3>
+          )}
+          <ul className="rm-list rm-pop-list">
+            {rows.map((r) => <Row key={r.item.id} item={r.item} today={data.today} leaving={r.leaving} onDone={rm.done} onRemove={rm.remove} pn={pn} />)}
+            {g.none.map((i) => <TimedRow key={`t${i.id}`} item={i} tm={tm} />)}
+          </ul>
+        </section>
       ) : (
-        <p className="rm-empty">Nothing carried over. What you add stays here, and on screen from 06:00, until you hold it done.</p>
+        !n && (
+          <p className="rm-empty">
+            {timed
+              ? 'Nothing yet. Say it with a time ("7pm call mom") and it rings then, here and on your phone; without one ("buy milk") it stays here, and on screen from 06:00, until you hold it done.'
+              : 'Nothing carried over. What you add stays here, and on screen from 06:00, until you hold it done.'}
+          </p>
+        )
       )}
       {rm.panel !== 'open' && <UndoBar rm={rm} />}
       {rm.note && rm.panel !== 'open' && <p className="hb-note" role="status">{rm.note}</p>}
+      {timed && <DoneSection tm={tm} rm={rm} />}
     </section>
   )
 }
@@ -426,7 +473,7 @@ function RemindersBody({ rm, pn, onClose }) {
 // ---- the pop-up ----
 
 // hidden: the dashboard isn't on screen (Ambient, the lock): it waits, and comes back with it
-export function RemindersPopup({ rm, hidden = false, pn }) {
+export function RemindersPopup({ rm, hidden = false, pn, tm }) {
   const want = rm.panel !== 'none' && !hidden
   const [shown, setShown] = useState(want)
   const [leaving, setLeaving] = useState(false)
@@ -479,13 +526,18 @@ export function RemindersPopup({ rm, hidden = false, pn }) {
     return () => (ro?.disconnect(), removeEventListener('resize', set), delete html.dataset.rmPop, html.style.removeProperty('--rm-pop-h'))
   }, [shown, leaving, kind])
   if (!shown || !rm.data) return null
-  const items = rm.data.items
+  // the timed ones ringing first (at any hour); the carry-over list from 06:00 (before: when its pill was tapped, and
+  // nothing timed is ringing)
+  const dueNow = tm?.on ? tm.groups.due : []
+  const todo = rm.data.due || !dueNow.length
+  const items = todo ? rm.data.items : []
   const n = items.length
+  const all = n + dueNow.length
   if (kind === 'pill')
     return (
-      <button ref={box} type="button" className={`rm-pill${leaving ? ' is-leaving' : glow ? ' is-glow' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`${n} reminder${n === 1 ? '' : 's'} left: show them`}>
+      <button ref={box} type="button" className={`rm-pill${leaving ? ' is-leaving' : glow ? ' is-glow' : ''}${dueNow.length ? ' is-due' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`${all} reminder${all === 1 ? '' : 's'}${dueNow.length ? `, ${dueNow.length} due` : ''}: show them`}>
         <BellRing size={15} strokeWidth={2} aria-hidden="true" />
-        <span>{n} reminder{n === 1 ? '' : 's'}</span>
+        <span>{dueNow.length ? `${dueNow.length} due${n ? ` · ${n} more` : ''}` : `${n} reminder${n === 1 ? '' : 's'}`}</span>
         <ChevronUp size={15} aria-hidden="true" />
       </button>
     )
@@ -494,17 +546,18 @@ export function RemindersPopup({ rm, hidden = false, pn }) {
       <div className="rm-pop-head">
         <span className="rm-well is-warm" aria-hidden="true"><BellRing size={17} strokeWidth={1.9} /></span>
         <div className="rm-title">
-          <h2 id="rm-pop-title">Today&apos;s reminders</h2>
-          <span className="rm-sub">{n ? `${n} left` : 'all clear'}</span>
+          <h2 id="rm-pop-title">{dueNow.length && !n ? 'Due now' : 'Today\u2019s reminders'}</h2>
+          <span className="rm-sub">{[dueNow.length && `${dueNow.length} due`, n ? `${n} left` : !dueNow.length && 'all clear'].filter(Boolean).join(' · ')}</span>
         </div>
-        {n > 0 && (
+        {all > 0 && (
           <button type="button" data-tuck className="hb-iconbtn" aria-label="Tuck away for today (a new reminder opens it again)" title="Tuck away for today" onClick={() => ((moveFocus.current = true), rm.tuck())}>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
         )}
       </div>
-      <PopupList rm={rm} pn={pn} />
-      {n > 0 && <AddForm rm={rm} compact />}
+      {dueNow.length > 0 && <ul className="rm-list rm-pop-list">{dueNow.map((i) => <DueRow key={i.id} item={i} tm={tm} />)}</ul>}
+      {todo && <PopupList rm={rm} pn={pn} />}
+      {n > 0 && (tm?.on ? <TimedAdd tm={tm} compact full={rm.data.items.length >= rm.data.max} /> : <AddForm rm={rm} compact />)}
       {n === 0 && rm.undoing && (
         <p className="rm-clear"><Check size={15} strokeWidth={2.4} aria-hidden="true" />Nothing carried over to tomorrow.</p>
       )}
@@ -528,12 +581,14 @@ function PopupList({ rm, pn }) {
 // From 06:00 while anything is open (the pop-up's rule; the pop-up itself waits for the dashboard), the reminders follow
 // to the other screens: a chip on Ambient's bar (a tap opens the list), a quiet line under Ambient's big clock, and a
 // small list on the lock screen (not buttons, but its ×: a swipe over it still unlocks; done is a hold, once unlocked).
-export const remindersShowing = (rm) => Boolean(rm.on && rm.data.due && rm.data.items.length)
+// what they show: the timed ones ringing (any hour), then the carry-over list from 06:00
+const linesOf = (rm) => (rm.on ? [...rm.due.map((d) => d.title), ...(rm.data.due ? rm.data.items.map((i) => i.text) : [])] : [])
+export const remindersShowing = (rm) => linesOf(rm).length > 0
 const showing = remindersShowing
 
 export function RemindersChip({ rm, onOpen }) {
   if (!showing(rm)) return null
-  const items = rm.data.items
+  const items = linesOf(rm).map((text) => ({ text }))
   const n = items.length
   return (
     <button
@@ -555,7 +610,7 @@ export function RemindersChip({ rm, onOpen }) {
 // under Ambient's big clock (decorative, like the clock: the chip and the list are the way in)
 export function RemindersLine({ rm }) {
   if (!showing(rm)) return null
-  const items = rm.data.items
+  const items = linesOf(rm).map((text) => ({ text }))
   const n = items.length
   return (
     <div className="mt-3 sm:mt-4 flex justify-center font-mono text-xs sm:text-sm text-white/85 whitespace-nowrap" aria-hidden="true">
@@ -574,7 +629,7 @@ const LOCK_SHOWN = 3
 export function LockReminders({ rm }) {
   const [hidden, setHidden] = useState(false)
   if (!showing(rm) || hidden) return null
-  const items = rm.data.items
+  const items = linesOf(rm).map((text, i) => ({ id: i, text }))
   const n = items.length
   const hide = (
     <button

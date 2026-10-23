@@ -31,6 +31,7 @@ import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } f
 import { QuickPalette } from './quick'
 import { isQuickKey } from '../lib/quick'
 import { LockReminders, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
+import { useTimed } from './timed'
 import { Bone, rememberShape } from './skeleton'
 import { SK_MAX } from '../lib/skeleton'
 import { ambientNote, lockNotes, notifyPlaces } from '../lib/notify'
@@ -296,8 +297,13 @@ export default function Home() {
   habitsLive.current = habits.live
   const pins = usePins(owner, cloud.id)
   pinsLive.current = pins.live
-  const reminders = useReminders(owner, cloud.id)
-  remindersLive.current = reminders.live
+  // the ones with a time (app/timed.js: the owner's reminders API, through this server): they ring at their time, and a
+  // sentence without one goes on the carry-over list below (its hook pulls then)
+  const remPull = useRef(() => {})
+  const timed = useTimed(owner, cloud.id, () => remPull.current())
+  const reminders = useReminders(owner, cloud.id, timed.due)
+  remPull.current = reminders.pull
+  remindersLive.current = (kind) => (reminders.live(kind), timed.live(kind))
   // the books in progress in Kavita (app/reading.js): asked on load, when the tab shows again and when its sheet opens
   const reading = useReading(owner)
   // the news agent's digest (app/news.js): asked on load, when the tab shows again, every few minutes and on 'news'
@@ -736,7 +742,7 @@ export default function Home() {
       )}
       <Settings dlg={setDlg} set={set} update={update} reset={reset} sync={cloud.status} notify={hub.on} />
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
-      <RemindersSheet rm={reminders} dlg={remDlg} pn={pins} />
+      <RemindersSheet rm={reminders} dlg={remDlg} pn={pins} tm={timed} />
       <PinsSheet pn={pins} dlg={pinDlg} />
       {/* (pins onto a habit or a reminder: one picker, over whichever sheet opened it) */}
       <LinkPicker pn={pins} />
@@ -750,7 +756,7 @@ export default function Home() {
       <AgentsInbox dlg={agentsDlg} anchor={agentsRef} hub={agents} now={tNow || null} />
       {toastsOn && <Toasts hubs={[{ hub, onOpen: openInbox }, { hub: agents, onOpen: openAgents }]} now={tNow || null} />}
       {/* the owner's open reminders from 06:00, floating over the dashboard until each is held done (app/reminders.js) */}
-      <RemindersPopup rm={reminders} hidden={!view.dashboard} pn={pins} />
+      <RemindersPopup rm={reminders} hidden={!view.dashboard} pn={pins} tm={timed} />
     </SteamData>
     </Prefs>
   )
