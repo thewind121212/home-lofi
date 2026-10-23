@@ -16,7 +16,7 @@ const URL_ = '/api/private/settings/notifications'
 
 // lib/notify.js COLORS -> the page's classes (the service cards' and status lines' own: tokens, emerald / red / blue /
 // purple-400). Literal strings, so Tailwind sees them.
-const TEXT = {
+export const TEXT = {
   primary: 'text-lofi-primary',
   secondary: 'text-lofi-secondary',
   highlight: 'text-lofi-highlight',
@@ -38,10 +38,12 @@ const STRIPE = {
 }
 
 // owner: settings sync answered as the owner (Home's `owner`); set: the settings (pop-ups, their level); dlg: the inbox
-// (while it's open, what arrives is shown there and counts as read, no pop-up).
+// (while it's open, what arrives is shown there and counts as read, no pop-up). ch: 'agents' for the agents' channel
+// (lib/agents.js, app/agents.js: its own list and read state); counts: which unread ones the badge counts.
 // -> { on, items (alive, newest first), read, unread, shownRead, toasts, more, live, markAllRead, dismiss, clear,
 //      dropToast, clearToasts }
-export function useNotify(owner, set, dlg) {
+export function useNotify(owner, set, dlg, { ch = null, counts = null } = {}) {
+  const url = ch ? `${URL_}?ch=${ch}` : URL_
   const [hub, setHub] = useState({ items: [], read: 0, ready: false })
   const [tried, setTried] = useState(false) // the first pull came back, whatever it said (the bell's stand-in ends)
   const [shownRead, setShownRead] = useState(0) // read as it was when the inbox opened: its "new" dots stay put
@@ -90,7 +92,7 @@ export function useNotify(owner, set, dlg) {
       again = false
       try {
         const seq = ++sent
-        const r = await fetch(URL_, { cache: 'no-store', redirect: 'manual' })
+        const r = await fetch(url, { cache: 'no-store', redirect: 'manual' })
         if (r.ok) take(await r.json(), seq)
       } catch {}
       if (on) setTried(true)
@@ -103,7 +105,7 @@ export function useNotify(owner, set, dlg) {
     async function post(body, { done, undo } = {}) {
       try {
         const seq = ++sent
-        const r = await fetch(URL_, { method: 'POST', cache: 'no-store', redirect: 'manual', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        const r = await fetch(url, { method: 'POST', cache: 'no-store', redirect: 'manual', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
         if (r.ok) {
           done?.(sent)
           return take(await r.json(), seq)
@@ -127,7 +129,7 @@ export function useNotify(owner, set, dlg) {
       clearTimeout(soon)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [dlg])
+  }, [dlg, url])
 
   useEffect(() => {
     if (owner) return void api.current.pull?.()
@@ -138,7 +140,7 @@ export function useNotify(owner, set, dlg) {
   }, [owner])
 
   const items = alive(hub.items, Date.now())
-  const unread = unreadOf(items, hub.read).length
+  const unread = unreadOf(items, hub.read).filter(counts ?? (() => true)).length
   return {
     on: owner && hub.ready,
     tried,
@@ -199,7 +201,7 @@ function Glyph({ item, className = '' }) {
 }
 
 // the icon in a well, like a service card's (smaller): surface, hairline, the glyph in its color
-function NoticeIcon({ item, className = 'w-9 h-9 text-sm' }) {
+export function NoticeIcon({ item, className = 'w-9 h-9 text-sm' }) {
   const [bad, setBad] = useState(false)
   const { icon, color } = look(item)
   return (
@@ -213,7 +215,7 @@ function NoticeIcon({ item, className = 'w-9 h-9 text-sm' }) {
   )
 }
 
-const fullDate = (at) => new Date(at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+export const fullDate = (at) => new Date(at).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 const meta = (item, now) => [item.source, ago(item.at, now)].filter(Boolean).join(' · ')
 
 // The header's bell, next to the scene picker (its size and well): the unread count on an accent badge. N opens it too.
@@ -296,17 +298,21 @@ function Toast({ item, now, more, onDrop, onOpen }) {
 }
 
 // The dashboard's pop-ups, top right (full width on phones), newest on top. The region stays mounted (empty), so
-// screen readers announce what comes in.
-export function Toasts({ hub, now, onOpen }) {
+// screen readers announce what comes in. hubs: [{ hub, onOpen }]: the services' and the agents' in one stack (ids are
+// shared, so newest first across both), at most TOAST_MAX
+export function Toasts({ hubs, now }) {
   const t = now ?? Date.now()
+  const all = hubs.flatMap(({ hub, onOpen }) => hub.toasts.map((item) => ({ item, hub, onOpen }))).sort((a, b) => b.item.id - a.item.id)
+  const show = all.slice(0, TOAST_MAX)
+  const more = hubs.reduce((n, { hub }) => n + hub.more, 0) + all.length - show.length
   return (
     <section
       aria-label="New notifications"
       aria-live="polite"
       className="fixed z-40 top-[max(1rem,env(safe-area-inset-top))] inset-x-4 sm:inset-x-auto sm:right-6 sm:w-[22rem] flex flex-col gap-2 pointer-events-none"
     >
-      {hub.toasts.map((item, n) => (
-        <Toast key={item.id} item={item} now={t} more={n === hub.toasts.length - 1 ? hub.more : 0} onDrop={hub.dropToast} onOpen={onOpen} />
+      {show.map(({ item, hub, onOpen }, n) => (
+        <Toast key={item.id} item={item} now={t} more={n === show.length - 1 ? more : 0} onDrop={hub.dropToast} onOpen={onOpen} />
       ))}
     </section>
   )

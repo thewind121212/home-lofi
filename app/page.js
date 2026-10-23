@@ -19,6 +19,8 @@ import { SongSheet } from './song-card'
 import { Gallery, LockLook, Prefs, ScenePicker, Settings, closeDialog, load, motionOff, randomScene, save, useStillPage } from './settings'
 import { SoundsCard, SoundsChip, SoundsPanel, useSounds } from './sounds'
 import { AmbientChip, Bell, Inbox, LockNotices, SaverNote, Toasts, popUnder, useNotify } from './notify'
+import { AgentsIcon, AgentsInbox } from './agents'
+import { counts as agentCounts } from '../lib/agents'
 import { HabitsCard, useHabits } from './habits'
 import { LinkPicker, PinsIcon, PinsSheet, usePins } from './pins'
 import { ReadingIcon, ReadingSheet, useReading } from './reading'
@@ -128,6 +130,8 @@ export default function Home() {
   const quickDlg = useRef(null) // Quick actions, the ⌘K palette (app/quick.js)
   const weather = useRef(null) // the Weather card's { openDetail } (Quick actions opens its details)
   const bellRef = useRef(null) // its bell: the inbox hangs under it from sm
+  const agentsDlg = useRef(null) // the agents' inbox (app/agents.js), and its 🤖
+  const agentsRef = useRef(null)
   // cloud sync holds incoming changes while Settings or Sounds is open (nothing moves under the cursor): it reads
   // .current, so this hands it whichever of the two is open
   const [syncHold] = useState(() => ({ get current() { return [setDlg.current, sndDlg.current].find((d) => d?.open) ?? setDlg.current } }))
@@ -285,7 +289,9 @@ export default function Home() {
   const owner = ['synced', 'syncing', 'offline'].includes(cloud.status)
   // the owner's notifications (app/notify.js): pulled on load, when the tab shows, and when the live stream says so
   const hub = useNotify(owner, set, inboxDlg)
-  notifyLive.current = hub.live
+  // and the agents' messages (lib/agents.js): the same hub and stream, a channel of its own behind the 🤖
+  const agents = useNotify(owner, set, agentsDlg, { ch: 'agents', counts: agentCounts })
+  notifyLive.current = () => (hub.live(), agents.live())
   const habits = useHabits(owner, cloud.id)
   habitsLive.current = habits.live
   const pins = usePins(owner, cloud.id)
@@ -317,6 +323,15 @@ export default function Home() {
     d.showModal()
     // the popover has no close button: focus would land on the first notice's ✕ (Enter = gone), so the title takes it
     if (matchMedia('(min-width: 640px)').matches) d.querySelector('#ntf-title')?.focus()
+  }
+  function openAgents() {
+    const d = agentsDlg.current
+    if (!d || d.open) return
+    agents.markAllRead()
+    agents.clearToasts()
+    popUnder(d, agentsRef.current)
+    d.showModal()
+    if (matchMedia('(min-width: 640px)').matches) d.querySelector('#agt-title')?.focus()
   }
   const inboxKey = useRef(null) // N, for the key handler below (it's set up once): only for the owner
   inboxKey.current = hub.on ? openInbox : null
@@ -380,7 +395,7 @@ export default function Home() {
   }, [cloud.sure, owner])
 
   function lock() {
-    ;[setDlg.current, galDlg.current, sndDlg.current, inboxDlg.current, quickDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
+    ;[setDlg.current, galDlg.current, sndDlg.current, inboxDlg.current, agentsDlg.current, quickDlg.current].forEach((d) => d?.open && d.close()) // nothing left open behind the lock
     document.activeElement?.blur()
     setSoftLock(true)
   }
@@ -408,12 +423,22 @@ export default function Home() {
   // a line when it fades (screensaver), a stack on the lock screen
   const places = notifyPlaces(view, { locked: softLock, set })
   const tNow = +(now ?? 0)
-  const chipNote = hub.on && places.chip ? ambientNote(hub.items, hub.read, tNow) : null
-  const saverNote = hub.on && places.saver ? ambientNote(hub.items, hub.read, tNow, { saver: true }) : null
-  const lockNote = hub.on && places.lock ? lockNotes(hub.items, hub.read, tNow, places.lock) : null
-  const toastsOn = hub.on && places.toasts
+  // (Ambient and the lock screen show the services' unread and the agents' unread needs-you / failed, as one list: each
+  // channel's own read state picks its unread first; ids are shared, so newest first across both)
+  const unreadAll = [
+    ...(hub.on ? hub.items.filter((i) => i.id > hub.read) : []),
+    ...(agents.on ? agents.items.filter((i) => i.id > agents.read && !i.silent) : []),
+  ].sort((a, b) => b.id - a.id)
+  const anyOn = hub.on || agents.on
+  const chipNote = anyOn && places.chip ? ambientNote(unreadAll, 0, tNow) : null
+  const saverNote = anyOn && places.saver ? ambientNote(unreadAll, 0, tNow, { saver: true }) : null
+  const lockNote = anyOn && places.lock ? lockNotes(unreadAll, 0, tNow, places.lock) : null
+  const openNote = (item) => (item?.kind === 'agent' ? openAgents() : openInbox())
+  const dismissNote = (id) => (agents.items.some((i) => i.id === id) ? agents.dismiss(id) : hub.dismiss(id))
+  const seenNotes = () => (hub.markAllRead(), agents.markAllRead())
+  const toastsOn = anyOn && places.toasts
   useEffect(() => {
-    if (!toastsOn) hub.clearToasts() // (what came meanwhile is on the chip / the lock / in the inbox)
+    if (!toastsOn) hub.clearToasts(), agents.clearToasts() // (what came meanwhile is on the chip / the lock / in the inbox)
   }, [toastsOn])
   // the dashboard just came back (from Ambient or the lock): it ignores the pointer for a moment, so the tap that
   // brought it back (or a second one right after) can't open a card that's only just appearing, and the page doesn't
@@ -538,6 +563,7 @@ export default function Home() {
     openSettings,
     scene, openGallery, pickScene, shuffleScene: () => pickScene(randomScene(scene)),
     openInbox: hub.on ? openInbox : null,
+    openAgents: agents.on ? openAgents : null,
     snd, mix: set.sounds, setMix, openSounds,
     // (spShow: the card turns to Spotify, not saved, like startedTab, so the change and any no from Spotify show there)
     music: { source, tune, station, radio: () => music.current?.toggle(), sp: spotify, spAct: spCtl.act, spShow: () => amb.ambient || setAudioTab('spotify'), player, tvOn },
@@ -601,6 +627,7 @@ export default function Home() {
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               <NewsIcon nw={news} wait={!cloud.known || (owner && news.pending)} force={owner} onOpen={openNews} />
               <GithubIcon gh={github} wait={!cloud.known || (owner && github.pending)} force={owner} onOpen={openGithub} />
+              {agents.on && <AgentsIcon ref={agentsRef} hub={agents} onOpen={openAgents} />}
               {hub.on ? (
                 <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />
               ) : (
@@ -652,7 +679,7 @@ export default function Home() {
       </div>
 
       {softLock && (
-        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || (hub.on && places.lock)) && <>{remDue && <LockReminders rm={reminders} />}{hub.on && places.lock && <LockNotices notes={lockNote} now={tNow} onDismiss={hub.dismiss} onSeen={hub.markAllRead} />}</>}>
+        <LockScreen onUnlock={unlock} set={set} update={update} full={full} screen={<ClockScreen now={now} clock={set.clock} look={lockLook(set)} wx={wx} />} notices={(remDue || (anyOn && places.lock)) && <>{remDue && <LockReminders rm={reminders} />}{anyOn && places.lock && <LockNotices notes={lockNote} now={tNow} onDismiss={dismissNote} onSeen={seenNotes} />}</>}>
           {(set.lockMusic !== 'hide' || snd.on || focusOn) && (
             <div className="flex flex-col items-center gap-2">
               {set.lockMusic !== 'hide' && <MiniPlayer {...mini} variant="lock" />}
@@ -683,7 +710,7 @@ export default function Home() {
           shows: the tap that brings the bar back is swallowed (and the bar's guard holds a quick second one) */}
       {view.catcher && <div className={`fixed inset-0 z-[15] ${barSettling ? 'pointer-events-none' : ''}`} onClick={leaveAmbient} aria-hidden="true" />}
       {view.bar !== 'none' && (
-        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={openInbox} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} focus={focusOn && <FocusChip fc={focus} onOpen={openFocus} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
+        <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={() => openNote(chipNote.item)} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} focus={focusOn && <FocusChip fc={focus} onOpen={openFocus} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
       {/* The dock, bottom right. On the dashboard: the owner's ⏱ Focus, ⛰ Ambient, 🔒 Lock (⚙️ Settings sits by the
           header's bell, ⌘K / / open Quick actions, F is full screen). In Ambient (the
@@ -720,7 +747,8 @@ export default function Home() {
       <Gallery dlg={galDlg} scene={scene} variant={wantMode} onPick={pickScene} />
       <QuickPalette dlg={quickDlg} ctx={quick} />
       <Inbox dlg={inboxDlg} anchor={bellRef} hub={hub} now={tNow || null} />
-      {toastsOn && <Toasts hub={hub} now={tNow || null} onOpen={openInbox} />}
+      <AgentsInbox dlg={agentsDlg} anchor={agentsRef} hub={agents} now={tNow || null} />
+      {toastsOn && <Toasts hubs={[{ hub, onOpen: openInbox }, { hub: agents, onOpen: openAgents }]} now={tNow || null} />}
       {/* the owner's open reminders from 06:00, floating over the dashboard until each is held done (app/reminders.js) */}
       <RemindersPopup rm={reminders} hidden={!view.dashboard} pn={pins} />
     </SteamData>
