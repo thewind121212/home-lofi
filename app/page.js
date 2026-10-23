@@ -301,7 +301,7 @@ export default function Home() {
   // sentence without one goes on the carry-over list below (its hook pulls then)
   const remPull = useRef(() => {})
   const timed = useTimed(owner, cloud.id, () => remPull.current())
-  const reminders = useReminders(owner, cloud.id, timed.due)
+  const reminders = useReminders(owner, cloud.id, timed.due, timed.on)
   remPull.current = reminders.pull
   remindersLive.current = (kind) => (reminders.live(kind), timed.live(kind))
   // the books in progress in Kavita (app/reading.js): asked on load, when the tab shows again and when its sheet opens
@@ -574,7 +574,7 @@ export default function Home() {
     // (spShow: the card turns to Spotify, not saved, like startedTab, so the change and any no from Spotify show there)
     music: { source, tune, station, radio: () => music.current?.toggle(), sp: spotify, spAct: spCtl.act, spShow: () => amb.ambient || setAudioTab('spotify'), player, tvOn },
     wx, openWeather: () => weather.current?.openDetail(),
-    rm: reminders, openReminders, pn: pins, openPins, rd: reading, openReading, nw: news, openNews, gh: github, openGithub, fc: focus, openFocus,
+    rm: reminders, tm: timed, openReminders, pn: pins, openPins, rd: reading, openReading, nw: news, openNews, gh: github, openGithub, fc: focus, openFocus,
     priv,
   }
 
@@ -756,7 +756,7 @@ export default function Home() {
       <AgentsInbox dlg={agentsDlg} anchor={agentsRef} hub={agents} now={tNow || null} />
       {toastsOn && <Toasts hubs={[{ hub, onOpen: openInbox }, { hub: agents, onOpen: openAgents }]} now={tNow || null} />}
       {/* the owner's open reminders from 06:00, floating over the dashboard until each is held done (app/reminders.js) */}
-      <RemindersPopup rm={reminders} hidden={!view.dashboard} pn={pins} tm={timed} />
+      <RemindersPopup rm={reminders} hidden={!view.dashboard} pn={pins} tm={timed} onAll={openReminders} />
     </SteamData>
     </Prefs>
   )

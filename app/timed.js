@@ -188,7 +188,7 @@ export function TimedAdd({ tm, compact = false, full = false }) {
         <input
           className="rm-input"
           aria-label="New reminder (with a time, or without)"
-          placeholder={compact ? 'Add one…' : 'Remind me… (7pm call mom · buy milk)'}
+          placeholder={compact ? 'Remind me… (7pm call mom)' : 'Remind me… (7pm call mom · buy milk)'}
           maxLength={MAX_TEXT}
           value={text}
           onChange={(e) => (setText(e.target.value), msg && !msg.ok && setMsg(null))}

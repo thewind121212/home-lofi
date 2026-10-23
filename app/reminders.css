@@ -100,6 +100,14 @@ html[data-sk-td-none] .sk-td-list { display: none; }
    --rm-pop-h: the window's bottom up to its top), so the last cards can be scrolled out from under it */
 html[data-rm-pop] body { padding-bottom: var(--rm-pop-h, 0px); }
 .rm-pill svg:first-child { animation: rm-nudge 3.2s ease-in-out infinite; transform-origin: 50% 10%; }
+/* nothing open (the timed ones on): still there, quietly, for adding one: no bell, no glow */
+.rm-pill.is-quiet { border-color: rgb(255 255 255 / 0.14); color: var(--color-lofi-muted); box-shadow: 0 8px 22px rgb(0 0 0 / 0.38); }
+.rm-pill.is-quiet:hover, .rm-pill.is-quiet:focus-visible { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.4); }
+.rm-pill.is-quiet svg:first-child { animation: none; }
+.rm-pop-later { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; flex-shrink: 1; }
+.rm-pop-later .rm-pop-list { overflow: visible; }
+.rm-pop-later h3 { margin-top: 0; }
+.rm-pop-all { align-self: flex-start; margin-left: 0; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; }
 
 @keyframes rm-pop-in { from { opacity: 0; transform: translateY(18px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes rm-pop-out { to { opacity: 0; transform: translateY(14px) scale(0.98); } }

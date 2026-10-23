@@ -499,6 +499,9 @@ own carry-over list keeps the ones without a time. **One box** for both, in the 
   line into Vietnamese), on screen from 06:00 until it's held done, as before.
 - The model takes ~5 s when it's waking up (the box says so), then ~1 s. If it fails, the text stays and **Save
   without a time** puts it on the carry-over list.
+- **Where to type it:** the pill in the bottom-left corner is always there now (on the dashboard). With nothing open
+  it's a quiet **+ Remind me** (or "2 coming up · next 19:00 today"); a tap opens it on the box, with the next few
+  coming up and **All reminders** (the sheet). ⌘K's typed **remind …** goes through the model too, then opens the pop-up.
 
 The sheet groups them: **Due now** (highlighted, with **Done** and **Snooze 10 min**), **Today**, **Coming up** (times
 as "19:00 today", "tomorrow 08:00", "Fri 30/10 19:00", ↻ for a repeat; ✓, ✎ edit the title / day / time / repeat, a
