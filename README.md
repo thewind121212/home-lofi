@@ -384,7 +384,7 @@ Optional. A small notification hub: anything on the LAN that can make an HTTP re
 [Settings sync](#settings-sync-owner-only) to work (it rides on its login, database and live stream), plus
 `NOTIFY_TOKEN` (`openssl rand -hex 32`). Without the token the hub is off: `/api/notify` answers 404 and there's no bell.
 
-**Send one**: `POST /api/notify` with `Authorization: Bearer <NOTIFY_TOKEN>` and a JSON body (4 KB at most):
+**Send one**: `POST /api/notify` with `Authorization: Bearer <NOTIFY_TOKEN>` and a JSON body (16 KB at most):
 
 | field | type | what it does |
 | --- | --- | --- |
@@ -443,6 +443,48 @@ lock either way, but nothing outside needs to reach it), on the proxy host's **A
 ```nginx
 location = /api/notify { return 404; }
 ```
+
+### Agents (owner only)
+
+Agents (Claude Code on a machine, the news agent, a long job) have **their own channel** on the same hub: the 🤖 next to
+the bell, with its own count, its own inbox, its own read state and its own 200 kept. The bell keeps the services
+(deploys, updates, CrowdSec, Habits, the morning summary). Same URL, same token, with `kind: "agent"`:
+
+| field | type | what it does |
+| --- | --- | --- |
+| `kind` | `"agent"`, **required** | the agents' channel (without it, it's a service notice) |
+| `agent` | string, **required**, ≤ 32 | who: `Claude Code · linh-3`, `News agent` |
+| `project` | string, **required**, ≤ 48 | what it works on (the inbox groups by it): `musoni`, `home-lofi` |
+| `state` | `needs-you` · `failed` · `done` · `working`, **required** | decides the look and the alerts (below) |
+| `title` | string, **required**, ≤ 100 | one line |
+| `content` | string, ≤ 2000 | the detail: 3 lines on the card, then **Show more**. Line breaks, `- ` / `1. ` lists and `` `code` `` are kept; never HTML |
+| `session` | letters, digits, `. _ : / -`, ≤ 60 | **one card per session**: a newer message from it replaces the last one (working → needs you → done) |
+| `icon` | like a notice's (`fa:<name>`, an `https://` image) | the agent's own icon in the card's well; default a robot |
+| `url` | http(s) URL | the title links there (a PR, a log) |
+| `ttl` | seconds, 10 – 2592000 | it goes by itself after that |
+
+| state | looks | pop-up / phone push | counted on 🤖 |
+| --- | --- | --- | --- |
+| `needs-you` | amber chip; the 🤖 turns amber | yes | yes |
+| `failed` | red chip; the pop-up stays until closed | yes | yes |
+| `done` | green chip | no | yes |
+| `working` | grey chip, a slow gear | no | no |
+
+Unread needs-you and failed also show where the bell's do: Ambient's chip, the screensaver line and the lock screen
+(swiping one there dismisses it in the 🤖 inbox). Answers are the same as a notice's (`400 { error, field }` for a
+missing agent / project / title or an unknown state). The pushes read `Needs you · musoni`, then the title and content.
+
+```sh
+curl -X POST https://home.wliafdew.dev/api/notify \
+  -H "Authorization: Bearer $NOTIFY_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"kind":"agent","agent":"Claude Code · linh-3","project":"musoni","state":"needs-you","title":"Allow: git push origin main?","session":"linh-3:4f1c"}'
+```
+
+**Claude Code**: the hook in `~/Projects/claude-notify` (setup for a machine: its `SETUP.md`) sends working on a prompt,
+needs-you on a permission prompt or idle, and done with Claude's last message, one card per session.
+
+The page: `app/agents.js` (the 🤖 and its inbox), rules in `lib/agents.js`; the owner's route is the bell's with
+`?ch=agents` (`GET`, and `POST` read / dismiss / clear, each only on its own channel).
 
 ### Spotify now playing
 

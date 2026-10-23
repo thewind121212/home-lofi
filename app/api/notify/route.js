@@ -2,6 +2,7 @@ import { notifyOn, senderOk } from '../../../lib/gate.js'
 import { clientIp, windowLimit } from '../../../lib/limits.js'
 import { liveBus } from '../../../lib/live.js'
 import { MAX_BODY, cleanNotice } from '../../../lib/notify.js'
+import { agentPush, cleanAgent } from '../../../lib/agents.js'
 import { notifyStore } from '../../../lib/notify-store.js'
 import { pushNotice } from '../../../lib/push.js'
 
@@ -11,6 +12,8 @@ import { pushNotice } from '../../../lib/push.js'
 // the lock either way.
 //   POST  Authorization: Bearer <NOTIFY_TOKEN>, Content-Type: application/json, { title, body?, level?, source?, icon?,
 //         color?, url?, tag?, silent?, ttl? }
+//         or an agent's message (lib/agents.js, the 🤖 inbox): { kind: 'agent', agent, project, state, title, content?,
+//         session?, icon?, url?, ttl? }
 //   201 { id, at, warnings? }   400 { error, field }   401 bad token   404 hub not set up   413 / 415 / 429 / 503
 // 60 a minute per IP, 300 a minute in all: a runaway loop can't bury the inbox (the store keeps the newest 200 anyway).
 const HEADERS = { 'cache-control': 'no-store' }
@@ -31,7 +34,8 @@ export async function POST(request) {
   } catch {
     return json({ error: 'invalid JSON', field: null }, 400)
   }
-  const r = cleanNotice(raw)
+  const agent = raw?.kind === 'agent'
+  const r = agent ? cleanAgent(raw) : cleanNotice(raw)
   if (r.error) return json({ error: r.error, field: r.field }, 400)
   let saved
   try {
@@ -41,6 +45,7 @@ export async function POST(request) {
   }
   liveBus().publish(process.env.OWNER_USER, { kind: 'notify', at: saved.at })
   // and to the owner's phones (lib/push.js): in the background, so the sender doesn't wait on Apple / Google
-  void pushNotice(process.env.OWNER_USER, r.notice)
+  // (an agent's: only needs-you and failed buzz, lib/agents.js agentPush)
+  void pushNotice(process.env.OWNER_USER, agent ? agentPush(r.notice) : r.notice)
   return json({ ...saved, ...(r.warnings.length && { warnings: r.warnings }) }, 201)
 }

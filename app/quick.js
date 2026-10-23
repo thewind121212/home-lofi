@@ -45,7 +45,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 // ---- the actions ----
 
 // ctx (from the page): owner, ambient, enterAmbient, leaveAmbient, lock, openSettings, full ({ ok, on, toggle }),
-// scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), snd, mix, setMix,
+// scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), openAgents (the same, the 🤖's), snd, mix, setMix,
 // openSounds, music ({ source, tune, station, radio(), sp, spAct(action) (the page's Spotify control), spShow() (the
 // card's Spotify tab), player, tvOn }), wx, openWeather,
 // rm + openReminders, pn + openPins, rd + openReading, nw + openNews, gh + openGithub, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
@@ -60,6 +60,7 @@ function basics(c) {
       : { id: 'ambient', title: 'Ambient mode', kbd: 'H', fa: 'fa-mountain-sun', keywords: ['hide panels', 'calm', 'scene only'], home: 5, run: c.enterAmbient },
     { id: 'lock', title: 'Lock screen', kbd: 'L', fa: 'fa-lock', keywords: ['clock', 'away', 'sleep'], home: 7, run: c.lock },
     c.openInbox && { id: 'inbox', title: 'Notifications', kbd: 'N', fa: 'fa-bell', keywords: ['inbox', 'alerts', 'thông báo'], home: 4, run: c.openInbox },
+    c.openAgents && { id: 'agents', title: 'Agents', fa: 'fa-robot', keywords: ['claude', 'ai', 'bot', 'tác tử'], run: c.openAgents },
     { id: 'weather', title: 'Weather details', hint: c.wx?.name, fa: 'fa-cloud-sun', keywords: ['forecast', 'temperature', 'air quality', 'aqi', 'humidity', 'daily summary', 'thời tiết'], home: 6, run: c.openWeather },
     { id: 'settings', title: 'Settings', fa: 'fa-gear', keywords: ['preferences', 'theme', 'colors', 'clock', 'motion', 'cài đặt'], home: 8, run: c.openSettings },
     c.full?.ok && { id: 'fullscreen', title: c.full.on ? 'Exit full screen' : 'Full screen', kbd: 'F', fa: c.full.on ? 'fa-compress' : 'fa-expand', keywords: ['fullscreen', 'expand'], run: c.full.toggle },
