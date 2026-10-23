@@ -48,7 +48,7 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 // scene, openGallery, pickScene, shuffleScene, openInbox (null unless the owner's inbox is on), openAgents (the same, the 🤖's), snd, mix, setMix,
 // openSounds, music ({ source, tune, station, radio(), sp, spAct(action) (the page's Spotify control), spShow() (the
 // card's Spotify tab), player, tvOn }), wx, openWeather,
-// rm + openReminders, pn + openPins, rd + openReading, nw + openNews, gh + openGithub, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
+// rm + openReminders, tm (app/timed.js useTimed: with it on, a typed reminder goes through the model), pn + openPins, rd + openReading, nw + openNews, gh + openGithub, fc (useFocus) + openFocus, priv (/api/private: the internal apps)
 export function quickActions(ctx) {
   return [...basics(ctx), ...music(ctx), ...sounds(ctx), ...focusing(ctx), ...owners(ctx), ...scenes(ctx)]
 }
@@ -221,6 +221,17 @@ export function quickServices(priv) {
 // what's typed -> the row that does it (on top of the matches), or null
 function commandItem(q, c) {
   const cmd = c.owner ? command(q) : null
+  if (cmd?.kind === 'remind' && c.tm?.on) {
+    // the same as the pop-up's box: the model reads it (with a time it rings then; without, the carry-over list), and
+    // the pop-up opens on it so where it went shows
+    const run = async () => {
+      const r = await c.tm.add(cmd.text)
+      if (r.error) return r.plain ? "Couldn't read a time in that: try again, or save it without one from the Remind me button" : r.error
+      c.rm?.untuck()
+      return null
+    }
+    return { id: 'cmd:remind', title: `Remind me: ${cmd.text}`, hint: 'with a time it rings then', fa: 'fa-bell', wait: 'Reading the time…', run }
+  }
   if (cmd?.kind === 'remind' && c.rm?.on) {
     return { id: 'cmd:remind', title: `Remind me: ${cmd.text}`, hint: 'add a reminder', fa: 'fa-bell', wait: 'Adding…', run: () => c.rm.add(cmd.text) }
   }

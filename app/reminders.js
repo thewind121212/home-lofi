@@ -17,6 +17,7 @@
 import './reminders.css'
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, Check, ChevronDown, ChevronUp, ListTodo, Plus, Trash2, X } from 'lucide-react'
+import { whenLabel, ringAt } from '../lib/timed'
 import { HoldRing, UndoLeft, UndoLine } from './habits'
 import { LinkButton, PinChips } from './pins'
 import { localNow } from '../lib/habits'
@@ -27,6 +28,7 @@ import { DoneSection, DueRow, Group, TimedAdd, TimedRow } from './timed'
 const URL_ = '/api/private/settings/reminders'
 const NUDGE_EVERY = 60 * 60_000 // tucked into its pill: it glows this often, so it's not forgotten
 const NUDGE_MS = 2_600 // (that glow's length: app/reminders.css rm-glow)
+const POP_LATER = 3 // the pop-up's Coming up: this many (the rest in the sheet)
 const LEAVE_MS = 420 // a row folding away
 const RETRY_MS = [3_000, 10_000, 30_000, 60_000] // a failed first load, tried again (then every minute)
 const still = () => motionOff() || matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -35,9 +37,11 @@ const still = () => motionOff() || matchMedia?.('(prefers-reduced-motion: reduce
 
 // owner: settings sync answered as the owner (the page's `owner`); clientId(): this tab's live-stream id; due: the timed
 // reminders ringing now (app/timed.js useTimed().due): they open the pop-up at any hour, and count in its tuck.
+// always: the timed ones are on (useTimed().on): with nothing open the pop-up is still there, a quiet "Remind me" pill
+// (a tap opens it on the add box), so adding never needs ⌘K.
 // -> { on, pending, data, due, note, undoing, panel ('none' | 'pill' | 'open'), live, pull, add, done, undo, reopen,
 //      remove, tuck, untuck }
-export function useReminders(owner, clientId, due = []) {
+export function useReminders(owner, clientId, due = [], always = false) {
   const [data, setData] = useState(null)
   const [off, setOff] = useState(false)
   const [tried, setTried] = useState(false) // a load was tried (so a failed one ends the skeleton)
@@ -196,11 +200,13 @@ export function useReminders(owner, clientId, due = []) {
   // 06:00 it's the pill, open only when tapped here
   // (the timed ones ringing count in the tuck by their ring: a new one, or a snooze ending, opens it again)
   const tucked = Boolean(data) && tuckHolds(tuck, [...items, ...due.map((d) => ({ id: d.key }))], data.today)
+  // nothing to show: gone, or (always) the quiet pill, open while tapped open here
+  const rest = always ? (peek ? 'open' : 'pill') : 'none'
   const panel = !on
     ? 'none'
     : due.length
       ? tucked ? 'pill' : 'open'
-      : !items.length && !undoing ? 'none' : !data.due ? (peek ? 'open' : items.length ? 'pill' : 'none') : tucked && items.length ? 'pill' : 'open'
+      : !items.length && !undoing ? rest : !data.due ? (peek ? 'open' : items.length ? 'pill' : rest) : tucked && items.length ? 'pill' : 'open'
 
   return {
     on,
@@ -248,8 +254,8 @@ export function useReminders(owner, clientId, due = []) {
       patch((list) => list.filter((i) => i.id !== item.id))
       write(item.id, null, 'DELETE', { id: item.id }).catch(fail)
     },
-    // (before 06:00 a tuck isn't kept: the morning still opens it)
-    tuck: () => data && (data.due || due.length ? keepTuck({ day: data.today, ids: [...items.map((i) => i.id), ...due.map((d) => d.key)] }) : setPeek(false)),
+    // (before 06:00 a tuck isn't kept: the morning still opens it; nor with nothing open: that's the quiet pill closing)
+    tuck: () => data && ((data.due && items.length) || due.length ? keepTuck({ day: data.today, ids: [...items.map((i) => i.id), ...due.map((d) => d.key)] }) : setPeek(false)),
     untuck: () => (setPeek(true), keepTuck(null)),
   }
 }
@@ -472,8 +478,11 @@ function RemindersBody({ rm, pn, tm, onClose }) {
 
 // ---- the pop-up ----
 
-// hidden: the dashboard isn't on screen (Ambient, the lock): it waits, and comes back with it
-export function RemindersPopup({ rm, hidden = false, pn, tm }) {
+// hidden: the dashboard isn't on screen (Ambient, the lock): it waits, and comes back with it. onAll(): the sheet.
+// With the timed ones on (useReminders' `always`) it's always there: nothing open, it's a quiet "Remind me" pill (or
+// "2 coming up"); a tap opens it on the model-read add box, with the next few coming up and "All reminders". (With
+// something open the room is theirs: Coming up is only counted, on the link)
+export function RemindersPopup({ rm, hidden = false, pn, tm, onAll }) {
   const want = rm.panel !== 'none' && !hidden
   const [shown, setShown] = useState(want)
   const [leaving, setLeaving] = useState(false)
@@ -484,8 +493,9 @@ export function RemindersPopup({ rm, hidden = false, pn, tm }) {
   const moveFocus = useRef(false) // tucked / opened by its own button: the focus follows to the other one
   const [glow, setGlow] = useState(false) // the pill's now-and-then glow
   const pill = shown && kind === 'pill' && !leaving
+  const quiet = !rm.due.length && !(rm.data?.items.length ?? 0) // (nothing open: the always-there pill, no glow)
   useEffect(() => {
-    if (!pill || still()) return
+    if (!pill || quiet || still()) return
     let off = 0
     const t = setInterval(() => {
       if (document.visibilityState !== 'visible') return
@@ -493,7 +503,7 @@ export function RemindersPopup({ rm, hidden = false, pn, tm }) {
       off = setTimeout(() => setGlow(false), NUDGE_MS)
     }, NUDGE_EVERY)
     return () => (clearInterval(t), clearTimeout(off), setGlow(false))
-  }, [pill])
+  }, [pill, quiet])
   useEffect(() => {
     if (want) return setShown(true), setLeaving(false)
     if (!shown) return
@@ -506,7 +516,8 @@ export function RemindersPopup({ rm, hidden = false, pn, tm }) {
     if (!moveFocus.current || !shown) return
     moveFocus.current = false
     const el = box.current
-    ;(el?.matches('.rm-pill') ? el : el?.querySelector('[data-tuck]'))?.focus({ preventScroll: true })
+    // (opened with nothing open: it was opened to add one, so the box)
+    ;(el?.matches('.rm-pill') ? el : el?.querySelector(quiet ? '.rm-input' : '[data-tuck]'))?.focus({ preventScroll: true })
   }, [kind, shown])
   // the page pads its bottom by this while it floats there, so the end of the page can be scrolled out from under it
   // (html[data-rm-pop] in app/reminders.css)
@@ -533,6 +544,16 @@ export function RemindersPopup({ rm, hidden = false, pn, tm }) {
   const items = todo ? rm.data.items : []
   const n = items.length
   const all = n + dueNow.length
+  // the timed ones later (today, then coming up): the next few, under the add box
+  const later = tm?.on ? [...tm.groups.today, ...tm.groups.soon] : []
+  const next = later[0]
+  if (kind === 'pill' && !all)
+    return (
+      <button ref={box} type="button" className={`rm-pill is-quiet${leaving ? ' is-leaving' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`Add a reminder${later.length ? ` (${later.length} coming up, next ${whenLabel(ringAt(next), next.allDay, tm.now)})` : ''}`}>
+        <Plus size={15} strokeWidth={2.2} aria-hidden="true" />
+        <span>{later.length ? `${later.length} coming up · next ${whenLabel(ringAt(next), next.allDay, tm.now)}` : 'Remind me'}</span>
+      </button>
+    )
   if (kind === 'pill')
     return (
       <button ref={box} type="button" className={`rm-pill${leaving ? ' is-leaving' : glow ? ' is-glow' : ''}${dueNow.length ? ' is-due' : ''}`} onClick={() => ((moveFocus.current = true), rm.untuck())} aria-label={`${all} reminder${all === 1 ? '' : 's'}${dueNow.length ? `, ${dueNow.length} due` : ''}: show them`}>
@@ -546,18 +567,42 @@ export function RemindersPopup({ rm, hidden = false, pn, tm }) {
       <div className="rm-pop-head">
         <span className="rm-well is-warm" aria-hidden="true"><BellRing size={17} strokeWidth={1.9} /></span>
         <div className="rm-title">
-          <h2 id="rm-pop-title">{dueNow.length && !n ? 'Due now' : 'Today\u2019s reminders'}</h2>
-          <span className="rm-sub">{[dueNow.length && `${dueNow.length} due`, n ? `${n} left` : !dueNow.length && 'all clear'].filter(Boolean).join(' · ')}</span>
+          <h2 id="rm-pop-title">{!all && tm?.on ? 'Reminders' : dueNow.length && !n ? 'Due now' : 'Today\u2019s reminders'}</h2>
+          <span className="rm-sub">
+            {!all && tm?.on
+              ? next ? `next: ${whenLabel(ringAt(next), next.allDay, tm.now)}` : 'nothing coming up'
+              : [dueNow.length && `${dueNow.length} due`, n ? `${n} left` : !dueNow.length && 'all clear'].filter(Boolean).join(' · ')}
+          </span>
         </div>
-        {all > 0 && (
-          <button type="button" data-tuck className="hb-iconbtn" aria-label="Tuck away for today (a new reminder opens it again)" title="Tuck away for today" onClick={() => ((moveFocus.current = true), rm.tuck())}>
+        {(all > 0 || tm?.on) && (
+          <button
+            type="button"
+            data-tuck
+            className="hb-iconbtn"
+            aria-label={all ? 'Tuck away for today (a new reminder opens it again)' : 'Close'}
+            title={all ? 'Tuck away for today' : 'Close'}
+            onClick={() => ((moveFocus.current = true), rm.tuck())}
+          >
             <ChevronDown size={16} aria-hidden="true" />
           </button>
         )}
       </div>
       {dueNow.length > 0 && <ul className="rm-list rm-pop-list">{dueNow.map((i) => <DueRow key={i.id} item={i} tm={tm} />)}</ul>}
       {todo && <PopupList rm={rm} pn={pn} />}
-      {n > 0 && (tm?.on ? <TimedAdd tm={tm} compact full={rm.data.items.length >= rm.data.max} /> : <AddForm rm={rm} compact />)}
+      {tm?.on ? <TimedAdd tm={tm} compact full={rm.data.items.length >= rm.data.max} /> : n > 0 && <AddForm rm={rm} compact />}
+      {!all && later.length > 0 && (
+        <section className="tm-group rm-pop-later" aria-label="Coming up">
+          <h3>
+            Coming up <span>{later.length}</span>
+          </h3>
+          <ul className="rm-list rm-pop-list">{later.slice(0, POP_LATER).map((i) => <TimedRow key={i.id} item={i} tm={tm} />)}</ul>
+        </section>
+      )}
+      {tm?.on && onAll && (
+        <button type="button" className="tm-link rm-pop-all" onClick={onAll}>
+          All reminders{all ? (later.length ? ` · ${later.length} coming up` : '') : later.length > POP_LATER ? ` · ${later.length - POP_LATER} more coming up` : ''}
+        </button>
+      )}
       {n === 0 && rm.undoing && (
         <p className="rm-clear"><Check size={15} strokeWidth={2.4} aria-hidden="true" />Nothing carried over to tomorrow.</p>
       )}
