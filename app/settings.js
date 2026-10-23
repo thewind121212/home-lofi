@@ -529,7 +529,8 @@ function MorningSummary({ dlg }) {
 // for each time the panel opens). Spotify can be picked once Tavarian's Spotify player is logged in: Connect Spotify
 // asks Tavarian for a code to type at spotify.com/pair, then this asks again every few seconds until it's ready. A
 // change applies from the next song. In Spotify mode, a switch for Spotify autoplay (when the queue runs out, Spotify's
-// picks play on, N songs, then it pauses; only when this Tavarian has it). Hidden when the player isn't set up here.
+// picks play on, N songs, then it pauses; only when this Tavarian has it), and while it's on, how many songs (N).
+// Hidden when the player isn't set up here.
 const SP_LINE = {
   off: "Spotify isn't connected.",
   starting: 'The Spotify player is starting…',
@@ -537,9 +538,69 @@ const SP_LINE = {
   ready: 'Spotify is connected.',
   error: "The Spotify player keeps failing: try Connect Spotify again, or check Tavarian's logs.",
 }
+// how many of Spotify's picks play before the station pauses: − / the number / +, saved a moment after the last
+// change (the number shows at once; Tavarian's answer confirms it, a failure puts the saved one back). The same bounds
+// as lib/tavarian.js (Tavarian's own). Applies to the run that is on: set below what it has played, the station
+// pauses after the song that plays.
+const LIMIT_MIN = 1
+const LIMIT_MAX = 200
+const SAVE_AFTER = 700
+function AutoplayLimit({ saved, disabled, onSave }) {
+  const [n, setN] = useState(saved)
+  const [text, setText] = useState(String(saved))
+  const timer = useRef(0)
+  useEffect(() => {
+    setN(saved)
+    setText(String(saved))
+  }, [saved])
+  useEffect(() => () => clearTimeout(timer.current), [])
+  const want = (v) => {
+    const x = Math.max(LIMIT_MIN, Math.min(LIMIT_MAX, Math.round(v)))
+    setN(x)
+    setText(String(x))
+    clearTimeout(timer.current)
+    if (x !== saved) timer.current = setTimeout(() => onSave(x), SAVE_AFTER)
+  }
+  // typing: only whole numbers; saved once it's a number in range (else the box goes back on blur)
+  const type = (v) => {
+    const digits = v.replace(/\D/g, '').slice(0, 3)
+    setText(digits)
+    const x = Number(digits)
+    if (digits && x >= LIMIT_MIN && x <= LIMIT_MAX) want(x), setText(digits)
+  }
+  const step = (d) => !disabled && want(n + d)
+  const btn = 'w-8 h-8 shrink-0 rounded-full border border-white/10 bg-white/5 text-lofi-text flex items-center justify-center transition-colors hover:border-white/25 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lofi-primary'
+  return (
+    <div className="ml-12 flex flex-wrap items-center gap-2" role="group" aria-labelledby="autoplay-limit-label">
+      <span id="autoplay-limit-label" className="text-[11px] text-lofi-muted mr-1">Songs before it pauses</span>
+      <button type="button" className={btn} onClick={() => step(-1)} disabled={disabled || n <= LIMIT_MIN} aria-label="One song fewer">
+        <i className="fa-solid fa-minus text-[10px]" aria-hidden="true" />
+      </button>
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={text}
+        disabled={disabled}
+        onChange={(e) => type(e.target.value)}
+        onBlur={() => setText(String(n))}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') e.preventDefault(), step(e.key === 'ArrowUp' ? 1 : -1)
+          else if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+        aria-label={`Songs before it pauses (${LIMIT_MIN} to ${LIMIT_MAX})`}
+        className="w-12 h-8 rounded-full border border-white/10 bg-white/5 text-center font-mono text-xs text-white tabular-nums focus:outline-2 focus:outline-lofi-primary disabled:opacity-60"
+      />
+      <button type="button" className={btn} onClick={() => step(1)} disabled={disabled || n >= LIMIT_MAX} aria-label="One song more">
+        <i className="fa-solid fa-plus text-[10px]" aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
+
 function StationBackend({ dlg }) {
   const [st, setSt] = useState(null) // Tavarian's settings, null while asking
-  const [busy, setBusy] = useState(null) // 'backend' | 'pair' | 'autoplay'
+  const [busy, setBusy] = useState(null) // 'backend' | 'pair' | 'autoplay' | 'limit'
   const [err, setErr] = useState(null)
   const [off, setOff] = useState(false)
   const ask = useRef(() => {})
@@ -588,6 +649,19 @@ function StationBackend({ dlg }) {
     if (r.ok) setSt(r.data.settings), setErr(null)
     else setSt((s) => s && { ...s, autoplay: was }), setErr(r.error)
   }
+  // (the stepper stays usable while one saves: only the answer to the latest number counts; a failure shows the
+  // saved number again)
+  const limitSeq = useRef(0)
+  const [limitReset, setLimitReset] = useState(0)
+  const saveLimit = async (n) => {
+    const seq = ++limitSeq.current
+    setBusy((b) => b ?? 'limit')
+    const r = await tavarianPost({ action: 'autoplay-limit', autoplayLimit: n })
+    if (seq !== limitSeq.current) return
+    setBusy((b) => (b === 'limit' ? null : b))
+    if (r.ok) setSt(r.data.settings), setErr(null)
+    else setErr(r.code === 'invalid_request' ? "This Tavarian can't change the number of songs yet" : r.error), setLimitReset((x) => x + 1)
+  }
   const pair = st?.pairing
   const hint =
     err ? <span className="text-red-300">{err}</span>
@@ -625,6 +699,9 @@ function StationBackend({ dlg }) {
             <span className="block text-[11px] text-lofi-muted">{st.autoplayLimit ? `${st.autoplayLimit} songs, then it pauses (Play starts more).` : 'Then it pauses (Play starts more).'}</span>
           </span>
         </label>
+      )}
+      {st?.backend === 'spotify' && st.autoplay === true && st.autoplayLimit > 0 && (
+        <AutoplayLimit key={limitReset} saved={st.autoplayLimit} disabled={busy != null && busy !== 'limit'} onSave={saveLimit} />
       )}
       {st && !st.spotifyAvailable && (
         pair ? (
