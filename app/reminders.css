@@ -104,8 +104,10 @@ html[data-rm-pop] body { padding-bottom: var(--rm-pop-h, 0px); }
 .rm-pill.is-quiet { border-color: rgb(255 255 255 / 0.14); color: var(--color-lofi-muted); box-shadow: 0 8px 22px rgb(0 0 0 / 0.38); }
 .rm-pill.is-quiet:hover, .rm-pill.is-quiet:focus-visible { color: var(--color-lofi-primary); border-color: rgb(255 138 92 / 0.4); }
 .rm-pill.is-quiet svg:first-child { animation: none; }
-.rm-pop-later { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; flex-shrink: 1; }
-.rm-pop-later .rm-pop-list { overflow: visible; }
+/* everything under the head: one scroll, its lists at full height (none squeezed to nothing on a phone) */
+.rm-pop-body { min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px; }
+.rm-pop-body > * { flex-shrink: 0; }
+.rm-pop-body .rm-pop-list { overflow: visible; }
 .rm-pop-later h3 { margin-top: 0; }
 .rm-pop-all { align-self: flex-start; margin-left: 0; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; }
 

@@ -480,8 +480,8 @@ function RemindersBody({ rm, pn, tm, onClose }) {
 
 // hidden: the dashboard isn't on screen (Ambient, the lock): it waits, and comes back with it. onAll(): the sheet.
 // With the timed ones on (useReminders' `always`) it's always there: nothing open, it's a quiet "Remind me" pill (or
-// "2 coming up"); a tap opens it on the model-read add box, with the next few coming up and "All reminders". (With
-// something open the room is theirs: Coming up is only counted, on the link)
+// "2 coming up"); a tap opens it on the model-read add box, with the next few coming up (one just added shows there)
+// and "All reminders". Below its head it scrolls as one (a phone gives it 45% of the screen), no list squeezed
 export function RemindersPopup({ rm, hidden = false, pn, tm, onAll }) {
   const want = rm.panel !== 'none' && !hidden
   const [shown, setShown] = useState(want)
@@ -587,27 +587,29 @@ export function RemindersPopup({ rm, hidden = false, pn, tm, onAll }) {
           </button>
         )}
       </div>
-      {dueNow.length > 0 && <ul className="rm-list rm-pop-list">{dueNow.map((i) => <DueRow key={i.id} item={i} tm={tm} />)}</ul>}
-      {todo && <PopupList rm={rm} pn={pn} />}
-      {tm?.on ? <TimedAdd tm={tm} compact full={rm.data.items.length >= rm.data.max} /> : n > 0 && <AddForm rm={rm} compact />}
-      {!all && later.length > 0 && (
-        <section className="tm-group rm-pop-later" aria-label="Coming up">
-          <h3>
-            Coming up <span>{later.length}</span>
-          </h3>
-          <ul className="rm-list rm-pop-list">{later.slice(0, POP_LATER).map((i) => <TimedRow key={i.id} item={i} tm={tm} />)}</ul>
-        </section>
-      )}
-      {tm?.on && onAll && (
-        <button type="button" className="tm-link rm-pop-all" onClick={onAll}>
-          All reminders{all ? (later.length ? ` · ${later.length} coming up` : '') : later.length > POP_LATER ? ` · ${later.length - POP_LATER} more coming up` : ''}
-        </button>
-      )}
-      {n === 0 && rm.undoing && (
-        <p className="rm-clear"><Check size={15} strokeWidth={2.4} aria-hidden="true" />Nothing carried over to tomorrow.</p>
-      )}
-      <UndoBar rm={rm} />
-      {rm.note && <p className="hb-note" role="status">{rm.note}</p>}
+      <div className="rm-pop-body">
+        {dueNow.length > 0 && <ul className="rm-list rm-pop-list">{dueNow.map((i) => <DueRow key={i.id} item={i} tm={tm} />)}</ul>}
+        {todo && <PopupList rm={rm} pn={pn} />}
+        {tm?.on ? <TimedAdd tm={tm} compact full={rm.data.items.length >= rm.data.max} /> : n > 0 && <AddForm rm={rm} compact />}
+        {later.length > 0 && (
+          <section className="tm-group rm-pop-later" aria-label="Coming up">
+            <h3>
+              Coming up <span>{later.length}</span>
+            </h3>
+            <ul className="rm-list rm-pop-list">{later.slice(0, POP_LATER).map((i) => <TimedRow key={i.id} item={i} tm={tm} />)}</ul>
+          </section>
+        )}
+        {tm?.on && onAll && (
+          <button type="button" className="tm-link rm-pop-all" onClick={onAll}>
+            All reminders
+          </button>
+        )}
+        {n === 0 && rm.undoing && (
+          <p className="rm-clear"><Check size={15} strokeWidth={2.4} aria-hidden="true" />Nothing carried over to tomorrow.</p>
+        )}
+        <UndoBar rm={rm} />
+        {rm.note && <p className="hb-note" role="status">{rm.note}</p>}
+      </div>
     </aside>
   )
 }
