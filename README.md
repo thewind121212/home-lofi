@@ -213,6 +213,7 @@ Change it for your own domain.
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
 | `REMIND_URL` | empty = off (Coolify: `http://10.10.0.162:8098`) | Reminders with a time, see [Reminders with a time](#reminders-with-a-time-owner-only) |
+| `SCHEDULE_TOKEN` | empty = off | the bearer token other machines on the LAN use to read the owner's habits, see [Schedule for other machines](#schedule-for-other-machines-read-only) |
 | `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake / Turn off buttons, see [Gaming PC](#gaming-pc) |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
@@ -521,6 +522,25 @@ repeat's next time rings again. A repeating one done moves to its next time (the
 - Rules in `lib/timed.js`, the API client in `lib/timed-fetch.js` (8 s per call, 60 s for a sentence, 1 MB, no
   redirects, never says the address), the page in `app/timed.js`. Without `REMIND_URL` Reminders is the carry-over list
   alone, as before.
+
+### Schedule for other machines (read-only)
+
+Optional (`SCHEDULE_TOKEN`, 16+ characters). Lets another machine on the LAN read the owner's Habits.
+It was built for Jade, the voice assistant on the Razer, to talk about the day and help plan new routines.
+It can't change anything.
+
+- **`GET https://home.wliafdew.dev/api/private/schedule?date=YYYY-MM-DD`** (empty: today) returns the habits due that
+  day and the Reminders carry-over list:
+  - Each habit has `{ title, start, end, all_day, window, minutes, repeat, days, done, done_at, late, rating, identity }`.
+  - Times are ISO 8601 in the habits' zone (`+07:00`). An any-time habit is `all_day` with `end: null`.
+  - The timed reminders aren't here: they live in the reminders API on the Razer.
+- **`GET https://home.wliafdew.dev/api/private/schedule/routines?days=14`** (1–60) returns every habit's routine with its
+  streak and the last N days: `due`, `kept`, `on_time`, `late`, `missed`, and the ratings.
+- Both need `Authorization: Bearer <SCHEDULE_TOKEN>`. They sit under `/api/private`, so the proxy's gate covers them:
+  - On the LAN there's no login, just the token.
+  - From the internet Authelia's login comes first.
+  - Without the gate or the token: 404; with a wrong token: 401.
+- Rules in `lib/schedule.js`, tests in `lib/schedule.test.js`.
 
 ### Spotify now playing
 
