@@ -1,22 +1,21 @@
-import { gateOk, readerOk, scheduleOn } from '../../../../lib/gate.js'
+import { assistantOk } from '../../../../lib/gate.js'
 import { DEFAULT_TZ, localNow } from '../../../../lib/habits.js'
 import { habitsStore } from '../../../../lib/habits-store.js'
 import { remindersStore } from '../../../../lib/reminders-store.js'
 import { dayItems, dayParam, isoAt, offsetOf } from '../../../../lib/schedule.js'
 
 // One day of the owner's schedule, for other machines on the LAN (Jade on the Razer). Read-only. Rules: lib/schedule.js.
-//   GET ?date=YYYY-MM-DD (empty: today)   Authorization: Bearer <SCHEDULE_TOKEN>
+//   GET ?date=YYYY-MM-DD (empty: today)   from the LAN, no login, no token (lib/gate.js assistantOk)
 //   -> { date, today, tz, now, items: the habits due that day (dayItems), todos: the Reminders carry-over list (what's
 //        open now, no time: [{ title, added }]) }
 // The timed reminders aren't here: they live in the reminders API on the Razer itself.
-// 404 = off (no SCHEDULE_TOKEN / database / owner) or not through the proxy's /api/private location, 401 = a bad
-// token, 400 = a bad date, 503 = database unreachable.
+// 404 = off (no database / owner) or not through the proxy's /api/private location, 400 = a bad date, 503 = database
+// unreachable.
 const HEADERS = { 'cache-control': 'no-store, private' }
-const json = (body, status = 200, extra) => Response.json(body, { status, headers: { ...HEADERS, ...extra } })
+const json = (body, status = 200) => Response.json(body, { status, headers: HEADERS })
 
 export async function GET(request) {
-  if (!scheduleOn() || !gateOk(request.headers.get('x-home-gate'))) return json({ error: 'not found' }, 404)
-  if (!readerOk(request)) return json({ error: 'bad or missing token' }, 401, { 'www-authenticate': 'Bearer' })
+  if (!assistantOk(request)) return json({ error: 'not found' }, 404)
   const who = process.env.OWNER_USER
   try {
     const store = habitsStore()

@@ -1,12 +1,10 @@
-import { randomBytes } from 'node:crypto'
 import { notifyOn, sameOriginJson, syncOwner } from '../../../../../../lib/gate.js'
 import { clientId, liveBus } from '../../../../../../lib/live.js'
-import { localNow } from '../../../../../../lib/habits.js'
-import { habitsStore } from '../../../../../../lib/habits-store.js'
-import { MAX_OPEN, MAX_TEXT, zoneOf } from '../../../../../../lib/reminders.js'
+import { MAX_TEXT } from '../../../../../../lib/reminders.js'
 import { remindersStore } from '../../../../../../lib/reminders-store.js'
+import { addSentence } from '../../../../../../lib/remind-add.js'
 import { notifyStore } from '../../../../../../lib/notify-store.js'
-import { HISTORY, cleanTimedAction, dueTag, parsedTime } from '../../../../../../lib/timed.js'
+import { HISTORY, cleanTimedAction, dueTag } from '../../../../../../lib/timed.js'
 import { timedApi, timedOn } from '../../../../../../lib/timed-fetch.js'
 
 // Reminders with a time (lib/timed.js), for the owner's Reminders sheet and pop-up (app/timed.js). This server is
@@ -72,33 +70,9 @@ export async function POST(request) {
   const { action, id } = c.act
   let added = null
   if (action === 'add') {
-    let timed = null
-    if (!c.act.plain) {
-      try {
-        timed = parsedTime(await timedApi.parse(c.act.text))
-      } catch {
-        return json({ error: "couldn't read a time in that: try again, or save it without a time", plain: true }, 503)
-      }
-    }
-    if (timed) {
-      try {
-        const i = await timedApi.create(timed)
-        added = { kind: 'timed', title: i.title, due: i.due, allDay: i.allDay, repeat: i.repeat }
-      } catch (e) {
-        return down(e)
-      }
-    } else {
-      // no time in it: the carry-over list, as typed (the model's title would be its Vietnamese)
-      try {
-        const ms = Date.now()
-        const day = localNow(ms, zoneOf(await habitsStore().getDoc(who))).day
-        if (!(await remindersStore().add(who, { id: randomBytes(6).toString('hex'), text: c.act.text, day, at: ms }, MAX_OPEN)))
-          return json({ error: `at most ${MAX_OPEN} open: get some done first` }, 409)
-        added = { kind: 'todo', title: c.act.text }
-      } catch {
-        return json({ error: 'database unavailable' }, 503)
-      }
-    }
+    const r = await addSentence(who, c.act.text, c.act.plain)
+    if (r.error) return json({ error: r.error, ...(r.plain && { plain: true }) }, r.status)
+    added = r.added
   } else {
     try {
       if (action === 'done') await timedApi.doneOne(id)

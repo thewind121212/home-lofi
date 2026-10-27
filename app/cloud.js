@@ -51,8 +51,9 @@ function writeLocal(doc, keys) {
 // keep: { current: true } while the live stream should stay open with the tab hidden (sounds play: the mix follows);
 // the page calls live() when it changes (a ref says nothing by itself).
 // onLive(kind): the stream said 'hello' (connected: anything may have happened meanwhile) or 'notify' (the notification
-// hub has news, app/notify.js pulls); the same stream carries both, so a device keeps one connection
-export function useCloudSync(apply, hold, keep, onLive) {
+// hub has news, app/notify.js pulls); the same stream carries both, so a device keeps one connection.
+// onRemote({ action }): the owner's assistant asked for the music (app/api/private/assistant/music)
+export function useCloudSync(apply, hold, keep, onLive, onRemote) {
   const [status, setStatus] = useState('off')
   const [known, setKnown] = useState(false) // the first answer came (or none can): owner or not is known from here on
   const [sure, setSure] = useState(false) // ... and it was a real answer (not a network error / 5xx): worth remembering
@@ -62,6 +63,8 @@ export function useCloudSync(apply, hold, keep, onLive) {
   applyRef.current = apply
   const onLiveRef = useRef(onLive)
   onLiveRef.current = onLive
+  const onRemoteRef = useRef(onRemote)
+  onRemoteRef.current = onRemote
   const selfRef = useRef(null) // this tab's id (the effect makes it): the Habits card sends it too, so its own changes aren't echoed
 
   useEffect(() => {
@@ -205,6 +208,12 @@ export function useCloudSync(apply, hold, keep, onLive) {
       src.addEventListener('focus', () => es === src && onLiveRef.current?.('focus'))
       src.addEventListener('news', () => es === src && onLiveRef.current?.('news'))
       src.addEventListener('github', () => es === src && onLiveRef.current?.('github'))
+      src.addEventListener('remote', (e) => {
+        if (es !== src) return
+        try {
+          onRemoteRef.current?.(JSON.parse(e.data))
+        } catch {}
+      })
       src.addEventListener('hello', () => es === src && onLiveRef.current?.('hello'))
       // a drop or a refusal: our own backoff, not EventSource's (it would retry a refusal never, a drop every 3 s)
       src.onerror = () => {

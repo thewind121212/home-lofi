@@ -13,6 +13,7 @@ import { clientId, liveBus } from '../../../../../lib/live.js'
 //                                event: reminders (one added / done / deleted on another tab: pull them)  data: { at, from }
 //                                event: focus   (the focus session started / paused / changed phase: pull it)  data: { at, from? }
 //                                event: news    (a story read / an edition opened on another tab: pull it)  data: { at, from }
+//                                event: remote  (the owner's assistant: play / pause / next the music, app/api/private/assistant/music)  data: { action, at }
 //                                event: bye     (pushed out: too many open streams; then it ends)  data: { at }
 // A ": ping" comment every 20 s keeps proxies from closing it as idle. No settings or notifications ever go down this
 // stream: only "pull".
@@ -62,8 +63,8 @@ export async function GET(request) {
       quiet(frame('hello', { at: Date.now() }))
       // end: the bus lets go of this stream (this tab connected again, the cap, the server stopping)
       // ('notify': the notification hub has news, lib/notify.js; 'habits': a habit kept / edited, lib/habits.js;
-      // 'pins': a pin added / removed, lib/pins.js; 'reminders': lib/reminders.js; 'focus': lib/focus.js; 'news': lib/news.js; 'github': lib/github.js; everything else is a settings save)
-      unsubscribe = liveBus().subscribe(who, id, ({ kind, ...event }) => write(frame(kind === 'notify' || kind === 'habits' || kind === 'pins' || kind === 'reminders' || kind === 'focus' || kind === 'news' || kind === 'github' ? kind : 'changed', event)), end)
+      // 'pins': a pin added / removed, lib/pins.js; 'reminders': lib/reminders.js; 'focus': lib/focus.js; 'news': lib/news.js; 'github': lib/github.js; 'remote': the assistant's music, lib/assistant.js; everything else is a settings save)
+      unsubscribe = liveBus().subscribe(who, id, ({ kind, ...event }) => write(frame(kind === 'notify' || kind === 'habits' || kind === 'pins' || kind === 'reminders' || kind === 'focus' || kind === 'news' || kind === 'github' || kind === 'remote' ? kind : 'changed', event)), end)
       ping = setInterval(() => quiet(': ping\n\n'), PING)
       if (request.signal.aborted) end()
       else request.signal.addEventListener('abort', () => end(), { once: true })
