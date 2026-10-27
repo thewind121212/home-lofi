@@ -213,7 +213,6 @@ Change it for your own domain.
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
 | `REMIND_URL` | empty = off (Coolify: `http://10.10.0.162:8098`) | Reminders with a time, see [Reminders with a time](#reminders-with-a-time-owner-only) |
-| `SCHEDULE_TOKEN` | empty = off | the bearer token other machines on the LAN use to read the owner's habits, see [Schedule for other machines](#schedule-for-other-machines-read-only) |
 | `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake / Turn off buttons, see [Gaming PC](#gaming-pc) |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
@@ -523,24 +522,44 @@ repeat's next time rings again. A repeating one done moves to its next time (the
   redirects, never says the address), the page in `app/timed.js`. Without `REMIND_URL` Reminders is the carry-over list
   alone, as before.
 
-### Schedule for other machines (read-only)
+### The owner's assistant on the LAN (Jade)
 
-Optional (`SCHEDULE_TOKEN`, 16+ characters). Lets another machine on the LAN read the owner's Habits.
-It was built for Jade, the voice assistant on the Razer, to talk about the day and help plan new routines.
-It can't change anything.
+Lets the owner's voice assistant (Jade, on the Razer) read the schedule and do a few things on the home page.
+There's no token: these paths sit under `/api/private`, so the proxy's gate decides.
+- On the LAN: no login.
+- From the internet: Authelia's login first.
+- Not through the proxy: 404.
+- Writes need a JSON body, and a browser on another site is refused (403), so a web page can't ride on the LAN's trust.
+- Rules: `lib/schedule.js` and `lib/assistant.js`. Tests: `lib/schedule.test.js` and `lib/assistant.test.js`.
 
+**Read:**
 - **`GET https://home.wliafdew.dev/api/private/schedule?date=YYYY-MM-DD`** (empty: today) returns the habits due that
-  day and the Reminders carry-over list:
+  day and the Reminders carry-over list.
   - Each habit has `{ title, start, end, all_day, window, minutes, repeat, days, done, done_at, late, rating, identity }`.
-  - Times are ISO 8601 in the habits' zone (`+07:00`). An any-time habit is `all_day` with `end: null`.
-  - The timed reminders aren't here: they live in the reminders API on the Razer.
-- **`GET https://home.wliafdew.dev/api/private/schedule/routines?days=14`** (1–60) returns every habit's routine with its
-  streak and the last N days: `due`, `kept`, `on_time`, `late`, `missed`, and the ratings.
-- Both need `Authorization: Bearer <SCHEDULE_TOKEN>`. They sit under `/api/private`, so the proxy's gate covers them:
-  - On the LAN there's no login, just the token.
-  - From the internet Authelia's login comes first.
-  - Without the gate or the token: 404; with a wrong token: 401.
-- Rules in `lib/schedule.js`, tests in `lib/schedule.test.js`.
+  - Times are ISO 8601 in the habits' zone (`+07:00`).
+  - Timed reminders aren't here: they live in the reminders API on the Razer.
+- **`GET …/api/private/schedule/routines?days=14`** (1–60) returns every habit's routine with its streak and the last N
+  days: `due`, `kept`, `on_time`, `late`, `missed`, ratings.
+
+**Do:**
+- **`POST …/api/private/assistant/remind`** `{ text, plain? }` adds a reminder the way the Reminders box does:
+  - The model reads it. With a time it rings then, on the page and the phone; without one it goes on the carry-over
+    list as typed.
+  - Answers 201 `{ added }`.
+  - 503 `{ plain: true }` means the model couldn't read it: send it again with `plain: true`.
+- **`POST …/api/private/assistant/habit`** adds a habit, checked like the card's editor. It can only add: changing or
+  archiving one stays on the card.
+  - Body: `{ name, when: {kind:'time', at} | {kind:'window', from, to} | {kind:'any'}, days: [1..7] | ['Mon', …] |
+    'daily' | 'weekdays' | 'weekends', minutes?, identity?, icon? }`.
+  - Answers 201 `{ habit }`, 400 `{ error, field }`, or 409 when there are already 20.
+- **`POST …/api/private/assistant/music`** `{ action: 'play' | 'pause' | 'toggle' | 'next' }`:
+  - The owner's page that's **showing** presses its music card's ⏯ / ⏭ (the radio, Spotify or the home station,
+    whatever the card is on), the same as Quick actions' Play.
+  - It goes down the live stream (event `remote`).
+  - Answers `{ sent }`, or 409 when no page is open.
+  - A page nobody has tapped since it loaded may not be allowed to start sound (the browser's autoplay rule).
+
+The owner's open pages show an added reminder or habit within a second (live stream).
 
 ### Spotify now playing
 

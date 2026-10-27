@@ -28,7 +28,7 @@ import { NewsIcon, NewsModal, useNews } from './news'
 import { GithubIcon, GithubModal, useGithub } from './github'
 import { HeadIcon } from './head-icon'
 import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } from './focus'
-import { QuickPalette } from './quick'
+import { QuickPalette, quickActions } from './quick'
 import { isQuickKey } from '../lib/quick'
 import { LockReminders, RemindersChip, RemindersLine, RemindersPopup, RemindersSheet, remindersShowing, useReminders } from './reminders'
 import { useTimed } from './timed'
@@ -149,6 +149,7 @@ export default function Home() {
   const focusLive = useRef(() => {}) // and Focus ('focus': another device or the server's phase change; 'hello')
   const newsLive = useRef(() => {}) // and News ('news': a story read / an edition opened on another device; 'hello')
   const ghLive = useRef(() => {}) // and GitHub ('github', the same; 'hello')
+  const remote = useRef(() => {}) // the owner's assistant asking for the music ('remote'): set below, next to Quick actions' list
   // owner-only cloud sync (app/cloud.js): it saves remote changes to localStorage, this puts them on screen
   const cloud = useCloudSync((keys) => {
     if (keys.some((k) => k.startsWith('settings.'))) {
@@ -164,7 +165,7 @@ export default function Home() {
     }
     if (keys.includes('scene') && set.onLoad === 'keep') setScene(load('scene', 'london'))
     if (keys.includes('location')) setCloudLoc(load('location', null))
-  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && kind !== 'focus' && kind !== 'news' && kind !== 'github' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind), focusLive.current(kind), newsLive.current(kind), ghLive.current(kind)))
+  }, syncHold, soundsOn, (kind) => (kind !== 'habits' && kind !== 'pins' && kind !== 'reminders' && kind !== 'focus' && kind !== 'news' && kind !== 'github' && notifyLive.current(kind), kind !== 'notify' && habitsLive.current(kind), pinsLive.current(kind), kind !== 'notify' && remindersLive.current(kind), focusLive.current(kind), newsLive.current(kind), ghLive.current(kind)), (ev) => remote.current(ev))
   const music = useRef(null) // Music's { toggle, pause }, so the ambient bar can drive the same player
   const [tune, setTune] = useState({ playing: false, loading: false }) // Music's state, mirrored for the ambient bar
   // Scene weather: the wanted variant (null = Live, still waiting for the weather), and the one actually shown.
@@ -576,6 +577,19 @@ export default function Home() {
     wx, openWeather: () => weather.current?.openDetail(),
     rm: reminders, tm: timed, openReminders, pn: pins, openPins, rd: reading, openReading, nw: news, openNews, gh: github, openGithub, fc: focus, openFocus,
     priv,
+  }
+  // the owner's assistant on the LAN (app/api/private/assistant/music): this page, if it's showing, presses its music
+  // card's ⏯ / ⏭ (Quick actions' "Play" and "Next": whatever the card plays now). play / pause only when that changes
+  // something
+  remote.current = ({ action } = {}) => {
+    if (!owner || document.visibilityState !== 'visible') return
+    const acts = quickActions(quick)
+    const press = (id) => acts.find((a) => a.id === id)?.run()
+    const m = quick.music
+    const playing =
+      m.source === 'spotify' && spOn(m.sp) ? Boolean(m.sp.playing) : m.source === 'tavarian' && m.tvOn && m.player?.state?.song ? Boolean(m.player.listening) : m.tune.playing || m.tune.loading
+    if (action === 'next') press('next')
+    else if (action === 'toggle' || (action === 'play' && !playing) || (action === 'pause' && playing)) press('music')
   }
 
   const hour = now?.getHours()
