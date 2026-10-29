@@ -14,7 +14,7 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
 - **Dock** (bottom right): on the dashboard the owner's ⏱ Focus, ⛰ Ambient (**H**) and 🔒 Lock (**L**); in Ambient 👁 Show
   panels and 🔒 Lock, fading and coming back with Ambient's bar (and raised above the bar where the two would meet, as on
   a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
-- **Header icons** (by the clock): ⚙️ Settings for everyone, then the owner's 📌 Pins, 📖 Reading, 📰 News, 🤖 Agents and the 🔔 bell.
+- **Header icons** (by the clock): ⚙️ Settings, 📰 News and GitHub for everyone, the owner's 📌 Pins, 📖 Reading, 🤖 Agents and the 🔔 bell.
   Reminders have no icon there: their pop-up / pill (bottom left, the pill at any hour while one is open), Ambient's chip and ⌘K open them.
 - **Links**: pins can go on habits and reminders (several on one, one on several). A reminder's 🔗 button (on its row,
   in the pop-up or the list) or a routine's *Links* (Habits › routines › edit) opens the picker: tick pins on or off,
@@ -211,7 +211,7 @@ Change it for your own domain.
 | `SERVER_NAME` | `Server` (Coolify: `lenovo`) | this machine's label on the Server card |
 | `HOST_AGENTS` | empty | more machines on the Server card, see [Other servers](#other-servers) |
 | `KAVITA_URL`, `KAVITA_API_KEY` | empty = off (Coolify: `KAVITA_URL` = `http://10.10.0.217:5000`) | the owner's Reading bar, see [Reading](#reading-owner-only) |
-| `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | the owner's News, see [News](#news-owner-only) |
+| `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | News and GitHub (everyone reads, the owner refreshes), see [News](#news-everyone-refresh-owner-only) |
 | `REMIND_URL` | empty = off (Coolify: `http://10.10.0.162:8098`) | Reminders with a time, see [Reminders with a time](#reminders-with-a-time-owner-only) |
 | `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake / Turn off buttons, see [Gaming PC](#gaming-pc) |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
@@ -608,7 +608,14 @@ for 60 days. Nothing in progress, or Kavita not set up: no bar. Kavita down: the
   a picture of 3 MB at most, `private` cache). The key only buys a short-lived token (`lib/kavita.js`), kept in memory.
 
 
-### News (owner only)
+### News (everyone; Refresh owner only)
+
+**Everyone** can read News and the GitHub list: guests (the internet included, no login) get the same days from
+`GET /api/news[?day=]`, `GET /api/github[?day=]` and photos from `GET /api/news/image?f=<name>` (`lib/news-day.js`, shared
+with the owner's routes; read-only, no POST, cached 30 s and photos a week, publicly). A guest's read stories and the
+newest edition they opened (the icon's dot) stay on their device (`lib/guest-reads.js`, localStorage). **Refresh** (a
+run costs) and the synced read state stay the owner's, behind the login: the public answer has no `run` / `nextAt`, so
+no 🔄, and the public routes never ask the agent's `/api/run` or `/api/status`. 📌 Pin is the owner's too.
 
 The digest a news agent on another machine writes (Vietnam and tech, summarised in Vietnamese), read as a **morning
 newspaper** (the look of [ThariqS/ai-newtab](https://github.com/ThariqS/ai-newtab)): cream paper, serif headlines
@@ -631,8 +638,9 @@ phone; on a desktop ← → change pages, j / k move between stories, m marks on
 **Photos** (the agent's schema 1.6, `item.image`): the lead's under its headline and the next two's over theirs, each
 with its credit; the rest a thumbnail on the right; a film's poster stays upright; a read story's photo turns grey. A
 newer edition without a story's photo keeps the earlier one's; older editions (no `image`) just have none. The browser
-gets them from this server (`GET /api/private/settings/news/image?f=<name>`, owner-only: the agent's `images/<name>`,
-an image type only, 3 MB at most, kept privately a week), since a phone out of the house can't reach the agent.
+gets them from this server (`GET /api/private/settings/news/image?f=<name>` for the owner, `/api/news/image` for
+guests: the agent's `images/<name>`, an image type only, 3 MB at most, kept a week), since a phone out of the house
+can't reach the agent.
 A story's title opens it in a new tab and marks it **read** (dimmed on every device: the server keeps it); ✓ marks one
 read or unread, *Mark all read* a section, ▾ shows the whole summary and the original title, 📌 pins its link. Older
 days in the menu at the top. Also in ⌘K (*Open news*).
@@ -661,7 +669,7 @@ wait, and the page says so.
   while on screen, when the modal opens, and when another device reads something (`news` on the live stream).
 - Read stories are kept 45 days (`news_reads`), the newest edition opened in `news_seen`.
 
-### GitHub (owner only)
+### GitHub (everyone; see News)
 
 The same agent's GitHub picks of the day, behind a GitHub icon next to 📰 (a dot: a list not opened yet). It opens like
 News, on the same paper (the whole window or a panel, one ⤡ / ⤢ choice for both; a masthead: *The Dalater*, *GitHub*,
