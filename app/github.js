@@ -4,8 +4,9 @@
 // each explained in Vietnamese: what it is, what it can do, how it helps when building an app, how to try it. An icon
 // next to News' in the header (a dot: a list not opened yet); a tap opens it the way News opens, on the same paper
 // (app/news.js, news-paper.css: the whole window or a panel, a masthead, serif type, columns; github.css's paper part
-// for what's its own). Rules in lib/github.js; the route is app/api/private/settings/github
-// (owner-only: guests get 404 / 403 and never see the icon; NEWS_URL not set: no icon either).
+// for what's its own). Rules in lib/github.js; the owner's route is app/api/private/settings/github (read state on the
+// server); guests read the same from app/api/github, their read state kept on their device (lib/guest-reads.js). NEWS_URL
+// not set: no icon.
 // - Filters on top: All / Trending / New, ★ 4+ (the agent's "worth trying"), a category. Kept across openings.
 // - A repo's name opens it (a new tab) and marks it read: read ones are dimmed, on every device (the server keeps
 //   them, beside News' read stories). ✓ marks one by hand; ▾ (or a tap on its summary) opens the rest: Tính năng,
@@ -22,16 +23,20 @@ import { closeDialog, motionOff, useStillPage } from './settings'
 import { DIFFICULTY, GH_CATEGORIES, GH_RETRY, MATURITY, compact } from '../lib/github'
 import { PAPER, dayName, folio, longDay } from '../lib/news'
 import { privateAnswer } from '../lib/private-poll'
+import { guestReads } from '../lib/guest-reads'
 
 const URL_ = '/api/private/settings/github'
+const GUEST_URL = '/api/github' // (everyone's: read-only)
+const guest = guestReads('home-lofi:github-guest')
 const MIN_GAP = 30_000
 const TZ = 'Asia/Ho_Chi_Minh' // (the agent's day)
 
 // ---- state: the server's, the page only draws it ----
 
-// owner: settings sync answered as the owner; clientId(): this tab's live-stream id. -> { on, pending, data, error,
-// fresh, view, loading, show, reset, isRead, read, unread, seen, live, pull }
-export function useGithub(owner, clientId) {
+// owner: settings sync answered as the owner; known: owner or guest is known (a guest reads app/api/github);
+// clientId(): this tab's live-stream id. -> { on, pending, data, error, fresh, view, loading, show, reset, isRead, read,
+// unread, seen, live, pull }
+export function useGithub(owner, clientId, known = owner) {
   const [data, setData] = useState(null) // the route's GET answer
   const [off, setOff] = useState(false)
   const [tried, setTried] = useState(false)
@@ -44,6 +49,8 @@ export function useGithub(owner, clientId) {
   const view = useRef(null) // the day shown (null: the newest)
   const ownerRef = useRef(owner)
   ownerRef.current = owner
+  const knownRef = useRef(known)
+  knownRef.current = known
   const dataRef = useRef(null)
   dataRef.current = data
   const seq = useRef({ key: 0, sent: 0, shown: 0 })
@@ -57,17 +64,22 @@ export function useGithub(owner, clientId) {
       setPicked(undefined)
     }
     async function pull(force = false) {
-      if (!on || !ownerRef.current || (!force && Date.now() - last < MIN_GAP)) return
+      if (!on || !knownRef.current || (!force && Date.now() - last < MIN_GAP)) return
       if (busy) return void (again = true)
       busy = true
       again = false
       last = Date.now()
       const n = ++seq.current.sent
       const day = view.current
+      const asOwner = ownerRef.current
+      const url = asOwner ? URL_ : GUEST_URL
       try {
-        const r = await fetch(day ? `${URL_}?day=${encodeURIComponent(day)}` : URL_, { cache: 'no-store', redirect: 'manual' })
-        const j = await r.json().catch(() => null)
+        const r = await fetch(day ? `${url}?day=${encodeURIComponent(day)}` : url, { cache: 'no-store', redirect: 'manual' })
+        let j = await r.json().catch(() => null)
         if (!on || day !== view.current) return
+        // (signed in or out meanwhile: asked again as who it is now)
+        if (asOwner !== ownerRef.current) return void (again = true)
+        if (!asOwner && j?.digest) j = { ...j, ...guest.load() }
         if (n < seq.current.shown) return void (again = true)
         seq.current.shown = n
         if (r.status === 404 && day && j?.on) {
@@ -107,14 +119,14 @@ export function useGithub(owner, clientId) {
     }
   }, [])
   useEffect(() => {
-    if (owner) {
-      setOff(false)
-      return void api.current.pull?.(true)
-    }
-    setData(null)
-  }, [owner])
+    if (!known) return void setData(null)
+    setOff(false)
+    api.current.pull?.(true)
+  }, [owner, known])
 
+  // (a guest's: on this device)
   async function write(body) {
+    if (!ownerRef.current) return guest.apply(body)
     const headers = { 'content-type': 'application/json' }
     const id = clientId?.()
     if (id) headers['x-home-client'] = id
@@ -132,12 +144,12 @@ export function useGithub(owner, clientId) {
       .finally(() => setOps((o) => o.filter((x) => x.key !== key)))
   }
 
-  const on = Boolean(owner && data && !off)
+  const on = Boolean(known && data && !off)
   const readSet = new Set(data?.read ?? [])
   for (const o of ops) for (const id of o.ids) o.on ? readSet.add(id) : readSet.delete(id)
   return {
     on,
-    pending: Boolean(owner && !data && !off && !tried),
+    pending: Boolean(known && !data && !off && !tried),
     data,
     error,
     loading: picked !== undefined,

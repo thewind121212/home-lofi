@@ -308,10 +308,10 @@ export default function Home() {
   // the books in progress in Kavita (app/reading.js): asked on load, when the tab shows again and when its sheet opens
   const reading = useReading(owner)
   // the news agent's digest (app/news.js): asked on load, when the tab shows again, every few minutes and on 'news'
-  const news = useNews(owner, cloud.id)
+  const news = useNews(owner, cloud.id, cloud.known)
   newsLive.current = news.live
   // the same agent's GitHub list (app/github.js): the repos of the day, asked the same way (and every 15 min)
-  const github = useGithub(owner, cloud.id)
+  const github = useGithub(owner, cloud.id, cloud.known)
   ghLive.current = github.live
   // the owner's focus session (app/focus.js): the server's, the same on every device; its chip follows to Ambient and
   // the lock screen while one runs. useFocus's start / pause / resume / skip / stop are the API for anything else
@@ -637,7 +637,7 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* ⚙️ Settings (everyone's), the owner's Pins, Reading (only while a book is in progress), News and GitHub, then the bell:
+            {/* ⚙️ Settings (everyone's), the owner's Pins, Reading (only while a book is in progress), News and GitHub (everyone's), then the bell:
                 one tight group (the owner's stand-ins while they may be on the way). Reminders have no icon here: their
                 pop-up / pill bottom left, Ambient's chip and ⌘K open them. Phones: a row of its own under the clock, the
                 icons sharing its width (four don't fit beside it) */}
@@ -645,8 +645,8 @@ export default function Home() {
               <HeadIcon label="Settings" fa="fa-gear" onOpen={openSettings} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
-              <NewsIcon nw={news} wait={!cloud.known || (owner && news.pending)} force={owner} onOpen={openNews} />
-              <GithubIcon gh={github} wait={!cloud.known || (owner && github.pending)} force={owner} onOpen={openGithub} />
+              <NewsIcon nw={news} wait={!cloud.known || news.pending} force onOpen={openNews} />
+              <GithubIcon gh={github} wait={!cloud.known || github.pending} force onOpen={openGithub} />
               {agents.on && <AgentsIcon ref={agentsRef} hub={agents} onOpen={openAgents} />}
               {hub.on ? (
                 <Bell ref={bellRef} unread={hub.unread} onOpen={openInbox} />

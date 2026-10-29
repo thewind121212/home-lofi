@@ -5,8 +5,9 @@
 // rules; news-paper styles in news.css, its type in news-fonts.js): a bottom sheet on phones, a panel on bigger screens.
 // An icon next to the header's bell (a dot: an edition not opened yet); a tap opens it on pages: the front page (a lead
 // story, a column of the next ones, the day in brief and the sections beside them), then one per section (its most
-// important stories on top, the rest in columns), swiped or picked from the section bar. Rules in lib/news.js; the route is app/api/private/settings/news (owner-only: guests get
-// 404 / 403 and never see the icon; NEWS_URL not set: no icon either).
+// important stories on top, the rest in columns), swiped or picked from the section bar. Rules in lib/news.js; the owner's
+// route is app/api/private/settings/news (read state on the server, Refresh); guests read the same from app/api/news,
+// their read state kept on their device (lib/guest-reads.js), and get no Refresh (a run costs). NEWS_URL not set: no icon.
 // - A story's title opens it (a new tab) and marks it read: read ones are dimmed, on every device (the server keeps
 //   them). ✓ marks one read / unread by hand; "Mark all read" a whole section.
 // - A day at a time: every edition of it merged, each story once (lib/news.js mergeDay), the brief and the top stories
@@ -27,9 +28,12 @@ import { closeDialog, motionOff, useStillPage } from './settings'
 import { CATEGORIES, ago, dayName, editionLine, PAPER, editionName, folio, inCinemas, longDay, runGoing, waitFor } from '../lib/news'
 import { paperFonts } from './news-fonts'
 import { privateAnswer } from '../lib/private-poll'
+import { guestReads } from '../lib/guest-reads'
 import { reportError } from './report-error'
 
 const URL_ = '/api/private/settings/news'
+const GUEST_URL = '/api/news' // (everyone's: read-only)
+const guest = guestReads('home-lofi:news-guest')
 const MIN_GAP = 30_000
 const REFRESH = 10 * 60_000
 const POLL = 8000 // a run going: asked this often
@@ -74,9 +78,10 @@ export function SizeButton({ full, onSize }) {
 
 // ---- state: the server's, the page only draws it ----
 
-// owner: settings sync answered as the owner; clientId(): this tab's live-stream id. -> { on, pending, data, error,
-// fresh, view, show, isRead, read, unread, seen, live, pull }
-export function useNews(owner, clientId) {
+// owner: settings sync answered as the owner; known: owner or guest is known (a guest reads app/api/news);
+// clientId(): this tab's live-stream id. -> { on, pending, data, error, fresh, view, show, isRead, read, unread, seen,
+// live, pull, photo }
+export function useNews(owner, clientId, known = owner) {
   const [data, setData] = useState(null) // the route's GET answer
   const [off, setOff] = useState(false)
   const [tried, setTried] = useState(false)
@@ -96,6 +101,8 @@ export function useNews(owner, clientId) {
   const view = useRef(null) // the archive name shown (null: the latest)
   const ownerRef = useRef(owner)
   ownerRef.current = owner
+  const knownRef = useRef(known)
+  knownRef.current = known
   const dataRef = useRef(null)
   dataRef.current = data
   const seq = useRef({ key: 0, sent: 0, shown: 0 })
@@ -109,17 +116,22 @@ export function useNews(owner, clientId) {
       setPicked(undefined)
     }
     async function pull(force = false) {
-      if (!on || !ownerRef.current || (!force && Date.now() - last < MIN_GAP)) return
+      if (!on || !knownRef.current || (!force && Date.now() - last < MIN_GAP)) return
       if (busy) return void (again = true)
       busy = true
       again = false
       last = Date.now()
       const n = ++seq.current.sent
       const name = view.current
+      const asOwner = ownerRef.current
+      const url = asOwner ? URL_ : GUEST_URL
       try {
-        const r = await fetch(name ? `${URL_}?day=${encodeURIComponent(name)}` : URL_, { cache: 'no-store', redirect: 'manual' })
-        const j = await r.json().catch(() => null)
+        const r = await fetch(name ? `${url}?day=${encodeURIComponent(name)}` : url, { cache: 'no-store', redirect: 'manual' })
+        let j = await r.json().catch(() => null)
         if (!on || name !== view.current) return
+        // (signed in or out meanwhile: asked again as who it is now)
+        if (asOwner !== ownerRef.current) return void (again = true)
+        if (!asOwner && j?.digest) j = { ...j, ...guest.load() }
         // (read before a write of this tab's: asked again, so what was asked for still comes)
         if (n < seq.current.shown) return void (again = true)
         seq.current.shown = n
@@ -159,12 +171,10 @@ export function useNews(owner, clientId) {
     }
   }, [])
   useEffect(() => {
-    if (owner) {
-      setOff(false)
-      return void api.current.pull?.(true)
-    }
-    setData(null)
-  }, [owner])
+    if (!known) return void setData(null)
+    setOff(false)
+    api.current.pull?.(true)
+  }, [owner, known])
   // a run going: asked again every POLL, until it's done (or stuck)
   const run = data?.run ?? null
   const going = runGoing(run, Date.now())
@@ -188,7 +198,9 @@ export function useNews(owner, clientId) {
     seq.current.shown = ++seq.current.sent
     return fetch(URL_, { method: 'POST', cache: 'no-store', redirect: 'manual', headers, body: JSON.stringify(body) })
   }
+  // (a guest's: on this device)
   async function write(body) {
+    if (!ownerRef.current) return guest.apply(body)
     if (!(await send(body)).ok) throw new Error('failed')
   }
   function mark(on, ids) {
@@ -201,15 +213,17 @@ export function useNews(owner, clientId) {
       .finally(() => setOps((o) => o.filter((x) => x.key !== key)))
   }
 
-  const on = Boolean(owner && data && !off)
+  const on = Boolean(known && data && !off)
   const readSet = new Set(data?.read ?? [])
   for (const o of ops) for (const id of o.ids) o.on ? readSet.add(id) : readSet.delete(id)
   return {
     on,
-    pending: Boolean(owner && !data && !off && !tried),
+    pending: Boolean(known && !data && !off && !tried),
     data,
     error,
     loading: picked !== undefined,
+    // where the stories' photos come from (the owner's way, or everyone's)
+    photo: owner ? '/api/private/settings/news/image?f=' : '/api/news/image?f=',
     // an edition newer than the newest one opened
     fresh: on && data.latestAt > Math.max(data.seen ?? 0, seenHere),
     view: picked !== undefined ? picked : (data?.picked ?? null),
@@ -226,11 +240,11 @@ export function useNews(owner, clientId) {
       setTrouble(null)
       setReady(null)
     },
-    // Refresh: { can (the agent tells its runs), busy (asked, or a run going), run, nextAt, trouble, ready }
-    refresh: { can: Boolean(on && run), busy: asking || going, run, nextAt: data?.nextAt ?? 0, trouble, ready },
+    // Refresh: { can (the owner, and the agent tells its runs), busy (asked, or a run going), run, nextAt, trouble, ready }
+    refresh: { can: Boolean(on && owner && run), busy: asking || going, run, nextAt: data?.nextAt ?? 0, trouble, ready },
     // a fresh edition now (the agent's limits: said, not asked)
     async start() {
-      if (!on || asking || going) return
+      if (!on || !owner || asking || going) return
       setReady(null)
       if (data.nextAt > Date.now()) return void setTrouble('soon')
       setTrouble(null)
@@ -901,17 +915,17 @@ function Platforms({ names }) {
   )
 }
 
-// a story's photo, through this server (app/api/private/settings/news/image: the agent is on the LAN). The lead's under
+// a story's photo, through this server (nw.photo: app/api/private/settings/news/image, or app/api/news/image for a guest;
+// the agent is on the LAN). The lead's under
 // its headline with the credit, a deck's over it, a row's a thumbnail beside it; a film's poster stays upright. It opens
 // the story like the title (not a stop of its own for the keyboard). One that won't load just isn't there
-const PHOTO = '/api/private/settings/news/image?f='
-function Photo({ it, kind, open, onFail }) {
+function Photo({ it, kind, open, onFail, base }) {
   const { name, width, height, alt, credit } = it.image
   const link = { href: it.url, target: '_blank', rel: 'noopener noreferrer', referrerPolicy: 'no-referrer', onClick: open, onAuxClick: (e) => e.button === 1 && open() }
   return (
     <figure className={`nw-fig is-${kind}${height > width ? ' is-tall' : ''}`}>
       <a {...link} tabIndex={-1} aria-hidden="true">
-        <img src={PHOTO + encodeURIComponent(name)} alt={alt} width={width} height={height} loading={kind === 'row' ? 'lazy' : 'eager'} decoding="async" onError={onFail} />
+        <img src={base + encodeURIComponent(name)} alt={alt} width={width} height={height} loading={kind === 'row' ? 'lazy' : 'eager'} decoding="async" onError={onFail} />
       </a>
       {kind !== 'row' && credit && <figcaption>{credit}</figcaption>}
     </figure>
@@ -932,7 +946,7 @@ function Story({ it, kind = 'row', nw, pn, pinned, now }) {
   const open = () => nw.read([it.id])
   return (
     <article data-id={it.id} className={`nw-story is-${kind}${read ? ' is-read' : ''}${photo ? ' has-photo' : ''}`}>
-      {photo && kind !== 'lead' && <Photo it={it} kind={kind} open={open} onFail={() => setNoPhoto(true)} />}
+      {photo && kind !== 'lead' && <Photo it={it} kind={kind} open={open} onFail={() => setNoPhoto(true)} base={nw.photo} />}
       <div className="nw-tags">
         <span className="nw-cat">{CATEGORIES[it.category]}</span>
         {nw.isNew?.(it) && <span className="nw-new">New</span>}
@@ -944,7 +958,7 @@ function Story({ it, kind = 'row', nw, pn, pinned, now }) {
         <a href={it.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={open} onAuxClick={(e) => e.button === 1 && open()}>{it.title}</a>
         {it.platform && <Platforms names={it.platform} />}
       </h4>
-      {photo && lead && <Photo it={it} kind={kind} open={open} onFail={() => setNoPhoto(true)} />}
+      {photo && lead && <Photo it={it} kind={kind} open={open} onFail={() => setNoPhoto(true)} base={nw.photo} />}
       {it.summary && (
         <p className={`nw-sum${more || lead ? ' is-open' : ''}`} onClick={() => !lead && setMore((m) => !m)}>{it.summary}</p>
       )}
