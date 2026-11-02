@@ -16,13 +16,13 @@
 //   picker (LinkPicker, one for the page, opened with pn.pick) ticks pins on and off, or pins a pasted link onto it.
 // - The owner's other tabs follow on the live stream ('pins': pull).
 import './pins.css'
-import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Check, ChevronDown, CornerDownRight, Link2, Pin, Plus, RotateCw, Search, SearchX, Sparkles, Trash2, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { Bone } from './skeleton'
 import { closeDialog, load, motionOff, save, useStillPage } from './settings'
 import { MAX_LINKS, REASONS, UNDO_MS, cleanUrl, linkedTo, looksLikeLink, matches } from '../lib/pins'
-import { RENDER_STEP, TIMES, TOP_PARTS, TOP_SITES, byDay, bySite, cleanView, dayDate, dayKey, dayLabel, facet, linesOf, liveFilters, marks, plan, prepare, sheetKey, shownOf, whereOf } from '../lib/pins-view'
+import { RENDER_FIRST, RENDER_STEP, TIMES, TOP_PARTS, TOP_SITES, byDay, bySite, chipOf, cleanView, dayDate, dayKey, dayLabel, facet, linesOf, liveFilters, marks, plan, prepare, sheetKey, shownOf, whereOf } from '../lib/pins-view'
 import { UndoLeft, UndoLine } from './habits'
 
 const URL_ = '/api/private/settings/pins'
@@ -283,7 +283,7 @@ const Tile = memo(function Tile({ pin, q, fresh = false, day = null, onRemove, o
   return (
     <li className={`pn-tile${pin.ok ? '' : ' is-bare'}${fresh ? ' is-new' : ''}${day ? ' has-day' : ''}`} data-pin={pin.id}>
       {day && <span className="pn-tday">{day}</span>}
-      <a className="pn-link" href={pin.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={pin.url}>
+      <a className="pn-link" href={pin.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={pin.url} aria-label={`${name}${desc ? ` — ${desc}` : ''}, ${meta}`}>
         <Thumb pin={pin} />
         <span className="pn-text">
           <span className="pn-name"><Hl text={name} q={q} /></span>
@@ -359,15 +359,11 @@ const JUST_MAX = 3 // links pinned in this sitting, on top of the list
 // tall window). With enough pins to filter the sheet has a fixed height, so a filter doesn't make it jump.
 export function PinsSheet({ pn, dlg }) {
   const [open, setOpen] = useState(false)
-  const [round, setRound] = useState(0) // each close: a fresh body for the next open (no search or filter left over)
   useStillPage(dlg, open)
   useEffect(() => {
     const d = dlg.current
     if (!d) return
-    const seen = new MutationObserver(() => {
-      setOpen(d.open)
-      if (!d.open) setRound((r) => r + 1)
-    })
+    const seen = new MutationObserver(() => setOpen(d.open))
     seen.observe(d, { attributes: true, attributeFilter: ['open'] })
     return () => seen.disconnect()
   }, [dlg])
@@ -382,7 +378,7 @@ export function PinsSheet({ pn, dlg }) {
       onClose={() => delete dlg.current.dataset.closing}
       className={`wx-sheet pn-sheet${shown >= FILTERS_FROM ? ' is-tall' : ''} sm:max-w-2xl glass-panel text-lofi-text`}
     >
-      {pn.on && <PinsBody key={round} pn={pn} open={open} onClose={close} />}
+      {pn.on && <PinsBody pn={pn} open={open} onClose={close} />}
     </dialog>
   )
 }
@@ -418,23 +414,24 @@ function ChipRow({ label, items, max = Infinity, keep = null, lead = null, noun 
     const el = ref.current
     if (!el) return
     const on = () => check.current()
-    const ro = new ResizeObserver(() => (setWidth(el.clientWidth), on()))
+    // (a closed sheet's 0 isn't a width: the row fits as it did when it opens again, with nothing to measure)
+    const ro = new ResizeObserver(() => (el.clientWidth && setWidth(el.clientWidth), on()))
     ro.observe(el)
     el.addEventListener('scroll', on, { passive: true })
     return () => (ro.disconnect(), el.removeEventListener('scroll', on))
   }, [])
   useEffect(() => void check.current()) // (its chips change: the counts, "+N")
-  // fitting: from max again whenever the row or its chips change, then one fewer until "+N" is on the first line
-  // (layout effects: all before the screen shows any of it)
+  // fitting: from max again whenever the row or its chips change, then one fewer until "+N" is on the first line.
+  // (After the paint, not before it: the first opening measures while the sheet fades in, and doesn't hold it up)
   const sig = `${width}|${items.map((it) => it.key).join()}|${keep}`
-  useLayoutEffect(() => void setFit(max), [sig, max])
-  useLayoutEffect(() => {
+  useEffect(() => void setFit(max), [sig, max])
+  useEffect(() => {
     const el = ref.current
-    if (!el || all || max === Infinity || !el.clientWidth || getComputedStyle(el).flexWrap !== 'wrap') return
+    if (!el || all || max === Infinity || !width || getComputedStyle(el).flexWrap !== 'wrap') return
     const first = el.querySelector('[data-chip]')
     const more = el.querySelector('[data-more]')
     if (first && more && more.offsetTop > first.offsetTop + 4 && fit > 1) setFit((f) => f - 1)
-  })
+  }, [sig, fit, all, max, width]) // (only when something it measures may have changed: each measure is a layout)
   const n = all ? items.length : Math.min(fit, max)
   const shown = items.filter((it, i) => i < n || it.key === keep)
   const rest = items.length - shown.length
@@ -450,6 +447,35 @@ function ChipRow({ label, items, max = Infinity, keep = null, lead = null, noun 
     </div>
   )
 }
+
+// The room the page has: the visual viewport ({ h, top }). An on-screen keyboard takes its share there, also where the
+// layout viewport stays as it was (iOS, and Chrome on Android since 108): innerHeight would never know
+function useRoom() {
+  const read = () => ({ h: Math.round(window.visualViewport?.height ?? innerHeight), top: Math.round(window.visualViewport?.offsetTop ?? 0) })
+  const [room, setRoom] = useState(read)
+  useEffect(() => {
+    const vv = window.visualViewport
+    const on = () => setRoom((r) => {
+      const n = read()
+      return n.h === r.h && n.top === r.top ? r : n
+    })
+    const at = vv ?? window
+    at.addEventListener('resize', on)
+    vv?.addEventListener('scroll', on)
+    on()
+    return () => (at.removeEventListener('resize', on), vv?.removeEventListener('scroll', on))
+  }, [])
+  return room
+}
+// fn once what's drawn now is on screen (the next frame; or soon all the same, with no frames: a hidden tab, a busy
+// page) -> a cleanup. (Its own timers per caller: a raise batched with a reset into no change at all can't strand it)
+function afterPaint(fn) {
+  let t = 0
+  const raf = requestAnimationFrame(() => void (t = setTimeout(fn, 0)))
+  const late = setTimeout(fn, 150)
+  return () => (cancelAnimationFrame(raf), clearTimeout(t), clearTimeout(late))
+}
+const COMPACT_H = 560 // a visible height under this, typing on a touch screen: the compact sheet (a phone: always, its keyboard is half the screen)
 
 // the words found, marked (lib/pins-view.js marks: no case, no accents)
 function Hl({ text, q }) {
@@ -467,17 +493,34 @@ function PinsBody({ pn, open, onClose }) {
   const [time, setTime] = useState('any')
   const [opened, setOpened] = useState(() => new Set()) // sections showing all their pins
   const [shut, setShut] = useState(() => new Set()) // sections folded away
-  const [limit, setLimit] = useState(RENDER_STEP) // tiles drawn so far (more as the list's end comes near)
+  const [limit, setLimit] = useState(RENDER_FIRST) // tiles drawn so far (more as the list's end comes near)
   const [just, setJust] = useState([]) // ids pinned (or pinned again) in this sitting, newest first: on top of the list
   const [fresh, setFresh] = useState(null) // the one just pinned: glowing a moment
   const [typing, setTyping] = useState(false) // the box has the focus (on a phone: the keyboard is up)
   const [clears, setClears] = useState(0) // (each Clear: the chip rows start over, "+N" folded)
   const [heard, setHeard] = useState('') // the result count, for screen readers
+  // the list's first screenful is drawn before the sheet first opens, when the page is idle (opening it then has
+  // little new to lay out; the rest comes a frame later), and stays drawn (the tiles are memoised: the page's own
+  // updates cost little while it's closed)
+  const [warm, setWarm] = useState(false)
+  useEffect(() => {
+    if (warm || open) return
+    const idle = window.requestIdleCallback ?? ((f) => setTimeout(f, 1200))
+    const stop = window.cancelIdleCallback ?? clearTimeout
+    const id = idle(() => setWarm(true), { timeout: 4000 })
+    return () => stop(id)
+  }, [warm, open])
+  const drawing = open || warm
   const box = useRef(null)
   const scroller = useRef(null)
   const filtersRef = useRef(null)
   const justRef = useRef(null)
   const now = useNow()
+  const room = useRoom()
+  const [touch] = useState(() => matchMedia('(hover: none)').matches)
+  // typing on a touch screen with little room left (a phone's keyboard up; a tablet's only when it's short): the sheet
+  // takes the visible part of the screen from its top, and the head and the chips step aside for the results
+  const compact = typing && touch && (innerWidth < 640 || room.h < COMPACT_H)
   // (stable for the memoised tiles: pn is a new object on every render)
   const pnRef = useRef(pn)
   pnRef.current = pn
@@ -509,7 +552,10 @@ function PinsBody({ pn, open, onClose }) {
   const shape = filters ? view : 'site' // (a handful of pins: no views to pick from, by site)
   const found = useDeferredValue(f.found)
   const shapeLate = useDeferredValue(shape)
-  const groups = useMemo(() => (shapeLate === 'site' ? bySite(found) : byDay(found)), [shapeLate, found])
+  // (pinned in this sitting: on top, "Just pinned", and only there: once in sight is enough)
+  const justSet = useMemo(() => new Set(just), [just])
+  const listed = useMemo(() => (justSet.size ? found.filter((p) => !justSet.has(p.id)) : found), [found, justSet])
+  const groups = useMemo(() => (shapeLate === 'site' ? bySite(listed) : byDay(listed)), [shapeLate, listed])
   const stale = found !== f.found || shapeLate !== shape
   const filtered = Boolean(siteOn || timeOn !== 'any')
   const searching = Boolean(query)
@@ -544,26 +590,63 @@ function PinsBody({ pn, open, onClose }) {
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   }, [open])
+  // closed: the next opening starts fresh (no search, no filter, nothing folded or opened, at the top), in the view
+  // this device keeps
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (open) return void (wasOpen.current = true)
+    if (!wasOpen.current) return
+    wasOpen.current = false
+    setQ('')
+    if (keys.current.filtered) clearFilters()
+    setClears((c) => c + 1) // (and the chip rows folded again)
+    setOpened((o) => (o.size ? new Set() : o))
+    setShut((x) => (x.size ? new Set() : x))
+    setJust((j) => (j.length ? [] : j))
+    setFresh(null)
+    setLimit(RENDER_FIRST) // (opening again lays out a screenful, the rest a frame later)
+    scroller.current?.scrollTo({ top: 0 })
+  }, [open])
+
   // opened with a mouse: straight into the box (on a phone that would throw the keyboard up)
   useEffect(() => {
     if (open && matchMedia('(pointer: fine)').matches) box.current?.focus({ preventScroll: true })
   }, [open])
-  // a new filter, view or search: back to the top of the list, and only its first tiles drawn
+  // a new filter, view or search: back to the top of the list, a screenful drawn (the tap answers sooner) and the rest
+  // of the first batch once that's on screen (open: closed, it waits for the opening)
+  const openRef = useRef(open)
+  openRef.current = open
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 })
-    setLimit(RENDER_STEP)
+    setLimit(RENDER_FIRST)
+    if (openRef.current) return afterPaint(() => setLimit((l) => Math.max(l, RENDER_STEP)))
   }, [siteOn, subOn, timeOn, shape, query])
+  useEffect(() => {
+    if (open) return afterPaint(() => setLimit((l) => Math.max(l, RENDER_STEP)))
+  }, [open])
+  // the compact sheet: the dialog itself is sized to the visible part (--pn-vv-h, --pn-vv-top: app/pins.css)
+  useEffect(() => {
+    const d = box.current?.closest('dialog')
+    if (!d) return
+    d.classList.toggle('is-compact', compact)
+    d.style.setProperty('--pn-vv-h', `${room.h}px`)
+    d.style.setProperty('--pn-vv-top', `${room.top}px`)
+  }, [compact, room.h, room.top])
+  useEffect(() => () => void box.current?.closest('dialog')?.classList.remove('is-compact'), [])
   // the filters on top of the list where they stay (a tall window): the section heads stop under them, and a tile
   // focused by keys scrolls clear of both (--pn-stick, the filters' height there; 0 where they scroll away)
   useEffect(() => {
     const el = filtersRef.current, sc = scroller.current
     if (!el || !sc) return
     const set = () => sc.style.setProperty('--pn-stick', `${getComputedStyle(el).position === 'sticky' ? el.offsetHeight : 0}px`)
+    // (its border box: sticky and back changes only its padding and border; and the switch itself, whose size may not)
     const ro = new ResizeObserver(set)
-    ro.observe(el)
+    ro.observe(el, { box: 'border-box' })
+    const mq = matchMedia('(min-width: 640px) and (min-height: 760px)')
+    mq.addEventListener('change', set)
     set()
-    return () => ro.disconnect()
-  }, [filters, searching, open])
+    return () => (ro.disconnect(), mq.removeEventListener('change', set))
+  }, [filters, searching])
   // the count, said a moment after the search or a filter settles (screen readers: what the list now holds)
   const n = f.found.length
   useEffect(() => {
@@ -612,10 +695,10 @@ function PinsBody({ pn, open, onClose }) {
     const io = new IntersectionObserver((e) => e[0]?.isIntersecting && setLimit((l) => l + RENDER_STEP), { root: scroller.current, rootMargin: '800px 0px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [drawn.more, limit, open])
+  }, [drawn.more, limit, drawing])
   const u = pn.undoing
   return (
-    <section aria-labelledby="pn-title" className={`pn pn-main${typing ? ' is-typing' : ''}`}>
+    <section aria-labelledby="pn-title" className={`pn pn-main${typing ? ' is-typing' : ''}${compact ? ' is-compact' : ''}`}>
       <div className="pn-top">
         <div className="pn-head">
           <span className="pn-mark" aria-hidden="true"><Pin size={16} /></span>
@@ -669,7 +752,7 @@ function PinsBody({ pn, open, onClose }) {
         <p className="sr-only" role="status" aria-live="polite">{heard}</p>
       </div>
 
-      <div ref={scroller} className="pn-scroll" data-scroll>
+      <div ref={scroller} className={`pn-scroll${pn.note || pn.undoing ? ' has-toast' : ''}`} data-scroll> 
         {(filters || searching) && (
           <div ref={filtersRef} className="pn-filters">
             {filters && (
@@ -757,7 +840,7 @@ function PinsBody({ pn, open, onClose }) {
             </div>
           </section>
         )}
-        {!open ? null : total === 0 && !pn.adding.length ? (
+        {!drawing ? null : total === 0 && !pn.adding.length ? (
           <Empty />
         ) : n === 0 && total > 0 ? (
           <NoMatch query={query} filtered={filtered} where={where} alone={alone} onFilters={clearFilters} onSearch={() => (setQ(''), box.current?.focus())} onAll={clearAll} />
@@ -850,7 +933,9 @@ function PinSection({ id, head, name, pins, take, cut, days, bare, now, shut, on
     // (back to its head when it was scrolled past: the rest folds up above the finger otherwise)
     const el = ref.current
     const sc = el?.closest('.pn-scroll')
-    if (el && sc && el.getBoundingClientRect().top < sc.getBoundingClientRect().top) sc.scrollTo({ top: el.offsetTop - sc.offsetTop })
+    // (under the filters where they stay on top: --pn-stick)
+    const stick = sc ? parseFloat(getComputedStyle(sc).getPropertyValue('--pn-stick')) || 0 : 0
+    if (el && sc && el.getBoundingClientRect().top < sc.getBoundingClientRect().top + stick) sc.scrollTo({ top: el.offsetTop - sc.offsetTop - stick })
   }
   let last = null
   const tiles = (
@@ -916,7 +1001,8 @@ function NoMatch({ query, filtered, where, alone, onFilters, onSearch, onAll }) 
 
 // ---- links on habits and reminders ----
 
-// The pins on a habit / reminder (to: { kind, id }), as small chips: each opens its link in a new tab. Nothing when
+// The pins on a habit / reminder (to: { kind, id }), as small chips: each opens its link in a new tab, named so they
+// tell apart (lib/pins-view.js chipOf: "PR #7 · next.js"; the whole title is its accessible name). Nothing when
 // there are none (or this isn't the owner's page)
 export function PinChips({ pn, to, className = '' }) {
   if (!pn?.on) return null
@@ -926,9 +1012,9 @@ export function PinChips({ pn, to, className = '' }) {
     <ul className={`pn-chips ${className}`} aria-label="Links">
       {list.map((p) => (
         <li key={p.id}>
-          <a className="pn-chip" href={p.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={p.title ? `${p.title} · ${p.domain}` : p.url}>
+          <a className="pn-chip" href={p.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={p.title ? `${p.title} · ${p.domain}` : p.url} aria-label={`${p.title ?? p.url}, ${p.domain}`}>
             <Icon pin={p} size={12} />
-            <span>{linesOf(p).title}</span>
+            <span>{chipOf(p)}</span>
           </a>
         </li>
       ))}
