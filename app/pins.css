@@ -1,5 +1,5 @@
-/* The Pins card (app/pins.js): a glass-panel card on the dashboard, under Habits. The page's own tokens; pn- keeps it
-   to itself. Every tile is the same height (its skeleton's too), so the card's height is known before the data comes. */
+/* The Pins sheet (app/pins.js PinsSheet) and the link picker; the page's own tokens; pn- keeps it to itself. Every
+   tile is the same height (its pending one's too), so a list's height is known before its pictures come. */
 .pn { display: flex; flex-direction: column; gap: 12px; }
 .pn-head { display: flex; align-items: center; gap: 12px; }
 .pn-mark { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
@@ -7,6 +7,38 @@
 .pn-title { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
 .pn-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
 .pn-sub { margin-top: 2px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+
+/* the sheet: its head, box and filters stay put (.pn-top), only the pins under them scroll (.pn-scroll, [data-scroll]:
+   app/settings.js useStillPage keeps the page behind still). With enough pins to filter (.is-tall) its height is
+   fixed, so a filter or a search doesn't make it jump; a handful of pins keep it as small as they are */
+.pn-sheet[open] { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; touch-action: none; }
+.pn-sheet::backdrop { touch-action: none; }
+.pn-sheet.is-tall { height: 88svh; }
+@media (min-width: 640px) { .pn-sheet.is-tall { height: min(48rem, calc(100svh - 4rem)); } }
+@media (max-height: 500px) { .pn-sheet.is-tall { height: calc(100svh - 1rem); } }
+.pn-main { flex: 1; min-height: 0; gap: 0; }
+.pn-top { flex: none; display: flex; flex-direction: column; gap: 12px; padding: 20px 20px 12px; }
+.is-tall .pn-top { border-bottom: 1px solid rgb(255 255 255 / 0.06); }
+.pn-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; padding: 0 20px 24px; }
+.pn-scroll:not(:has(.pn-sec)) { padding-top: 4px; }
+@media (min-width: 640px) {
+  .pn-top { padding: 24px 24px 14px; }
+  .pn-scroll { padding: 0 24px 28px; }
+}
+
+/* By site | By date: a pill with a sliding thumb */
+.pn-seg { position: relative; flex: none; display: grid; grid-template-columns: 1fr 1fr; padding: 3px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.1); background: rgb(26 26 46 / 0.6); }
+.pn-seg .slide { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px); border-radius: 999px; background: var(--color-lofi-primary); box-shadow: 0 0 12px rgb(255 138 92 / 0.3); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pn-seg[data-on='date'] .slide { transform: translateX(100%); }
+.pn-seg button {
+  position: relative; z-index: 1; height: 28px; padding: 0 11px; border: 0; border-radius: 999px; background: transparent; cursor: pointer;
+  color: var(--color-lofi-muted); font-size: 12px; white-space: nowrap; transition: color 0.25s;
+}
+.pn-seg button:hover { color: var(--color-lofi-text); }
+.pn-seg button[aria-pressed='true'] { color: var(--color-lofi-base); font-weight: 600; }
+.pn-seg button:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+@media (hover: none) { .pn-seg button { height: 36px; } }
+@media (max-width: 380px) { .pn-seg button { padding: 0 8px; } .pn-head { gap: 8px; } }
 
 /* the one box: search as you type, Pin a link */
 .pn-box {
@@ -23,6 +55,12 @@
 .pn-input:focus-visible { outline: none; }
 .pn-clear { width: 28px; height: 28px; flex: none; border-radius: 999px; display: grid; place-items: center; color: var(--color-lofi-muted); background: transparent; border: 0; cursor: pointer; }
 .pn-clear:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
+.pn-kbd {
+  flex: none; min-width: 22px; height: 22px; margin-right: 2px; display: grid; place-items: center; border-radius: 6px; border: 1px solid rgb(255 255 255 / 0.14);
+  font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; line-height: 1; color: var(--color-lofi-muted); transition: opacity 0.2s;
+}
+.pn-box:focus-within .pn-kbd { opacity: 0; }
+@media (hover: none) { .pn-kbd { display: none; } }
 .pn-add {
   height: 34px; flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px 0 9px; border-radius: 10px; cursor: pointer;
   border: 1px solid rgb(255 138 92 / 0.45); background: rgb(255 138 92 / 0.14); color: var(--color-lofi-primary);
@@ -41,6 +79,9 @@
 .pn-tile { position: relative; min-width: 0; height: 88px; border-radius: 16px; border: 1px solid rgb(255 255 255 / 0.06); background: rgb(26 26 46 / 0.4); transition: border-color 0.25s, background-color 0.25s; }
 .pn-tile:hover, .pn-tile:focus-within { border-color: rgb(255 138 92 / 0.35); background: rgb(26 26 46 / 0.6); }
 .pn-tile.is-pending { border-style: dashed; border-color: rgb(255 138 92 / 0.35); }
+/* just pinned (or pinned again): a glow that fades, where it landed */
+.pn-tile.is-new { animation: pn-glow 2.4s ease-out both; }
+@keyframes pn-glow { from { border-color: rgb(255 138 92 / 0.8); box-shadow: 0 0 0 1px rgb(255 138 92 / 0.5), 0 0 22px rgb(255 138 92 / 0.3); } }
 .pn-link { display: flex; align-items: center; gap: 12px; height: 100%; padding: 8px; border-radius: inherit; color: inherit; text-decoration: none; }
 .pn-link:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
 .pn-thumb { position: relative; width: 96px; height: 70px; flex: none; border-radius: 11px; overflow: hidden; background: var(--color-lofi-surface); }
@@ -89,11 +130,120 @@
 .pn-empty p { margin: 0; font-size: 14px; color: #fff; }
 .pn-empty small { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
 .pn-more {
-  align-self: center; height: 32px; padding: 0 14px; border-radius: 999px; display: inline-flex; align-items: center; cursor: pointer;
+  display: flex; margin: 12px auto 2px; height: 34px; padding: 0 12px 0 16px; border-radius: 999px; align-items: center; gap: 6px; cursor: pointer;
   border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: var(--color-lofi-text);
   font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; transition: border-color 0.2s, color 0.2s;
 }
 .pn-more:hover { border-color: rgb(255 138 92 / 0.6); color: var(--color-lofi-primary); }
+.pn-more:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+@media (hover: none) { .pn-more { height: 40px; } }
+
+/* ---- the filters: rows of chips under the box ---- */
+.pn-filters { display: flex; flex-direction: column; gap: 8px; }
+/* one line each, scrolling sideways with no bar, the edges fading where there's more (data-fade: l / r, from
+   ChipRow); bleeding to the sheet's edges so a chip scrolls out of sight, not into a wall. From 640 px with a mouse
+   they wrap instead: a wheel doesn't scroll sideways */
+.pn-row {
+  --fl: 0px; --fr: 0px;
+  display: flex; align-items: center; gap: 6px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; touch-action: pan-x;
+  margin: 0 -20px; padding: 1px 20px;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+}
+.pn-row::-webkit-scrollbar { display: none; }
+.pn-row[data-fade*='l'] { --fl: 32px; }
+.pn-row[data-fade*='r'] { --fr: 32px; }
+@media (min-width: 640px) { .pn-row { margin: 0 -24px; padding: 1px 24px; } }
+@media (min-width: 640px) and (hover: hover) {
+  .pn-row { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; -webkit-mask-image: none; mask-image: none; }
+}
+.pn-fchip {
+  flex: none; height: 32px; max-width: 14rem; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgb(255 255 255 / 0.1); background: rgb(255 255 255 / 0.03); color: var(--color-lofi-text); font-size: 12.5px; line-height: 1;
+  transition: border-color 0.2s, background-color 0.2s, color 0.2s, opacity 0.2s;
+}
+.pn-fchip .pn-icon { border-radius: 4px; }
+.pn-fchip .pn-letter { border-radius: 4px; }
+.pn-fchip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-fchip .n { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); transition: color 0.2s; }
+.pn-fchip:hover { border-color: rgb(255 138 92 / 0.45); }
+.pn-fchip[aria-pressed='true'] { color: #fff; border-color: rgb(255 138 92 / 0.65); background: rgb(255 138 92 / 0.16); }
+.pn-fchip[aria-pressed='true'] .n { color: var(--color-lofi-primary); }
+.pn-fchip:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 2px; }
+/* (none there with the rest as it is: dimmed, never gone, so the row doesn't shuffle under the finger) */
+.pn-fchip.is-zero:not([aria-pressed='true']) { opacity: 0.38; }
+.pn-fchip.is-more { padding: 0 12px; border-style: dashed; color: var(--color-lofi-muted); font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; }
+.pn-fchip.is-more:hover { color: var(--color-lofi-primary); }
+.pn-fchip.is-small { height: 28px; padding: 0 9px; font-size: 12px; }
+.pn-row.is-sub { animation: pn-rise 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.pn-sub-ic { flex: none; color: var(--color-lofi-muted); margin: 0 0 0 6px; }
+@media (hover: none) {
+  .pn-fchip { height: 36px; padding: 0 12px; }
+  .pn-fchip.is-small { height: 36px; padding: 0 11px; }
+}
+
+/* what's on, and Clear */
+.pn-sum { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 22px; margin: -2px 0 -4px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+.pn-sum > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pn-sum-clear {
+  flex: none; height: 26px; padding: 0 10px; margin-right: -6px; border-radius: 999px; border: 0; background: transparent; cursor: pointer;
+  color: var(--color-lofi-primary); font: inherit; transition: background-color 0.2s;
+}
+.pn-sum-clear:hover { background: rgb(255 138 92 / 0.12); }
+.pn-sum-clear:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: 1px; }
+@media (hover: none) { .pn-sum-clear { height: 36px; } }
+
+/* ---- the sections: a site's pins (day dividers inside) or a day's ---- */
+.pn-sec { animation: pn-fade 0.25s ease-out both; }
+.pn-sec + .pn-sec { margin-top: 6px; }
+/* the head stays at the top of the list while its pins scroll under it: a band a shade lighter than the sheet, the
+   whole width, opaque (see-through, Chrome let the tiles show through it far more than its alpha said) */
+.pn-sec-head { position: sticky; top: 0; z-index: 2; margin: 0 -20px; padding: 0 20px; background: rgb(31 31 55); font-size: inherit; font-weight: inherit; }
+@media (min-width: 640px) { .pn-sec-head { margin: 0 -24px; padding: 0 24px; } }
+.pn-sec-head button {
+  width: 100%; height: 46px; display: flex; align-items: center; gap: 10px; padding: 0; border: 0; border-bottom: 1px solid rgb(255 255 255 / 0.05);
+  background: transparent; color: #fff; cursor: pointer; text-align: left;
+}
+.pn-sec-head button:focus-visible { outline: 2px solid var(--color-lofi-primary); outline-offset: -2px; border-radius: 10px; }
+.pn-sec-head .pn-icon, .pn-sec-head .pn-letter { border-radius: 5px; }
+.pn-sec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.pn-sec-dom { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-muted); }
+.pn-sec-cal { flex: none; color: var(--color-lofi-primary); }
+.pn-count {
+  margin-left: auto; flex: none; min-width: 24px; height: 20px; padding: 0 7px; border-radius: 999px; display: grid; place-items: center;
+  background: rgb(255 255 255 / 0.06); font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; color: var(--color-lofi-text);
+}
+.pn-chev { flex: none; color: var(--color-lofi-muted); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pn-sec.is-shut .pn-sec-head .pn-chev { transform: rotate(-90deg); }
+.pn-sec-head button:hover .pn-chev { color: var(--color-lofi-primary); }
+.pn-more .pn-chev { color: inherit; }
+.pn-more .pn-chev.is-up { transform: rotate(180deg); }
+/* folding: the rows shrink to nothing (and are inert: no tab stops in what's hidden). A little room around the tiles
+   so their focus rings aren't cut */
+.pn-fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pn-sec.is-shut .pn-fold { grid-template-rows: 0fr; }
+.pn-fold-in { min-height: 0; overflow: hidden; padding: 10px 4px 6px; margin: 0 -4px; transition: opacity 0.25s, visibility 0.3s, padding 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pn-sec.is-shut .pn-fold-in { opacity: 0; visibility: hidden; padding-top: 0; padding-bottom: 0; }
+/* a day inside a site's section */
+.pn-day { display: flex; align-items: center; gap: 10px; margin: 6px 0 8px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--color-lofi-muted); }
+.pn-day:first-child { margin-top: 0; }
+.pn-day::after { content: ''; flex: 1; height: 1px; background: rgb(255 255 255 / 0.06); }
+.pn-grid + .pn-day { margin-top: 14px; }
+.pn-adding { margin: 12px 0 4px; }
+.pn-sentinel { height: 1px; } /* (near the list's end: the next tiles, app/pins.js) */
+
+/* the search's words, in the tiles */
+.pn-hit { color: #fff; background: rgb(255 138 92 / 0.26); border-radius: 3px; box-shadow: 0 0 0 1px rgb(255 138 92 / 0.14); }
+.pn-dom .pn-hit { color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
+
+/* nothing left by the search and the filters */
+.pn-nomatch { align-items: center; text-align: center; gap: 8px; margin-top: 16px; padding: 26px 18px 22px; border-color: rgb(255 255 255 / 0.12); animation: pn-fade 0.25s ease-out both; }
+.pn-nomatch small { overflow-wrap: anywhere; }
+.pn-nomatch-ic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); margin-bottom: 2px; }
+.pn-nomatch-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+.pn-ghost.is-on { border-color: rgb(255 138 92 / 0.5); color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.08); }
+@media (hover: none) { .pn-nomatch-acts .pn-ghost { height: 40px; } }
+@keyframes pn-fade { from { opacity: 0; } }
 
 /* the undo bar */
 .pn-undo { position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px; border-radius: 14px; padding: 8px 8px 8px 10px; background: var(--color-lofi-base); border: 1px solid rgb(255 138 92 / 0.3); animation: pn-rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }

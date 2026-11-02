@@ -16,6 +16,11 @@ Next.js (App Router, JavaScript) · Tailwind CSS v4 · no database.
   a phone). Full screen is **F**, Quick actions **⌘K** / **Ctrl+K** / **/**, ⚙️ Settings sits by the header's bell.
 - **Header icons** (by the clock): ⚙️ Settings, 📰 News and GitHub for everyone, the owner's 📌 Pins, 📖 Reading, 🤖 Agents and the 🔔 bell.
   Reminders have no icon there: their pop-up / pill (bottom left, the pill at any hour while one is open), Ambient's chip and ⌘K open them.
+- **Pins** (the owner's 📌 sheet): paste a link to pin it, or type to search (the words found are marked). The pins
+  show **By site** (a section per site, biggest first, day dividers inside, *Show N more* on a long one) or **By date**
+  (a section per day); the choice is the device's. Quick filters under the box: a site (a big one, picked, adds its
+  owners: GitHub's), and Any time / Today / 7 days / 30 days / Older; each chip's count is what it would leave.
+  **/** goes to the box, **Esc** clears the search, then the filters, then closes.
 - **Links**: pins can go on habits and reminders (several on one, one on several). A reminder's 🔗 button (on its row,
   in the pop-up or the list) or a routine's *Links* (Habits › routines › edit) opens the picker: tick pins on or off,
   or paste a new link to pin and link it at once. Their chips show under the reminder and on the habit's tile; a tap
