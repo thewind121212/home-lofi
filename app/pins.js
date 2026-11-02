@@ -16,13 +16,13 @@
 //   picker (LinkPicker, one for the page, opened with pn.pick) ticks pins on and off, or pins a pasted link onto it.
 // - The owner's other tabs follow on the live stream ('pins': pull).
 import './pins.css'
-import { Fragment, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, Check, ChevronDown, CornerDownRight, Link2, Pin, Plus, RotateCw, Search, SearchX, Trash2, X } from 'lucide-react'
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays, Check, ChevronDown, CornerDownRight, Link2, Pin, Plus, RotateCw, Search, SearchX, Sparkles, Trash2, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { Bone } from './skeleton'
 import { closeDialog, load, motionOff, save, useStillPage } from './settings'
 import { MAX_LINKS, REASONS, UNDO_MS, cleanUrl, linkedTo, looksLikeLink, matches } from '../lib/pins'
-import { RENDER_STEP, TIMES, TOP_PARTS, TOP_SITES, byDay, bySite, cleanView, dayDate, dayKey, dayLabel, facet, marks, linesOf, plan, prepare, sheetKey, shownOf, whereOf } from '../lib/pins-view'
+import { RENDER_STEP, TIMES, TOP_PARTS, TOP_SITES, byDay, bySite, cleanView, dayDate, dayKey, dayLabel, facet, linesOf, liveFilters, marks, plan, prepare, sheetKey, shownOf, whereOf } from '../lib/pins-view'
 import { UndoLeft, UndoLine } from './habits'
 
 const URL_ = '/api/private/settings/pins'
@@ -159,8 +159,8 @@ export function usePins(owner, clientId) {
     hidden: (id) => gone.has(id) || undoing?.pin.id === id,
     // 'pins': another tab changed something; 'hello': the stream (re)connected, a pull unless one just went out
     live: (kind) => (kind === 'pins' || (kind === 'hello' && Date.now() - seq.current.at > 3000)) && api.current.live?.(),
-    // a link -> true once it's kept (or was already), false if not (the note says why). to: linked onto that habit /
-    // reminder too ({ kind, id })
+    // a link -> the pin's id once it's kept (or was already), false if not (the note says why). to: linked onto that
+    // habit / reminder too ({ kind, id })
     async add(text, to) {
       const c = cleanUrl(text)
       if (c.error) {
@@ -174,7 +174,7 @@ export function usePins(owner, clientId) {
         if (j?.linkError) tell(j.linkError.charAt(0).toUpperCase() + j.linkError.slice(1))
         else if (j?.dup) tell(to ? 'Already pinned: linked it' : 'Already pinned: moved it to the top')
         else if (j && !j.ok) tell(`Pinned without a preview: ${why(j.reason)}`)
-        return Boolean(j)
+        return j ? (j.pin ?? true) : false
       } catch (e) {
         failed(e, 'pin that')
         return false
@@ -190,7 +190,7 @@ export function usePins(owner, clientId) {
       // place included: this one is then simply done)
       setGone((g) => new Set(g).add(pin.id))
       setUndoing({ pin, index, until: Date.now() + UNDO_MS })
-      say(`Removed ${pin.title ?? pin.domain}. Undo is there for a few seconds.`)
+      say(`Removed ${linesOf(pin).title}. Undo is there for a few seconds.`)
       enqueue(() => call('DELETE', { id: pin.id }))
         .then(() => ungone(pin.id))
         .catch((e) => (ungone(pin.id), setUndoing((u) => (u?.pin.id === pin.id ? null : u)), failed(e, 'remove it')))
@@ -200,7 +200,7 @@ export function usePins(owner, clientId) {
       if (!u) return
       setUndoing(null)
       ungone(u.pin.id)
-      say(`${u.pin.title ?? u.pin.domain} is back`)
+      say(`${linesOf(u.pin).title} is back`)
       setData((d) => (d && !d.pins.some((p) => p.id === u.pin.id) ? { ...d, pins: [...d.pins.slice(0, u.index), u.pin, ...d.pins.slice(u.index)] } : d))
       enqueue(() => call('POST', { action: 'undo', id: u.pin.id })).catch((e) => failed(e, 'bring it back'))
     },
@@ -273,14 +273,16 @@ function Thumb({ pin }) {
   )
 }
 
-// q: the search, its words marked; fresh: just pinned here (a glow). Its lines: lib/pins-view.js linesOf (GitHub's
-// told apart by their path)
-function Tile({ pin, q, fresh = false, onRemove, onRefresh, refreshing }) {
+// q: the search, its words marked; fresh: just pinned here (a glow); day: the first of its day in a site's section
+// (its label, above it). Its lines: lib/pins-view.js linesOf (GitHub's told apart by their path). Memoised: the
+// sheet's callbacks are stable, so typing or a filter redraws only the tiles whose marks change
+const Tile = memo(function Tile({ pin, q, fresh = false, day = null, onRemove, onRefresh, refreshing }) {
   const { title: name, meta } = linesOf(pin)
   const label = pin.title ?? pin.domain // (its buttons' names: the whole title)
   const desc = pin.description ?? (pin.ok ? null : `No preview: ${REASONS[pin.reason] ?? REASONS.unreachable}`)
   return (
-    <li className={`pn-tile${pin.ok ? '' : ' is-bare'}${fresh ? ' is-new' : ''}`} data-pin={pin.id}>
+    <li className={`pn-tile${pin.ok ? '' : ' is-bare'}${fresh ? ' is-new' : ''}${day ? ' has-day' : ''}`} data-pin={pin.id}>
+      {day && <span className="pn-tday">{day}</span>}
       <a className="pn-link" href={pin.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={pin.url}>
         <Thumb pin={pin} />
         <span className="pn-text">
@@ -304,7 +306,7 @@ function Tile({ pin, q, fresh = false, onRemove, onRefresh, refreshing }) {
       </div>
     </li>
   )
-}
+})
 
 // a link on its way: its domain, the rest stand-ins
 function PendingTile({ url }) {
@@ -349,10 +351,12 @@ export function PinsIcon({ pn, wait = false, force = false, onOpen, className = 
 
 const FILTERS_FROM = 5 // pins kept before the filters (and the two views) show: for a handful, they'd only be in the way
 const VIEW_KEY = 'pinsView' // this device's view: by site (the default) or by date
+const JUST_MAX = 3 // links pinned in this sitting, on top of the list
 
 // All of them in a sheet (opened from its header icon): the box (paste a link, or search), the filters, the pins by
-// site or by date, ✕ with Undo. The sheet keeps its head, box and filters in place and scrolls the pins under them;
-// with enough pins to filter it has a fixed height, so a filter doesn't make it jump.
+// site or by date, ✕ with Undo. Only the head and the box stay put: the filters scroll with the pins (on a phone with
+// its keyboard up, a fixed block of chips left the results a sliver), and stay on top of them where there's room (a
+// tall window). With enough pins to filter the sheet has a fixed height, so a filter doesn't make it jump.
 export function PinsSheet({ pn, dlg }) {
   const [open, setOpen] = useState(false)
   const [round, setRound] = useState(0) // each close: a fresh body for the next open (no search or filter left over)
@@ -368,7 +372,7 @@ export function PinsSheet({ pn, dlg }) {
     return () => seen.disconnect()
   }, [dlg])
   const close = () => closeDialog(dlg.current)
-  const tall = (pn.data?.pins.length ?? 0) >= FILTERS_FROM
+  const shown = pn.data ? pn.data.pins.filter((p) => !pn.hidden(p.id)).length : 0
   return (
     <dialog
       ref={dlg}
@@ -376,7 +380,7 @@ export function PinsSheet({ pn, dlg }) {
       onClick={(e) => e.target === dlg.current && close()}
       onCancel={(e) => (e.preventDefault(), close())}
       onClose={() => delete dlg.current.dataset.closing}
-      className={`wx-sheet pn-sheet${tall ? ' is-tall' : ''} sm:max-w-2xl glass-panel text-lofi-text`}
+      className={`wx-sheet pn-sheet${shown >= FILTERS_FROM ? ' is-tall' : ''} sm:max-w-2xl glass-panel text-lofi-text`}
     >
       {pn.on && <PinsBody key={round} pn={pn} open={open} onClose={close} />}
     </dialog>
@@ -426,7 +430,7 @@ function ChipRow({ label, items, max = Infinity, keep = null, lead = null, noun 
   useLayoutEffect(() => void setFit(max), [sig, max])
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el || all || max === Infinity || getComputedStyle(el).flexWrap !== 'wrap') return
+    if (!el || all || max === Infinity || !el.clientWidth || getComputedStyle(el).flexWrap !== 'wrap') return
     const first = el.querySelector('[data-chip]')
     const more = el.querySelector('[data-more]')
     if (first && more && more.offsetTop > first.offsetTop + 4 && fit > 1) setFit((f) => f - 1)
@@ -453,6 +457,8 @@ function Hl({ text, q }) {
   return marks(text, q).map((m, i) => (m.hit ? <mark key={i} className="pn-hit">{m.text}</mark> : <Fragment key={i}>{m.text}</Fragment>))
 }
 
+const plural = (n) => `${n} pin${n === 1 ? '' : 's'}`
+
 function PinsBody({ pn, open, onClose }) {
   const [q, setQ] = useState('')
   const [view, setView] = useState(() => cleanView(load(VIEW_KEY, 'site')))
@@ -462,10 +468,21 @@ function PinsBody({ pn, open, onClose }) {
   const [opened, setOpened] = useState(() => new Set()) // sections showing all their pins
   const [shut, setShut] = useState(() => new Set()) // sections folded away
   const [limit, setLimit] = useState(RENDER_STEP) // tiles drawn so far (more as the list's end comes near)
-  const [fresh, setFresh] = useState(null) // the link just pinned (or pinned again) here: scrolled to, glowing a moment
+  const [just, setJust] = useState([]) // ids pinned (or pinned again) in this sitting, newest first: on top of the list
+  const [fresh, setFresh] = useState(null) // the one just pinned: glowing a moment
+  const [typing, setTyping] = useState(false) // the box has the focus (on a phone: the keyboard is up)
+  const [clears, setClears] = useState(0) // (each Clear: the chip rows start over, "+N" folded)
+  const [heard, setHeard] = useState('') // the result count, for screen readers
   const box = useRef(null)
   const scroller = useRef(null)
+  const filtersRef = useRef(null)
+  const justRef = useRef(null)
   const now = useNow()
+  // (stable for the memoised tiles: pn is a new object on every render)
+  const pnRef = useRef(pn)
+  pnRef.current = pn
+  const onRemove = useCallback((p) => pnRef.current.remove(p), [])
+  const onRefresh = useCallback((p) => pnRef.current.refresh(p), [])
 
   // (the one being removed stays out while its Undo shows, whatever a pull brings meanwhile)
   const all = pn.data.pins
@@ -477,20 +494,28 @@ function PinsBody({ pn, open, onClose }) {
   const kept = link ? pins.find((p) => p.url === cleanUrl(q).url) : null
   // (typing stays quick with 500 pins: the lists catch up a moment later)
   const query = useDeferredValue(link ? '' : q.trim())
-  // (the filters only while they show: down to a handful of pins, they're gone, and so is what they picked; a site
-  // whose last pin went is no filter either)
+  // the filters that still hold (lib/pins-view.js liveFilters): a site whose last pin went, a part whose chip went, any
+  // of them once the filters are hidden (a handful of pins) is none, and is forgotten below
   const filters = total >= FILTERS_FROM
-  const siteOn = filters && site && prep.sites.some((s) => s.key === site) ? site : null
-  const timeOn = filters ? time : 'any'
-  const f = useMemo(() => facet(prep, { q: query, site: siteOn, sub: siteOn && sub, time: timeOn }, now), [prep, query, siteOn, sub, timeOn, now])
-  const subOn = siteOn && sub && f.subs.some((s) => s.key === sub) ? sub : null
+  const live = useMemo(() => liveFilters(prep, { site, sub, time }, filters), [prep, site, sub, time, filters])
+  const { site: siteOn, sub: subOn, time: timeOn } = live
+  useEffect(() => {
+    if (site !== siteOn) setSite(null)
+    if (sub !== subOn) setSub(null)
+    if (time !== timeOn) setTime('any')
+  }, [site, siteOn, sub, subOn, time, timeOn])
+  // the counts now (cheap), the list a moment later (drawing it is the slow part: the chips answer the tap at once)
+  const f = useMemo(() => facet(prep, { q: query, site: siteOn, sub: subOn, time: timeOn }, now, live.parts), [prep, query, siteOn, subOn, timeOn, now, live.parts])
   const shape = filters ? view : 'site' // (a handful of pins: no views to pick from, by site)
-  const groups = useMemo(() => (shape === 'site' ? bySite(f.found) : byDay(f.found)), [shape, f.found])
+  const found = useDeferredValue(f.found)
+  const shapeLate = useDeferredValue(shape)
+  const groups = useMemo(() => (shapeLate === 'site' ? bySite(found) : byDay(found)), [shapeLate, found])
+  const stale = found !== f.found || shapeLate !== shape
   const filtered = Boolean(siteOn || timeOn !== 'any')
   const searching = Boolean(query)
   const siteOf = (key) => prep.sites.find((s) => s.key === key)
 
-  const clearFilters = () => (setSite(null), setSub(null), setTime('any'))
+  const clearFilters = () => (setSite(null), setSub(null), setTime('any'), setClears((c) => c + 1))
   const clearAll = () => (setQ(''), clearFilters())
   const pickView = (v) => (setView(v), save(VIEW_KEY, v))
   const pickSite = (key) => (setSite((s) => (s === key ? null : key)), setSub(null))
@@ -519,40 +544,66 @@ function PinsBody({ pn, open, onClose }) {
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
   }, [open])
+  // opened with a mouse: straight into the box (on a phone that would throw the keyboard up)
+  useEffect(() => {
+    if (open && matchMedia('(pointer: fine)').matches) box.current?.focus({ preventScroll: true })
+  }, [open])
   // a new filter, view or search: back to the top of the list, and only its first tiles drawn
   useEffect(() => {
     scroller.current?.scrollTo({ top: 0 })
     setLimit(RENDER_STEP)
   }, [siteOn, subOn, timeOn, shape, query])
+  // the filters on top of the list where they stay (a tall window): the section heads stop under them, and a tile
+  // focused by keys scrolls clear of both (--pn-stick, the filters' height there; 0 where they scroll away)
+  useEffect(() => {
+    const el = filtersRef.current, sc = scroller.current
+    if (!el || !sc) return
+    const set = () => sc.style.setProperty('--pn-stick', `${getComputedStyle(el).position === 'sticky' ? el.offsetHeight : 0}px`)
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    set()
+    return () => ro.disconnect()
+  }, [filters, searching, open])
+  // the count, said a moment after the search or a filter settles (screen readers: what the list now holds)
+  const n = f.found.length
+  useEffect(() => {
+    if (!filtered && !searching) return void setHeard('')
+    const t = setTimeout(() => setHeard(plural(n)), 700)
+    return () => clearTimeout(t)
+  }, [n, filtered, searching])
 
   async function submit(e) {
     e.preventDefault()
     if (!link) return
     const text = q
     setQ('')
-    if (await pn.add(text)) setFresh(cleanUrl(text).url)
-    else setQ((cur) => cur || text) // (not kept: the link back in the box, to fix or retry)
+    const id = await pn.add(text)
+    if (!id) return void setQ((cur) => cur || text) // (not kept: the link back in the box, to fix or retry)
+    if (typeof id !== 'string') return
+    setJust((j) => [id, ...j.filter((x) => x !== id)].slice(0, JUST_MAX))
+    setFresh(id)
   }
-  // the new pin into sight: its section unfolded, scrolled to it (if the filters show it at all), a glow for a moment
-  const freshPin = fresh ? pins.find((p) => p.url === fresh) : null
+  // the one just pinned: in sight (on top of the list, whatever the filters), a glow for a moment
   useEffect(() => {
-    if (!freshPin) return
-    const key = shape === 'site' ? `site:${freshPin.domain}` : `date:${dayKey(freshPin.addedAt)}`
-    setShut((s) => (s.has(key) ? new Set([...s].filter((k) => k !== key)) : s))
-    const raf = requestAnimationFrame(() => void scroller.current?.querySelector(`[data-pin="${freshPin.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: motionOff() ? 'auto' : 'smooth' }))
+    if (!fresh) return
+    const raf = requestAnimationFrame(() => void justRef.current?.scrollIntoView({ block: 'nearest', behavior: motionOff() ? 'auto' : 'smooth' }))
     const t = setTimeout(() => setFresh(null), 2400)
     return () => (cancelAnimationFrame(raf), clearTimeout(t))
-  }, [freshPin?.id])
+  }, [fresh])
+  const justPins = just.map((id) => pins.find((p) => p.id === id)).filter(Boolean)
+  const foundIds = useMemo(() => new Set(f.found.map((p) => p.id)), [f.found])
+  const outside = (filtered || searching) && justPins.some((p) => !foundIds.has(p.id))
 
   const timeName = TIMES.find(([k]) => k === timeOn)?.[1]
-  const what = [siteOn && siteOf(siteOn)?.name, subOn && f.subs.find((s) => s.key === subOn)?.label, timeOn !== 'any' && timeName, searching && `“${query}”`].filter(Boolean)
-  const n = f.found.length
+  const partName = subOn && live.parts.find((x) => x.key === subOn)?.label
+  const what = [siteOn && siteOf(siteOn)?.name, partName, timeOn !== 'any' && timeName, searching && `“${query}”`].filter(Boolean)
   // (nothing left: does the search find anything without the filters?)
   const alone = useMemo(() => (n === 0 && query && filtered ? facet(prep, { q: query }, now).found.length : 0), [n, query, filtered, prep, now])
-  const where = whereOf(siteOn && siteOf(siteOn)?.name, subOn && f.subs.find((s) => s.key === subOn)?.label, timeOn)
+  const where = whereOf(siteOn && siteOf(siteOn)?.name, partName, timeOn)
   const single = groups.length === 1 // (one section: all of it, no "Show more")
-  const keyOf = (g) => `${shape}:${g.key}`
-  const drawn = plan(groups.map((g) => g.pins.length), groups.map((g) => ({ open: single, all: opened.has(keyOf(g)), shut: shut.has(keyOf(g)) })), limit)
+  const bare = single && !filters // (a handful of pins, one site: no head to fold)
+  const keyOf = (g) => `${shapeLate}:${g.key}`
+  const drawn = plan(groups.map((g) => g.pins.length), groups.map((g) => ({ open: single || opened.has(keyOf(g)), shut: shut.has(keyOf(g)) })), limit)
   // the list's end near (800 px): the next tiles
   const sentinel = useRef(null)
   useEffect(() => {
@@ -561,10 +612,10 @@ function PinsBody({ pn, open, onClose }) {
     const io = new IntersectionObserver((e) => e[0]?.isIntersecting && setLimit((l) => l + RENDER_STEP), { root: scroller.current, rootMargin: '800px 0px' })
     io.observe(el)
     return () => io.disconnect()
-  }, [drawn.more, limit])
+  }, [drawn.more, limit, open])
   const u = pn.undoing
   return (
-    <section aria-labelledby="pn-title" className="pn pn-main">
+    <section aria-labelledby="pn-title" className={`pn pn-main${typing ? ' is-typing' : ''}`}>
       <div className="pn-top">
         <div className="pn-head">
           <span className="pn-mark" aria-hidden="true"><Pin size={16} /></span>
@@ -590,6 +641,8 @@ function PinsBody({ pn, open, onClose }) {
             type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
+            onFocus={() => setTyping(true)}
+            onBlur={() => setTyping(false)}
             placeholder="Paste a link, or search"
             aria-label="Paste a link to pin it, or type to search your pins"
             enterKeyHint={link ? 'go' : 'search'}
@@ -598,136 +651,167 @@ function PinsBody({ pn, open, onClose }) {
             autoCorrect="off"
             spellCheck={false}
           />
+          {/* (a press on ✕ or Pin keeps the focus in the box: the keyboard stays up, the chips stay tucked away) */}
           {q ? (
-            <button type="button" className="pn-clear" aria-label="Clear" onClick={() => (setQ(''), box.current?.focus())}>
+            <button type="button" className="pn-clear" aria-label="Clear" onPointerDown={(e) => e.preventDefault()} onClick={() => (setQ(''), box.current?.focus())}>
               <X size={14} aria-hidden="true" />
             </button>
           ) : (
             <kbd className="pn-kbd" aria-hidden="true" title="Press / to search">/</kbd>
           )}
-          <button type="submit" className="pn-add" disabled={!link} title={link ? 'Pin this link' : 'Paste a link to pin it'}>
+          <button type="submit" className="pn-add" disabled={!link} title={link ? 'Pin this link' : 'Paste a link to pin it'} onPointerDown={(e) => e.preventDefault()}>
             <Plus size={16} aria-hidden="true" /><span>Pin</span>
           </button>
         </form>
         {kept && <p className="pn-note soft">Already pinned: Enter moves it to the top</p>}
-        {/* the one live region, always there (one mounted with its words is often missed): notes, removals */}
+        {/* the live regions, always there (one mounted with its words is often missed): notes and removals; the count */}
         <p className="sr-only" role="status" aria-live="polite">{pn.said}</p>
-        {pn.note && <p className="pn-note">{pn.note}</p>}
-        {u && (
-          <div className="pn-undo">
-            <span className="ic" aria-hidden="true"><Trash2 size={15} /></span>
-            <div className="msg">
-              <span>Removed {u.pin.title ?? u.pin.domain}</span>
-              <small aria-hidden="true">undo for <UndoLeft until={u.until} />s</small>
-            </div>
-            <button type="button" className="pn-ghost" onClick={() => pn.undo()}>Undo</button>
-            <UndoLine key={u.until} until={u.until} total={UNDO_MS} />
-          </div>
-        )}
-
-        {filters && (
-          <div className="pn-filters">
-            <ChipRow
-              label="Sites"
-              noun="sites"
-              max={TOP_SITES}
-              keep={siteOn}
-              items={prep.sites.map((s) => {
-                const c = f.sites[s.key] ?? 0
-                return {
-                  key: s.key,
-                  node: (
-                    <button type="button" data-chip className={`pn-fchip${c ? '' : ' is-zero'}`} aria-pressed={siteOn === s.key} onClick={() => pickSite(s.key)} title={s.key}>
-                      <Icon pin={{ icon: s.icon, domain: s.key }} size={14} />
-                      <span className="pn-fchip-name">{s.name}</span>
-                      <span className="n">{c}</span>
-                    </button>
-                  ),
-                }
-              })}
-            />
-            {f.subs.length > 0 && (
-              <ChipRow
-                key={siteOn}
-                label={`Parts of ${siteOf(siteOn)?.name}`}
-                className="is-sub"
-                noun="parts"
-                max={TOP_PARTS}
-                keep={subOn}
-                lead={<CornerDownRight size={14} className="pn-sub-ic" aria-hidden="true" />}
-                items={f.subs.map((s) => ({
-                  key: s.key,
-                  node: (
-                    <button type="button" data-chip className={`pn-fchip is-small${s.n ? '' : ' is-zero'}`} aria-pressed={subOn === s.key} onClick={() => setSub((x) => (x === s.key ? null : s.key))}>
-                      <span className="pn-fchip-name">{s.label}</span>
-                      <span className="n">{s.n}</span>
-                    </button>
-                  ),
-                }))}
-              />
-            )}
-            <ChipRow
-              label="Pinned"
-              items={TIMES.map(([k, label]) => ({
-                key: k,
-                node: (
-                  <button type="button" data-chip className={`pn-fchip is-time${f.times[k] ? '' : ' is-zero'}`} aria-pressed={timeOn === k} onClick={() => setTime((t) => (t === k && k !== 'any' ? 'any' : k))}>
-                    <span className="pn-fchip-name">{label}</span>
-                    <span className="n">{f.times[k]}</span>
-                  </button>
-                ),
-              }))}
-            />
-          </div>
-        )}
-        {(filtered || searching) && total > 0 && (
-          <div className="pn-sum">
-            <span>{[`${n} pin${n === 1 ? '' : 's'}`, ...what].join(' · ')}</span>
-            <button type="button" className="pn-sum-clear" onClick={clearAll}>Clear</button>
-          </div>
-        )}
+        <p className="sr-only" role="status" aria-live="polite">{heard}</p>
       </div>
 
       <div ref={scroller} className="pn-scroll" data-scroll>
+        {(filters || searching) && (
+          <div ref={filtersRef} className="pn-filters">
+            {filters && (
+              <>
+                <ChipRow
+                  key={`sites-${clears}`}
+                  label="Sites"
+                  noun="sites"
+                  max={TOP_SITES}
+                  keep={siteOn}
+                  items={prep.sites.map((s) => {
+                    const c = f.sites[s.key] ?? 0
+                    return {
+                      key: s.key,
+                      node: (
+                        <button type="button" data-chip className={`pn-fchip${c ? '' : ' is-zero'}`} aria-pressed={siteOn === s.key} onClick={() => pickSite(s.key)} title={s.key} aria-label={`${s.name}, ${plural(c)}`}>
+                          <Icon pin={{ icon: s.icon, domain: s.key }} size={14} />
+                          <span className="pn-fchip-name">{s.name}</span>
+                          <span className="n" aria-hidden="true">{c}</span>
+                        </button>
+                      ),
+                    }
+                  })}
+                />
+                {f.subs.length > 0 && (
+                  <ChipRow
+                    key={`${siteOn}-${clears}`}
+                    label={`Parts of ${siteOf(siteOn)?.name}`}
+                    className="is-sub"
+                    noun="parts"
+                    max={TOP_PARTS}
+                    keep={subOn}
+                    lead={<CornerDownRight size={14} className="pn-sub-ic" aria-hidden="true" />}
+                    items={f.subs.map((s) => ({
+                      key: s.key,
+                      node: (
+                        <button type="button" data-chip className={`pn-fchip is-small${s.n ? '' : ' is-zero'}`} aria-pressed={subOn === s.key} onClick={() => setSub((x) => (x === s.key ? null : s.key))} aria-label={`${s.label}, ${plural(s.n)}`}>
+                          <span className="pn-fchip-name">{s.label}</span>
+                          <span className="n" aria-hidden="true">{s.n}</span>
+                        </button>
+                      ),
+                    }))}
+                  />
+                )}
+                <ChipRow
+                  label="Pinned"
+                  items={TIMES.map(([k, label]) => ({
+                    key: k,
+                    node: (
+                      <button type="button" data-chip className={`pn-fchip is-time${f.times[k] ? '' : ' is-zero'}`} aria-pressed={timeOn === k} onClick={() => setTime((t) => (t === k && k !== 'any' ? 'any' : k))} aria-label={`${label}, ${plural(f.times[k])}`}>
+                        <span className="pn-fchip-name">{label}</span>
+                        <span className="n" aria-hidden="true">{f.times[k]}</span>
+                      </button>
+                    ),
+                  }))}
+                />
+              </>
+            )}
+            {/* (always there with the filters: what's on, so nothing under it moves when one is picked) */}
+            <div className="pn-sum">
+              <span>{[plural(n), ...what].join(' · ')}</span>
+              {(filtered || searching) && <button type="button" className="pn-sum-clear" onClick={clearAll}>Clear</button>}
+            </div>
+          </div>
+        )}
         {pn.adding.length > 0 && (
           <ul className="pn-grid pn-adding" aria-label="Being pinned">
             {pn.adding.map((a) => <PendingTile key={`add-${a.key}`} url={a.url} />)}
           </ul>
         )}
-        {total === 0 && !pn.adding.length ? (
+        {justPins.length > 0 && (
+          <section ref={justRef} className="pn-sec pn-just" aria-label="Just pinned">
+            <h3 className="pn-sec-head">
+              <span className="pn-sec-row">
+                <Sparkles size={16} className="pn-sec-cal" aria-hidden="true" />
+                <span className="pn-sec-name">Just pinned</span>
+                {outside && <span className="pn-sec-dom">not all in this view</span>}
+                {outside ? <button type="button" className="pn-sum-clear" onClick={clearAll}>Show all</button> : <span className="pn-count" aria-hidden="true">{justPins.length}</span>}
+              </span>
+            </h3>
+            <div className="pn-fold-in">
+              <ul className="pn-grid">
+                {justPins.map((p) => <Tile key={p.id} pin={p} fresh={fresh === p.id} onRemove={onRemove} onRefresh={onRefresh} refreshing={pn.refreshing === p.id} />)}
+              </ul>
+            </div>
+          </section>
+        )}
+        {!open ? null : total === 0 && !pn.adding.length ? (
           <Empty />
         ) : n === 0 && total > 0 ? (
           <NoMatch query={query} filtered={filtered} where={where} alone={alone} onFilters={clearFilters} onSearch={() => (setQ(''), box.current?.focus())} onAll={clearAll} />
         ) : (
-          <>
+          <div className={`pn-list${stale ? ' is-stale' : ''}`}>
             {drawn.parts.map(({ take, cut }, i) => {
               const g = groups[i]
               const key = keyOf(g)
-              const s = shape === 'site' ? siteOf(g.key) : null
+              const s = shapeLate === 'site' ? siteOf(g.key) : null
               return (
                 <PinSection
                   key={key}
                   id={key}
-                  head={shape === 'site' ? <SiteHead site={s ?? { key: g.key, name: g.key }} /> : <DayHead day={g.key} now={now} />}
+                  head={shapeLate === 'site' ? <SiteHead site={s ?? { key: g.key, name: g.key }} /> : <DayHead day={g.key} now={now} />}
+                  name={shapeLate === 'site' ? [s?.name ?? g.key, s && s.name !== g.key ? g.key : null].filter(Boolean).join(', ') : dayLabel(g.key, now)}
                   pins={g.pins}
                   take={take}
                   cut={cut}
-                  days={shape === 'site'}
+                  days={shapeLate === 'site'}
+                  bare={bare}
                   now={now}
                   shut={shut.has(key)}
                   onShut={() => toggle(setShut, key)}
                   open={single || opened.has(key)}
-                  onOpen={single ? null : () => toggle(setOpened, key)}
+                  onOpen={single ? null : () => (toggle(setOpened, key), setLimit((l) => l + RENDER_STEP))}
                   q={query}
-                  fresh={freshPin?.id}
-                  pn={pn}
+                  onRemove={onRemove}
+                  onRefresh={onRefresh}
+                  refreshing={pn.refreshing}
                 />
               )
             })}
             {drawn.more && <div ref={sentinel} className="pn-sentinel" aria-hidden="true" />}
-          </>
+          </div>
         )}
       </div>
+
+      {/* notes and the Undo float over the bottom of the list: nothing above them moves */}
+      {(pn.note || u) && (
+        <div className="pn-toasts">
+          {pn.note && <p className="pn-note pn-toast">{pn.note}</p>}
+          {u && (
+            <div className="pn-undo pn-toast">
+              <span className="ic" aria-hidden="true"><Trash2 size={15} /></span>
+              <div className="msg">
+                <span>Removed {linesOf(u.pin).title}</span>
+                <small aria-hidden="true">undo for <UndoLeft until={u.until} />s</small>
+              </div>
+              <button type="button" className="pn-ghost" onClick={() => pn.undo()}>Undo</button>
+              <UndoLine key={u.until} until={u.until} total={UNDO_MS} />
+            </div>
+          )}
+        </div>
+      )}
     </section>
   )
 }
@@ -754,12 +838,12 @@ function DayHead({ day, now }) {
 }
 
 // One site's or one day's pins: its head (sticky at the top of the list as it scrolls; a tap folds it away), the
-// tiles (by site: under small day dividers), and "Show N more" when it's long
-function PinSection({ id, head, pins, take, cut, days, now, shut, onShut, open, onOpen, q, fresh, pn }) {
+// tiles, and "Show N more" when it's long. By site, the tiles flow on (two across where there's room) and the first of
+// each day carries the day above it: date by date without a half-empty row under every day. bare: no head (one site,
+// a handful of pins)
+function PinSection({ id, head, name, pins, take, cut, days, bare, now, shut, onShut, open, onOpen, q, onRemove, onRefresh, refreshing }) {
   const ref = useRef(null)
-  const shown = shownOf(pins.length, open)
   const list = pins.slice(0, take)
-  const parts = days ? byDay(list) : [{ key: null, pins: list }]
   const body = `pn-sec-${id.replace(/[^\w-]/g, '_')}`
   const less = () => {
     onOpen()
@@ -768,34 +852,37 @@ function PinSection({ id, head, pins, take, cut, days, now, shut, onShut, open, 
     const sc = el?.closest('.pn-scroll')
     if (el && sc && el.getBoundingClientRect().top < sc.getBoundingClientRect().top) sc.scrollTo({ top: el.offsetTop - sc.offsetTop })
   }
+  let last = null
+  const tiles = (
+    <>
+      <ul className={`pn-grid${days ? ' is-days' : ''}`}>
+        {list.map((p) => {
+          const d = days ? dayKey(p.addedAt) : null
+          const label = d && d !== last ? dayLabel(d, now) : null
+          last = d
+          return <Tile key={p.id} pin={p} q={q} day={label} onRemove={onRemove} onRefresh={onRefresh} refreshing={refreshing === p.id} />
+        })}
+      </ul>
+      {onOpen && (open || (!cut && pins.length > shownOf(pins.length, false))) && (
+        <button type="button" className="pn-more" aria-expanded={open} aria-controls={body} onClick={open ? less : onOpen}>
+          {open ? 'Show fewer' : `Show ${pins.length - take} more`}
+          <ChevronDown size={14} className={open ? 'pn-chev is-up' : 'pn-chev'} aria-hidden="true" />
+        </button>
+      )}
+    </>
+  )
+  if (bare) return <section ref={ref} className="pn-sec is-bare"><div className="pn-fold-in">{tiles}</div></section>
   return (
     <section ref={ref} className={`pn-sec${shut ? ' is-shut' : ''}`}>
       <h3 className="pn-sec-head">
-        <button type="button" aria-expanded={!shut} aria-controls={body} onClick={onShut}>
+        <button type="button" aria-expanded={!shut} aria-controls={body} onClick={onShut} aria-label={`${name}, ${plural(pins.length)}`}>
           {head}
-          <span className="pn-count">{pins.length}</span>
+          <span className="pn-count" aria-hidden="true">{pins.length}</span>
           <ChevronDown size={16} className="pn-chev" aria-hidden="true" />
         </button>
       </h3>
       <div className="pn-fold" id={body}>
-        <div className="pn-fold-in" inert={shut}>
-          {parts.map((d) => (
-            <Fragment key={d.key ?? 'all'}>
-              {d.key && <p className="pn-day"><span>{dayLabel(d.key, now)}</span></p>}
-              <ul className="pn-grid">
-                {d.pins.map((p) => (
-                  <Tile key={p.id} pin={p} q={q} fresh={fresh === p.id} onRemove={pn.remove} onRefresh={pn.refresh} refreshing={pn.refreshing === p.id} />
-                ))}
-              </ul>
-            </Fragment>
-          ))}
-          {onOpen && !cut && pins.length > shownOf(pins.length, false) && (
-            <button type="button" className="pn-more" aria-expanded={open} aria-controls={body} onClick={open ? less : onOpen}>
-              {open ? 'Show fewer' : `Show ${pins.length - shown} more`}
-              <ChevronDown size={14} className={open ? 'pn-chev is-up' : 'pn-chev'} aria-hidden="true" />
-            </button>
-          )}
-        </div>
+        <div className="pn-fold-in" inert={shut}>{tiles}</div>
       </div>
     </section>
   )
@@ -841,7 +928,7 @@ export function PinChips({ pn, to, className = '' }) {
         <li key={p.id}>
           <a className="pn-chip" href={p.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" title={p.title ? `${p.title} · ${p.domain}` : p.url}>
             <Icon pin={p} size={12} />
-            <span>{p.title ?? p.domain}</span>
+            <span>{linesOf(p).title}</span>
           </a>
         </li>
       ))}
@@ -979,8 +1066,8 @@ function PickerBody({ pn, to, label, onClose }) {
                 <button type="button" className={`pn-pick${is ? ' is-on' : ''}`} aria-pressed={is} disabled={!is && full} onClick={() => (is ? pn.unlink(p, to) : pn.link(p, to))}>
                   <Icon pin={p} size={18} />
                   <span className="pn-pick-text">
-                    <span className="pn-name">{p.title ?? p.domain}</span>
-                    <span className="pn-pick-dom">{p.domain}</span>
+                    <span className="pn-name">{linesOf(p).title}</span>
+                    <span className="pn-pick-dom">{linesOf(p).meta}</span>
                   </span>
                   <span className="pn-pick-tick" aria-hidden="true">{is && <Check size={14} strokeWidth={2.6} />}</span>
                 </button>
