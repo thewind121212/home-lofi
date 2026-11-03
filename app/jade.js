@@ -19,17 +19,18 @@ import { useEffect, useRef, useState } from 'react'
 import { AudioLines, Mic, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, useStillPage } from './settings'
-import { MAX_MS, MIN_MS, MSG, STATES, downsample, level, splitLines } from '../lib/jade'
+import { MAX_MS, MIN_MS, MSG, STATES, downsample, level, splitLines, toolLabel } from '../lib/jade'
 import { privateAnswer } from '../lib/private-poll'
 
 const URL_ = '/api/private/settings/jade'
 const LEAD = 0.12 // s: how far ahead Jade's voice is scheduled (a small buffer against the network's unevenness)
 const CLIENT_KEY = 'jadeClient'
 
-// the header's icon: the owner's only (owner known); its stand-in square while that isn't known yet
+// its button on the dock, over Focus (the header's row was full on phones): the owner's only (owner known); its stand-in
+// circle while that isn't known yet
 export function JadeIcon({ owner, wait = false, onOpen }) {
-  if (!owner) return wait ? <HeadIconSkeleton /> : null
-  return <HeadIcon label="Talk to Jade" icon={AudioLines} onOpen={() => onOpen()} />
+  if (!owner) return wait ? <HeadIconSkeleton dock /> : null
+  return <HeadIcon dock label="Talk to Jade" icon={AudioLines} onOpen={() => onOpen()} />
 }
 
 // this browser's Client-Id for Jade: a UUID kept in localStorage (private mode: one for the page's life)
@@ -60,6 +61,7 @@ export function JadeSheet({ dlg, onTalk }) {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState('idle') // idle | listening | thinking | speaking | offline
   const [note, setNote] = useState(null) // a hint under the button (Vietnamese)
+  const [tool, setTool] = useState(null) // the tool Jade is calling right now ("% thoi_tiet"): a status line, not a bubble
   const [msgs, setMsgs] = useState([]) // { id, who: 'me' | 'jade' | 'sys', text, emoji }
   useStillPage(dlg, open)
   const r = useRef({ sources: new Set() }).current // the recorder, the player and the turn: plain mutable state, no re-render
@@ -176,6 +178,7 @@ export function JadeSheet({ dlg, onTalk }) {
   }
   // the turn's over: back to ready once her voice has played out (the radio too)
   function settle(st = 'idle') {
+    setTool(null)
     const left = r.ctx && r.next ? Math.max(0, r.next - r.ctx.currentTime) : 0
     clearTimeout(r.doneT)
     r.doneT = setTimeout(() => {
@@ -214,6 +217,7 @@ export function JadeSheet({ dlg, onTalk }) {
     r.ac = null
     stopVoice()
     setNote(null)
+    setTool(null)
     setState('listening')
     const p = {}
     r.press = p
@@ -314,7 +318,10 @@ export function JadeSheet({ dlg, onTalk }) {
   }
 
   function onLine(l) {
-    if (l.t === 'stt') {
+    // (her tool's done once she starts her next sentence, or is done talking; her voice still playing doesn't end it)
+    if (l.t === 'stt' || l.t === 'say' || (l.t === 'tts' && l.state === 'stop')) setTool(null)
+    if (l.t === 'tool') setTool(l.name)
+    else if (l.t === 'stt') {
       r.heard = l.heard
       r.saidUnheard = !l.heard
       if (l.heard) add({ who: 'me', text: l.text })
@@ -387,7 +394,7 @@ export function JadeSheet({ dlg, onTalk }) {
             <Mic size={34} strokeWidth={1.8} aria-hidden="true" />
           </button>
           <p className="jd-state" role="status">{STATES[state]}</p>
-          <p className="jd-note">{note ?? (state === 'idle' ? 'Giữ nút (hoặc phím Space) để nói' : state === 'speaking' || state === 'thinking' ? 'Nhấn lại để ngắt lời' : ' ')}</p>
+          <p className="jd-note">{note ?? (tool && (state === 'thinking' || state === 'speaking') ? toolLabel(tool) : state === 'idle' ? 'Giữ nút (hoặc phím Space) để nói' : state === 'speaking' || state === 'thinking' ? 'Nhấn lại để ngắt lời' : ' ')}</p>
         </div>
       </section>
     </dialog>
