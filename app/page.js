@@ -531,7 +531,8 @@ export default function Home() {
       music.current?.pause()
     } else if (!talking && jadePaused.current) {
       jadePaused.current = false
-      music.current?.toggle()
+      // (toggle flips: if it was started again meanwhile, it stays as it is)
+      if (!tune.playing && !tune.loading) music.current?.toggle()
     }
   }
   // Quick actions (app/quick.js): ⌘K / Ctrl+K, "/", the dock's 🔍. Its keys close it again

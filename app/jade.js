@@ -46,8 +46,10 @@ function clientId() {
 }
 
 // the recorder's worklet: hands each quantum's samples to the page (a Blob URL: no file to serve)
+// ({ stop: true } from the page: process() returns false, so the browser drops this press's processor)
 const WORKLET = `registerProcessor('jd-rec', class extends AudioWorkletProcessor {
-  process(inputs) { const c = inputs[0] && inputs[0][0]; if (c && c.length) this.port.postMessage(c.slice(0)); return true }
+  constructor() { super(); this.on = true; this.port.onmessage = (e) => { if (e.data && e.data.stop) this.on = false } }
+  process(inputs) { if (!this.on) return false; const c = inputs[0] && inputs[0][0]; if (c && c.length) this.port.postMessage(c.slice(0)); return true }
 })`
 const workletReady = new WeakMap() // AudioContext -> the addModule promise (once each)
 
@@ -94,6 +96,7 @@ export function JadeSheet({ dlg, onTalk }) {
   function stopMic() {
     clearTimeout(r.maxT)
     r.recording = false
+    try { r.node?.port?.postMessage({ stop: true }) } catch {}
     try { r.node?.disconnect() } catch {}
     try { r.src?.disconnect() } catch {}
     r.stream?.getTracks().forEach((t) => t.stop())
@@ -115,6 +118,7 @@ export function JadeSheet({ dlg, onTalk }) {
       r.recording = false
       setState('idle')
       setNote(e?.name === 'NotAllowedError' || e?.name === 'SecurityError' ? MSG.denied : MSG.nomic)
+      talk.current?.(false)
       return
     }
     if (r.press !== press || !r.recording) return stream.getTracks().forEach((t) => t.stop()) // released already
@@ -133,10 +137,14 @@ export function JadeSheet({ dlg, onTalk }) {
       node = ctx.createScriptProcessor(2048, 1, 1) // (older Safari)
       node.onaudioprocess = (e) => onSamples(e.inputBuffer.getChannelData(0).slice())
     }
-    if (r.press !== press || !r.recording) return stopMic()
+    if (r.press !== press || !r.recording) {
+      r.node = node
+      return stopMic()
+    }
     r.node = node
     r.src.connect(node)
     node.connect(ctx.destination) // (it writes nothing: silence; connected so the browser runs it)
+    talk.current?.(true) // the mic is on: the radio pauses (only now: a mic that fails leaves it playing)
   }
 
   // ---- Jade's voice ----
@@ -171,11 +179,15 @@ export function JadeSheet({ dlg, onTalk }) {
     const left = r.ctx && r.next ? Math.max(0, r.next - r.ctx.currentTime) : 0
     clearTimeout(r.doneT)
     r.doneT = setTimeout(() => {
-      if (r.ac) return // (a new turn started meanwhile)
+      if (r.ac || r.recording) return // (a new turn started meanwhile)
       setState(st)
       talk.current?.(false)
+      sleep()
     }, left * 1000 + 50)
   }
+  // nothing to hear or record: let the AudioContext sleep (a phone's audio hardware too); press() wakes it
+  const sleep = () => void (r.ctx?.state === 'running' && r.ctx.suspend().catch(() => {}))
+  const wake = () => void (r.ctx && r.ctx.state !== 'running' && r.ctx.resume().catch(() => {}))
 
   function stopAll() {
     r.press = null
@@ -185,6 +197,7 @@ export function JadeSheet({ dlg, onTalk }) {
     stopVoice()
     if (stateRef.current !== 'idle' && stateRef.current !== 'offline') setState('idle')
     talk.current?.(false)
+    sleep()
   }
 
   // ---- a turn ----
@@ -200,7 +213,6 @@ export function JadeSheet({ dlg, onTalk }) {
     r.ac?.abort()
     r.ac = null
     stopVoice()
-    talk.current?.(true)
     setNote(null)
     setState('listening')
     const p = {}
@@ -213,6 +225,7 @@ export function JadeSheet({ dlg, onTalk }) {
     if (!navigator.mediaDevices?.getUserMedia || !r.ctx) {
       r.recording = false
       setState('idle')
+      talk.current?.(false) // (an interrupted answer: the radio comes back)
       return setNote(MSG.nomic)
     }
     r.maxT = setTimeout(() => release(), MAX_MS) // a minute at most
@@ -264,7 +277,8 @@ export function JadeSheet({ dlg, onTalk }) {
     if (!res.ok) {
       const j = await res.json().catch(() => null)
       if (privateAnswer(res.status, res.type) === 'locked') return fail('Hết phiên đăng nhập: tải lại trang rồi đăng nhập nhé')
-      return fail(j?.error ?? MSG.network, res.status === 503 || res.status >= 500 ? 'offline' : 'idle')
+      // (the route's own Vietnamese lines carry a code; anything else, e.g. a bad client id, isn't for reading)
+      return fail(j?.code && j.error ? j.error : MSG.failed, res.status === 503 || res.status >= 500 ? 'offline' : 'idle')
     }
     const reader = res.body.getReader()
     const dec = new TextDecoder()
@@ -288,7 +302,9 @@ export function JadeSheet({ dlg, onTalk }) {
     }
     if (r.ac !== ac) return
     if (ended?.t === 'error') return fail(MSG[ended.error] ?? MSG.network, ended.error === 'network' ? 'offline' : 'idle')
-    if (ended?.reason === 'unheard' || !r.heard) {
+    // Jade hung up (or the stream broke off) before saying what she heard: the connection, not the voice
+    if (!r.heard && ended?.reason !== 'unheard' && !r.saidUnheard) return fail(MSG.network, 'offline')
+    if (!r.heard) {
       if (!r.saidUnheard) add({ who: 'sys', text: MSG.unheard })
       return fail(null)
     }
@@ -328,7 +344,7 @@ export function JadeSheet({ dlg, onTalk }) {
       onCancel={(e) => (e.preventDefault(), close())}
       onClose={() => delete dlg.current.dataset.closing}
       onKeyDown={(e) => isKey(e) && (e.preventDefault(), e.repeat || press())}
-      onKeyUp={(e) => isKey(e) && (e.preventDefault(), release())}
+      onKeyUp={(e) => isKey(e) && (e.preventDefault(), wake(), release())}
       className="wx-sheet jd-sheet sm:max-w-lg glass-panel text-lofi-text"
     >
       <section aria-labelledby="jd-title" className="jd">
@@ -362,7 +378,7 @@ export function JadeSheet({ dlg, onTalk }) {
               e.currentTarget.setPointerCapture?.(e.pointerId)
               press()
             }}
-            onPointerUp={() => release()}
+            onPointerUp={() => (wake(), release())}
             onPointerCancel={() => release()}
             onContextMenu={(e) => e.preventDefault()}
             onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}

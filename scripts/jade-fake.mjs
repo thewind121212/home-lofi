@@ -3,7 +3,7 @@
 // It checks the headers, answers hello with a session, asks the device's MCP initialize + tools/list, takes the turn's
 // Opus frames and answers "mấy giờ rồi" with two sentences and real Opus audio (a soft tone).
 // mode (the argument, or set j.wss.mode): 'ok' | 'bg' (stt <bg>, nothing more) | 'mute' (no stt at all) | 'long' (talks ~20 s:
-// abort it) | 'nohello' (never says hello) | 'drop' (hangs up after the turn's stt)
+// abort it) | 'nohello' (never says hello) | 'drop' (hangs up after the turn's stt) | 'stall' (stt, tts start, then silence)
 import { WebSocketServer } from 'ws'
 import OpusScript from 'opusscript'
 
@@ -49,6 +49,7 @@ export function fakeJade({ port = 0, mode = 'ok' } = {}) {
         if (m === 'mute') return // (what the live Jade does with a voice that isn't Linh's: no stt at all)
         send({ type: 'stt', text: 'mấy giờ rồi', session_id: session })
         if (m === 'drop') return later(50, () => ws.terminate())
+        if (m === 'stall') return send({ type: 'tts', state: 'start', session_id: session }) // (then nothing, ever)
         send({ type: 'llm', emotion: 'happy', text: '😊', session_id: session })
         send({ type: 'tts', state: 'start', session_id: session })
         send({ type: 'tts', state: 'sentence_start', text: 'Bây giờ là mười giờ sáng.', session_id: session })
