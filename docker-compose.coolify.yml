@@ -42,6 +42,9 @@ services:
       # "Gaming PC". PC_WAKE_TOKEN = the relay's MONI_WAKE_TOKEN: the owner's Wake button (empty = no button)
       PC_URL: ${PC_URL:-http://10.10.0.217:5007}
       PC_WAKE_TOKEN: ${PC_WAKE_TOKEN:-}
+      # Talk to Jade (lib/jade.js): the voice assistant's xiaozhi WebSocket on the Razer, and this page's device id there
+      JADE_WS_URL: ${JADE_WS_URL:-ws://10.10.0.162:8004/xiaozhi/v1/}
+      JADE_DEVICE_ID: ${JADE_DEVICE_ID:-home-lofi}
       # the owner's News: the news agent's digests on the LAN (latest.json, archive/), see README "News"
       NEWS_URL: ${NEWS_URL:-http://10.10.0.162:8090}
       # owner-only settings sync, see README "Settings sync" (off unless all three are set)
