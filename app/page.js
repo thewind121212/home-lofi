@@ -27,6 +27,7 @@ import { ReadingIcon, ReadingSheet, useReading } from './reading'
 import { NewsIcon, NewsModal, useNews } from './news'
 import { GithubIcon, GithubModal, useGithub } from './github'
 import { HeadIcon } from './head-icon'
+import { JadeIcon, JadeSheet } from './jade'
 import { FocusChip, FocusIcon, FocusSheet, LockFocus, focusShowing, useFocus } from './focus'
 import { QuickPalette, quickActions } from './quick'
 import { isQuickKey } from '../lib/quick'
@@ -123,6 +124,7 @@ export default function Home() {
   const sndDlg = useRef(null)
   const remDlg = useRef(null) // the Reminders, Pins and Reading sheets (their bars under Sounds open them)
   const pinDlg = useRef(null)
+  const jadeDlg = useRef(null) // Talk to Jade (its header icon, the owner's)
   const readDlg = useRef(null)
   const newsDlg = useRef(null) // the News modal (its header icon)
   const ghDlg = useRef(null) // the GitHub list (its header icon)
@@ -513,6 +515,26 @@ export default function Home() {
   const openNews = openSheet(newsDlg)
   const openGithub = openSheet(ghDlg)
   const openFocus = openSheet(focusDlg)
+  // Talk to Jade: its button takes the focus, so Space holds it straight away
+  const openJade = () => {
+    const d = jadeDlg.current
+    if (!d) return
+    d.open || d.showModal()
+    d.querySelector('.jd-btn')?.focus()
+  }
+  // while Jade listens and talks the radio pauses, and plays again after if it was playing (the home station and
+  // Spotify are left alone: one is the phone's locked-screen lifeline, app/player.js; the other plays elsewhere)
+  const jadePaused = useRef(false)
+  const onJade = (talking) => {
+    if (talking && tune.playing) {
+      jadePaused.current = true
+      music.current?.pause()
+    } else if (!talking && jadePaused.current) {
+      jadePaused.current = false
+      // (toggle flips: if it was started again meanwhile, it stays as it is)
+      if (!tune.playing && !tune.loading) music.current?.toggle()
+    }
+  }
   // Quick actions (app/quick.js): ⌘K / Ctrl+K, "/", the dock's 🔍. Its keys close it again
   // (the field takes the focus inside the key press or tap itself: iOS opens its keyboard only then)
   function toggleQuick() {
@@ -637,13 +659,14 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* ⚙️ Settings (everyone's), the owner's Pins, Reading (only while a book is in progress), News and GitHub (everyone's), then the bell:
+            {/* ⚙️ Settings (everyone's), the owner's Pins, Talk to Jade, Reading (only while a book is in progress), News and GitHub (everyone's), then the bell:
                 one tight group (the owner's stand-ins while they may be on the way). Reminders have no icon here: their
                 pop-up / pill bottom left, Ambient's chip and ⌘K open them. Phones: a row of its own under the clock, the
                 icons sharing its width (four don't fit beside it) */}
             <div className="order-3 min-[900px]:order-none flex items-center gap-2 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1">
               <HeadIcon label="Settings" fa="fa-gear" onOpen={openSettings} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
+              <JadeIcon owner={owner} wait={!cloud.known} onOpen={openJade} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               <NewsIcon nw={news} wait={!cloud.known || news.pending} force onOpen={openNews} />
               <GithubIcon gh={github} wait={!cloud.known || github.pending} force onOpen={openGithub} />
@@ -758,6 +781,7 @@ export default function Home() {
       <SoundsPanel dlg={sndDlg} snd={snd} mix={set.sounds} setMix={setMix} now={now} synced={owner} />
       <RemindersSheet rm={reminders} dlg={remDlg} pn={pins} tm={timed} />
       <PinsSheet pn={pins} dlg={pinDlg} />
+      <JadeSheet dlg={jadeDlg} onTalk={onJade} />
       {/* (pins onto a habit or a reminder: one picker, over whichever sheet opened it) */}
       <LinkPicker pn={pins} />
       <ReadingSheet rd={reading} dlg={readDlg} />
