@@ -26,10 +26,11 @@ const URL_ = '/api/private/settings/jade'
 const LEAD = 0.12 // s: how far ahead Jade's voice is scheduled (a small buffer against the network's unevenness)
 const CLIENT_KEY = 'jadeClient'
 
-// the header's icon: the owner's only (owner known); its stand-in square while that isn't known yet
+// its button on the dock, over Focus (the header's row was full on phones): the owner's only (owner known); its stand-in
+// circle while that isn't known yet
 export function JadeIcon({ owner, wait = false, onOpen }) {
-  if (!owner) return wait ? <HeadIconSkeleton /> : null
-  return <HeadIcon label="Talk to Jade" icon={AudioLines} onOpen={() => onOpen()} />
+  if (!owner) return wait ? <HeadIconSkeleton dock /> : null
+  return <HeadIcon dock label="Talk to Jade" icon={AudioLines} onOpen={() => onOpen()} />
 }
 
 // this browser's Client-Id for Jade: a UUID kept in localStorage (private mode: one for the page's life)

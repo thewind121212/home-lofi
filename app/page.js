@@ -124,7 +124,7 @@ export default function Home() {
   const sndDlg = useRef(null)
   const remDlg = useRef(null) // the Reminders, Pins and Reading sheets (their bars under Sounds open them)
   const pinDlg = useRef(null)
-  const jadeDlg = useRef(null) // Talk to Jade (its header icon, the owner's)
+  const jadeDlg = useRef(null) // Talk to Jade (its dock button, the owner's)
   const readDlg = useRef(null)
   const newsDlg = useRef(null) // the News modal (its header icon)
   const ghDlg = useRef(null) // the GitHub list (its header icon)
@@ -659,14 +659,14 @@ export default function Home() {
               scene={{ id: scene, base, down: sceneDown, want: wantMode, mode, from: wx?.name, desc: wx?.desc, wantDay, day: variant?.startsWith('day/') }}
               onGallery={openGallery}
             />
-            {/* ⚙️ Settings (everyone's), the owner's Pins, Talk to Jade, Reading (only while a book is in progress), News and GitHub (everyone's), then the bell:
+            {/* ⚙️ Settings (everyone's), the owner's Pins, Reading (only while a book is in progress), News and GitHub (everyone's), then the bell:
                 one tight group (the owner's stand-ins while they may be on the way). Reminders have no icon here: their
                 pop-up / pill bottom left, Ambient's chip and ⌘K open them. Phones: a row of its own under the clock, the
-                icons sharing its width (four don't fit beside it) */}
-            <div className="order-3 min-[900px]:order-none flex items-center gap-2 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1">
+                icons sharing its width (four don't fit beside it), allowed to go a little under 44 px so seven fit a 360 px phone
+                without pushing the page sideways. Talk to Jade is on the dock */}
+            <div className="order-3 min-[900px]:order-none flex items-center gap-2 max-sm:gap-1.5 empty:hidden max-sm:basis-full max-sm:[&>*]:flex-1 max-sm:[&>*]:min-w-0 max-sm:[&>*]:w-auto">
               <HeadIcon label="Settings" fa="fa-gear" onOpen={openSettings} />
               <PinsIcon pn={pins} wait={!cloud.known || (owner && pins.pending)} force={owner} onOpen={openPins} />
-              <JadeIcon owner={owner} wait={!cloud.known} onOpen={openJade} />
               <ReadingIcon rd={reading} wait={!cloud.known || (owner && reading.pending)} force={owner} onOpen={openReading} />
               <NewsIcon nw={news} wait={!cloud.known || news.pending} force onOpen={openNews} />
               <GithubIcon gh={github} wait={!cloud.known || github.pending} force onOpen={openGithub} />
@@ -755,7 +755,7 @@ export default function Home() {
       {view.bar !== 'none' && (
         <AmbientBar now={now} wx={wx} priv={priv} mini={mini} sounds={snd.on && <SoundsChip snd={snd} mix={set.sounds} />} notice={chipNote && <AmbientChip note={chipNote} onOpen={() => openNote(chipNote.item)} />} reminders={remDue && <RemindersChip rm={reminders} onOpen={openReminders} />} focus={focusOn && <FocusChip fc={focus} onOpen={openFocus} />} calm={view.bar === 'faded'} settling={barSettling} barRef={barRef} hover={barHover} />
       )}
-      {/* The dock, bottom right. On the dashboard: the owner's ⏱ Focus, ⛰ Ambient, 🔒 Lock (⚙️ Settings sits by the
+      {/* The dock, bottom right. On the dashboard: the owner's 🎙 Talk to Jade and ⏱ Focus, ⛰ Ambient, 🔒 Lock (⚙️ Settings sits by the
           header's bell, ⌘K / / open Quick actions, F is full screen). In Ambient (the
           dashboard is hidden, so this is the way back, with Esc / H / the bare scene): 👁 Show panels, 🔒 Lock and ⛶, fading and coming back
           with the bar (lib/ambient.js), raised above the bar where the two would meet (a phone). Its own key per set:
@@ -764,7 +764,8 @@ export default function Home() {
         <Dock key={view.dockSet} calm={view.dock === 'faded'} settling={dockSettling} lift={lift} liftMoves={liftMoves} dockRef={dockRef} hover={view.dockSet === 'ambient' ? barHover : null}>
           {view.dockSet === 'dashboard' ? (
             <>
-              {/* the owner's Focus on top, over ⛰ (its ring while a session runs; nothing for guests) */}
+              {/* the owner's Talk to Jade and Focus on top, over ⛰ (Focus's ring while a session runs; nothing for guests) */}
+              <JadeIcon owner={owner} wait={!cloud.known} onOpen={openJade} />
               <FocusIcon fc={focus} wait={!cloud.known || (owner && focus.pending)} force={owner} onOpen={openFocus} />
               <DockButton icon="fa-mountain-sun" label="Ambient (H)" title="Ambient: the scene, with music at hand (H)" onClick={enterAmbient} />
               <DockButton icon="fa-lock" label="Lock screen (swipe to unlock)" title="Lock screen (L)" onClick={lock} />
