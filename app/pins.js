@@ -415,15 +415,28 @@ function ChipRow({ label, items, max = Infinity, keep = null, lead = null, noun 
     if (!el) return
     const on = () => check.current()
     // (a closed sheet's 0 isn't a width: the row fits as it did when it opens again, with nothing to measure)
-    const ro = new ResizeObserver(() => (el.clientWidth && setWidth(el.clientWidth), on()))
+    // (its size from the observer, the fades in the next frame: reading the layout here, after another observer had
+    // just changed a style (--pn-stick, the owner row coming in), laid out the whole list there and then: the GitHub
+    // chip's hot spot at 500 pins)
+    const ro = new ResizeObserver((e) => {
+      const w = Math.round(e[0]?.contentRect.width ?? 0)
+      if (w) setWidth(w)
+      requestAnimationFrame(on)
+    })
     ro.observe(el)
     el.addEventListener('scroll', on, { passive: true })
     return () => (ro.disconnect(), el.removeEventListener('scroll', on))
   }, [])
-  useEffect(() => void check.current()) // (its chips change: the counts, "+N")
   // fitting: from max again whenever the row or its chips change, then one fewer until "+N" is on the first line.
   // (After the paint, not before it: the first opening measures while the sheet fades in, and doesn't hold it up)
   const sig = `${width}|${items.map((it) => it.key).join()}|${keep}`
+  // (the fades again when its chips change, in the next frame: not on every render, and not straight after one: each
+  // look reads the layout, so after a tap that changed the list it laid out all of it there and then, before React
+  // was done with it: the GitHub chip's hot spot at 500 pins)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => check.current())
+    return () => cancelAnimationFrame(raf)
+  }, [sig, all, fit])
   useEffect(() => void setFit(max), [sig, max])
   useEffect(() => {
     const el = ref.current
@@ -450,21 +463,23 @@ function ChipRow({ label, items, max = Infinity, keep = null, lead = null, noun 
 
 // The room the page has: the visual viewport ({ h, top }). An on-screen keyboard takes its share there, also where the
 // layout viewport stays as it was (iOS, and Chrome on Android since 108): innerHeight would never know
-function useRoom() {
-  const read = () => ({ h: Math.round(window.visualViewport?.height ?? innerHeight), top: Math.round(window.visualViewport?.offsetTop ?? 0) })
+// (on: listening only while the sheet is open). full: the layout viewport's height, to tell a keyboard by
+function useRoom(on) {
+  const read = () => ({ h: Math.round(window.visualViewport?.height ?? innerHeight), top: Math.round(window.visualViewport?.offsetTop ?? 0), full: innerHeight })
   const [room, setRoom] = useState(read)
   useEffect(() => {
+    if (!on) return
     const vv = window.visualViewport
-    const on = () => setRoom((r) => {
+    const on_ = () => setRoom((r) => {
       const n = read()
-      return n.h === r.h && n.top === r.top ? r : n
+      return n.h === r.h && n.top === r.top && n.full === r.full ? r : n
     })
     const at = vv ?? window
-    at.addEventListener('resize', on)
-    vv?.addEventListener('scroll', on)
-    on()
-    return () => (at.removeEventListener('resize', on), vv?.removeEventListener('scroll', on))
-  }, [])
+    at.addEventListener('resize', on_)
+    vv?.addEventListener('scroll', on_)
+    on_()
+    return () => (at.removeEventListener('resize', on_), vv?.removeEventListener('scroll', on_))
+  }, [on])
   return room
 }
 // fn once what's drawn now is on screen (the next frame; or soon all the same, with no frames: a hidden tab, a busy
@@ -515,12 +530,14 @@ function PinsBody({ pn, open, onClose }) {
   const scroller = useRef(null)
   const filtersRef = useRef(null)
   const justRef = useRef(null)
+  const toastsRef = useRef(null)
   const now = useNow()
-  const room = useRoom()
+  const room = useRoom(open)
   const [touch] = useState(() => matchMedia('(hover: none)').matches)
-  // typing on a touch screen with little room left (a phone's keyboard up; a tablet's only when it's short): the sheet
-  // takes the visible part of the screen from its top, and the head and the chips step aside for the results
-  const compact = typing && touch && (innerWidth < 640 || room.h < COMPACT_H)
+  // typing on a touch screen with little room left (an on-screen keyboard up: the visible part shrank by a quarter or
+  // more; or a short screen): the sheet takes the visible part of the screen from its top, and the head and the chips
+  // step aside for the results. (A hardware keyboard shrinks nothing: the sheet stays as it is)
+  const compact = typing && touch && (room.h < room.full * 0.75 || room.h < COMPACT_H)
   // (stable for the memoised tiles: pn is a new object on every render)
   const pnRef = useRef(pn)
   pnRef.current = pn
@@ -556,6 +573,15 @@ function PinsBody({ pn, open, onClose }) {
   const justSet = useMemo(() => new Set(just), [just])
   const listed = useMemo(() => (justSet.size ? found.filter((p) => !justSet.has(p.id)) : found), [found, justSet])
   const groups = useMemo(() => (shapeLate === 'site' ? bySite(listed) : byDay(listed)), [shapeLate, listed])
+  // (their sections still count them, as the chips and the "N pins" line do: "GitHub 12" both up there and here)
+  const justIn = useMemo(() => {
+    const n = new Map()
+    if (justSet.size) for (const p of found) if (justSet.has(p.id)) {
+      const k = shapeLate === 'site' ? p.domain : dayKey(p.addedAt)
+      n.set(k, (n.get(k) ?? 0) + 1)
+    }
+    return n
+  }, [found, justSet, shapeLate])
   const stale = found !== f.found || shapeLate !== shape
   const filtered = Boolean(siteOn || timeOn !== 'any')
   const searching = Boolean(query)
@@ -625,14 +651,24 @@ function PinsBody({ pn, open, onClose }) {
     if (open) return afterPaint(() => setLimit((l) => Math.max(l, RENDER_STEP)))
   }, [open])
   // the compact sheet: the dialog itself is sized to the visible part (--pn-vv-h, --pn-vv-top: app/pins.css)
+  // (an attribute, not a class: React owns the dialog's className, and redraws it when the sheet's height changes)
   useEffect(() => {
     const d = box.current?.closest('dialog')
     if (!d) return
-    d.classList.toggle('is-compact', compact)
+    d.toggleAttribute('data-compact', compact)
     d.style.setProperty('--pn-vv-h', `${room.h}px`)
     d.style.setProperty('--pn-vv-top', `${room.top}px`)
+    return () => void d.removeAttribute('data-compact')
   }, [compact, room.h, room.top])
-  useEffect(() => () => void box.current?.closest('dialog')?.classList.remove('is-compact'), [])
+  // the notes and the Undo over the list's foot: room under its last tiles as tall as they are (--pn-toast)
+  const toasting = Boolean(pn.note || pn.undoing)
+  useEffect(() => {
+    const el = toastsRef.current, sc = scroller.current
+    if (!toasting || !el || !sc) return
+    const ro = new ResizeObserver(() => sc.style.setProperty('--pn-toast', `${el.offsetHeight}px`))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [toasting])
   // the filters on top of the list where they stay (a tall window): the section heads stop under them, and a tile
   // focused by keys scrolls clear of both (--pn-stick, the filters' height there; 0 where they scroll away)
   useEffect(() => {
@@ -691,7 +727,7 @@ function PinsBody({ pn, open, onClose }) {
   const sentinel = useRef(null)
   useEffect(() => {
     const el = sentinel.current
-    if (!el || !drawn.more) return
+    if (!el || !drawn.more || limit < RENDER_STEP) return // (a screenful first: the rest of the first batch comes anyway)
     const io = new IntersectionObserver((e) => e[0]?.isIntersecting && setLimit((l) => l + RENDER_STEP), { root: scroller.current, rootMargin: '800px 0px' })
     io.observe(el)
     return () => io.disconnect()
@@ -742,9 +778,15 @@ function PinsBody({ pn, open, onClose }) {
           ) : (
             <kbd className="pn-kbd" aria-hidden="true" title="Press / to search">/</kbd>
           )}
-          <button type="submit" className="pn-add" disabled={!link} title={link ? 'Pin this link' : 'Paste a link to pin it'} onPointerDown={(e) => e.preventDefault()}>
-            <Plus size={16} aria-hidden="true" /><span>Pin</span>
-          </button>
+          {compact && !link ? (
+            // (the head with its Close steps aside while typing on a phone: Done puts the keyboard away, and it's back)
+            // (the press keeps the focus: blurring on it would move the sheet under the finger before the click lands)
+            <button type="button" className="pn-add pn-done" onPointerDown={(e) => e.preventDefault()} onClick={() => box.current?.blur()}>Done</button>
+          ) : (
+            <button type="submit" className="pn-add" disabled={!link} title={link ? 'Pin this link' : 'Paste a link to pin it'} onPointerDown={(e) => e.preventDefault()}>
+              <Plus size={16} aria-hidden="true" /><span>Pin</span>
+            </button>
+          )}
         </form>
         {kept && <p className="pn-note soft">Already pinned: Enter moves it to the top</p>}
         {/* the live regions, always there (one mounted with its words is often missed): notes and removals; the count */}
@@ -857,6 +899,7 @@ function PinsBody({ pn, open, onClose }) {
                   head={shapeLate === 'site' ? <SiteHead site={s ?? { key: g.key, name: g.key }} /> : <DayHead day={g.key} now={now} />}
                   name={shapeLate === 'site' ? [s?.name ?? g.key, s && s.name !== g.key ? g.key : null].filter(Boolean).join(', ') : dayLabel(g.key, now)}
                   pins={g.pins}
+                  count={g.pins.length + (justIn.get(g.key) ?? 0)}
                   take={take}
                   cut={cut}
                   days={shapeLate === 'site'}
@@ -880,7 +923,7 @@ function PinsBody({ pn, open, onClose }) {
 
       {/* notes and the Undo float over the bottom of the list: nothing above them moves */}
       {(pn.note || u) && (
-        <div className="pn-toasts">
+        <div ref={toastsRef} className="pn-toasts">
           {pn.note && <p className="pn-note pn-toast">{pn.note}</p>}
           {u && (
             <div className="pn-undo pn-toast">
@@ -924,7 +967,7 @@ function DayHead({ day, now }) {
 // tiles, and "Show N more" when it's long. By site, the tiles flow on (two across where there's room) and the first of
 // each day carries the day above it: date by date without a half-empty row under every day. bare: no head (one site,
 // a handful of pins)
-function PinSection({ id, head, name, pins, take, cut, days, bare, now, shut, onShut, open, onOpen, q, onRemove, onRefresh, refreshing }) {
+function PinSection({ id, head, name, pins, count, take, cut, days, bare, now, shut, onShut, open, onOpen, q, onRemove, onRefresh, refreshing }) {
   const ref = useRef(null)
   const list = pins.slice(0, take)
   const body = `pn-sec-${id.replace(/[^\w-]/g, '_')}`
@@ -960,9 +1003,9 @@ function PinSection({ id, head, name, pins, take, cut, days, bare, now, shut, on
   return (
     <section ref={ref} className={`pn-sec${shut ? ' is-shut' : ''}`}>
       <h3 className="pn-sec-head">
-        <button type="button" aria-expanded={!shut} aria-controls={body} onClick={onShut} aria-label={`${name}, ${plural(pins.length)}`}>
+        <button type="button" aria-expanded={!shut} aria-controls={body} onClick={onShut} aria-label={`${name}, ${plural(count)}`}>
           {head}
-          <span className="pn-count" aria-hidden="true">{pins.length}</span>
+          <span className="pn-count" aria-hidden="true">{count}</span>
           <ChevronDown size={16} className="pn-chev" aria-hidden="true" />
         </button>
       </h3>
