@@ -21,12 +21,12 @@
 //   Jade's answer as for speech. 🔊 beside it: she also says it aloud (remembered), or answers in text only (faster,
 //   silent, the radio left playing). Typing on a phone, the sheet takes the part of the screen the keyboard leaves.
 import './jade.css'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AudioLines, Mic, SendHorizontal, Square, Volume2, VolumeX, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, load, save, useStillPage } from './settings'
 import { useRoom } from './use-room'
-import { MAX_MS, MIN_MS, MSG, STATES, TEXT_MAX, chatText, downsample, level, splitLines, toolLabel } from '../lib/jade'
+import { MAX_MS, MIN_MS, MSG, STATES, TEXT_MAX, chatText, dayKey, dayLabel, downsample, joinSaid, level, splitLines, toolLabel } from '../lib/jade'
 import { privateAnswer } from '../lib/private-poll'
 
 const URL_ = '/api/private/settings/jade'
@@ -65,9 +65,13 @@ const WORKLET = `registerProcessor('jd-rec', class extends AudioWorkletProcessor
 })`
 const workletReady = new WeakMap() // AudioContext -> the addModule promise (once each)
 
-// her sentences into one bubble: her splitter drops the punctuation where it cut (text-only turns), so a piece that
-// ends without any gets a comma (handover 4.4)
-const joinSaid = (a, b) => (!a ? b : `${a}${/[.!?…,;:)"”]$/.test(a) ? '' : ','} ${b}`)
+const KEEP_MSGS = 600 // bubbles kept on the page (history scrolled back included)
+// the history's turns (newest first, the route's) -> bubbles, oldest first (a turn she didn't answer: Linh's alone)
+const bubbles = (turns) =>
+  [...turns].reverse().flatMap((t) => [
+    { id: `h${t.id}`, who: 'me', text: t.me, at: t.at },
+    ...(t.jade ? [{ id: `h${t.id}j`, who: 'jade', text: t.jade, emoji: t.emoji, at: t.at }] : []),
+  ])
 
 let ids = 0
 const nextId = () => ++ids
@@ -77,6 +81,9 @@ export function JadeSheet({ dlg, onTalk }) {
   const [state, setState] = useState('idle') // idle | listening | thinking | speaking | offline
   const [note, setNote] = useState(null) // a hint over the bar: an error, a too-short press (Vietnamese)
   const [secs, setSecs] = useState(0) // how long this press has recorded (the bar's timer)
+  const [more, setMore] = useState(false) // older turns on the server than the ones shown
+  const [loaded, setLoaded] = useState(false) // the history asked for once (the empty state waits for it)
+  const [wipe, setWipe] = useState(false) // Xoá lịch sử tapped once: the next tap clears
   const [tool, setTool] = useState(null) // the tool Jade is calling right now ("% thoi_tiet"): a status line, not a bubble
   const [msgs, setMsgs] = useState([]) // { id, who: 'me' | 'jade' | 'sys', text, emoji }
   const [draft, setDraft] = useState('') // the box's text
@@ -105,7 +112,25 @@ export function JadeSheet({ dlg, onTalk }) {
   // closed: Jade stops (the fetch aborted), the mic and her voice too
   useEffect(() => void (!open && stopAll()), [open])
   useEffect(() => () => stopAll(), [])
-  useEffect(() => void list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }), [msgs, compact, state])
+  // the chat follows its newest bubble (smoothly; at once for the history's first page), but stays where it was when
+  // older turns come in over it
+  useLayoutEffect(() => {
+    const el = list.current
+    if (!el) return
+    if (r.prepend) {
+      el.scrollTop = el.scrollHeight - r.prepend.h + r.prepend.top
+      r.prepend = null
+      return
+    }
+    el.scrollTo({ top: el.scrollHeight, behavior: r.jump ? 'auto' : 'smooth' })
+    r.jump = false
+  }, [msgs, compact, state, open, r])
+  // opened: the conversation so far (the server's: the same on every device), unless a turn is on its way
+  useEffect(() => {
+    if (!open) return
+    r.jump = true
+    void loadHistory()
+  }, [open])
   // a tap that was too short to be speech: the hint goes again by itself
   useEffect(() => {
     if (note !== MSG.short) return
@@ -128,15 +153,70 @@ export function JadeSheet({ dlg, onTalk }) {
     return () => void d.removeAttribute('data-compact')
   }, [dlg, compact, room.h, room.top])
 
-  const add = (m) => setMsgs((all) => [...all.slice(-80), { id: nextId(), ...m }])
+  const add = (m) => setMsgs((all) => [...all.slice(-KEEP_MSGS), { id: nextId(), at: Date.now(), ...m }])
   // Jade's bubble for this turn: made on her first word or emoji, then added to
   const jade = (fn) =>
     setMsgs((all) => {
       const last = all.at(-1)
       if (last?.who === 'jade' && last.turn === r.turn) return [...all.slice(0, -1), fn(last)]
-      return [...all, fn({ id: nextId(), who: 'jade', turn: r.turn, text: '', emoji: '' })]
+      return [...all, fn({ id: nextId(), who: 'jade', turn: r.turn, at: Date.now(), text: '', emoji: '' })]
     })
   const ring = (v) => bar.current?.style.setProperty('--jd-lvl', v.toFixed(3))
+
+  // ---- the history ----
+  // before: the oldest turn shown (older ones, over it); none: the newest page, in place of what's shown
+  async function loadHistory(before = null) {
+    if (r.histing) return
+    r.histing = true
+    try {
+      const res = await fetch(`${URL_}${before ? `?before=${before}` : ''}`, { cache: 'no-store', redirect: 'manual' })
+      if (!res.ok) return
+      const { turns, more } = await res.json()
+      if (!Array.isArray(turns)) return
+      if (before) {
+        if (before !== r.oldest) return // (cleared, or reloaded, meanwhile)
+        const el = list.current
+        r.prepend = el ? { h: el.scrollHeight, top: el.scrollTop } : null
+        setMsgs((all) => [...bubbles(turns), ...all].slice(-KEEP_MSGS))
+      } else {
+        if (r.ac || r.recording) return // (a turn started: its bubbles stay; the history comes next time)
+        r.jump = true
+        setMsgs(bubbles(turns))
+      }
+      if (turns.length) r.oldest = turns.at(-1).id
+      else if (!before) r.oldest = null
+      setMore(Boolean(more))
+    } catch {
+      // (offline: what's shown stays)
+    } finally {
+      r.histing = false
+      setLoaded(true)
+    }
+  }
+  // near the top: the turns before
+  function onScroll(e) {
+    if (more && r.oldest && !r.histing && e.currentTarget.scrollTop < 80) void loadHistory(r.oldest)
+  }
+  // Xoá lịch sử: a second tap within 3 s does it
+  async function clearHistory() {
+    if (!wipe) {
+      setWipe(true)
+      clearTimeout(r.wipeT)
+      r.wipeT = setTimeout(() => setWipe(false), 3000)
+      return
+    }
+    clearTimeout(r.wipeT)
+    setWipe(false)
+    try {
+      const res = await fetch(URL_, { method: 'DELETE', cache: 'no-store', redirect: 'manual' })
+      if (!res.ok) throw new Error(String(res.status))
+      r.oldest = null
+      setMore(false)
+      setMsgs((all) => (r.ac ? all.slice(-2) : [])) // (a turn on its way keeps its two bubbles: it's kept when it ends)
+    } catch {
+      setNote('Chưa xoá được lịch sử, thử lại nhé')
+    }
+  }
 
   // ---- the mic ----
   function stopMic() {
@@ -477,8 +557,19 @@ export function JadeSheet({ dlg, onTalk }) {
           </button>
           <button type="button" className="hb-iconbtn" aria-label="Close" onClick={close}><X size={18} aria-hidden="true" /></button>
         </div>
-        <ol ref={list} className="jd-chat" data-scroll aria-live="polite">
-          {msgs.length === 0 && (
+        <ol ref={list} className="jd-chat" data-scroll aria-live="polite" onScroll={onScroll}>
+          {more && (
+            <li className="jd-top">
+              <button type="button" onClick={() => r.oldest && void loadHistory(r.oldest)}>Xem tin cũ hơn</button>
+            </li>
+          )}
+          {!more && loaded && msgs.length > 0 && (
+            <li className="jd-top">
+              <span>Đầu cuộc trò chuyện</span>
+              <button type="button" className={wipe ? 'is-sure' : ''} onClick={clearHistory}>{wipe ? 'Nhấn lần nữa để xoá' : 'Xoá lịch sử'}</button>
+            </li>
+          )}
+          {loaded && msgs.length === 0 && (
             <li className="jd-empty">
               <span className="jd-hello" aria-hidden="true"><AudioLines size={26} strokeWidth={1.7} /></span>
               <p className="jd-hello-t">Chào Linh, Jade đây</p>
@@ -490,11 +581,14 @@ export function JadeSheet({ dlg, onTalk }) {
               </div>
             </li>
           )}
-          {msgs.map((m) => (
-            <li key={m.id} className={`jd-msg jd-${m.who}`}>
-              {m.who === 'jade' && m.emoji && <span className="jd-emoji" aria-hidden="true">{m.emoji}</span>}
-              {m.text ? <span className="jd-text">{m.text}</span> : <Dots />}
-            </li>
+          {msgs.map((m, i) => (
+            <Fragment key={m.id}>
+              {m.at && (i === 0 || !msgs[i - 1].at || dayKey(msgs[i - 1].at) !== dayKey(m.at)) && <li className="jd-day">{dayLabel(m.at)}</li>}
+              <li className={`jd-msg jd-${m.who}`} title={m.at ? new Date(m.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : undefined}>
+                {m.who === 'jade' && m.emoji && <span className="jd-emoji" aria-hidden="true">{m.emoji}</span>}
+                {m.text ? <span className="jd-text">{m.text}</span> : <Dots />}
+              </li>
+            </Fragment>
           ))}
           {pending && <li className="jd-msg jd-jade" aria-label="Jade đang trả lời"><Dots /></li>}
         </ol>
