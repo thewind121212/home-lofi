@@ -24,6 +24,7 @@ import { closeDialog, load, motionOff, save, useStillPage } from './settings'
 import { MAX_LINKS, REASONS, UNDO_MS, cleanUrl, linkedTo, looksLikeLink, matches } from '../lib/pins'
 import { RENDER_FIRST, RENDER_STEP, TIMES, TOP_PARTS, TOP_SITES, byDay, bySite, chipOf, cleanView, dayDate, dayKey, dayLabel, facet, linesOf, liveFilters, marks, plan, prepare, sheetKey, shownOf, whereOf } from '../lib/pins-view'
 import { UndoLeft, UndoLine } from './habits'
+import { useRoom } from './use-room'
 
 const URL_ = '/api/private/settings/pins'
 const NOTE_MS = 6000
@@ -461,27 +462,6 @@ function ChipRow({ label, items, max = Infinity, keep = null, lead = null, noun 
   )
 }
 
-// The room the page has: the visual viewport ({ h, top }). An on-screen keyboard takes its share there, also where the
-// layout viewport stays as it was (iOS, and Chrome on Android since 108): innerHeight would never know
-// (on: listening only while the sheet is open). full: the layout viewport's height, to tell a keyboard by
-function useRoom(on) {
-  const read = () => ({ h: Math.round(window.visualViewport?.height ?? innerHeight), top: Math.round(window.visualViewport?.offsetTop ?? 0), full: innerHeight })
-  const [room, setRoom] = useState(read)
-  useEffect(() => {
-    if (!on) return
-    const vv = window.visualViewport
-    const on_ = () => setRoom((r) => {
-      const n = read()
-      return n.h === r.h && n.top === r.top && n.full === r.full ? r : n
-    })
-    const at = vv ?? window
-    at.addEventListener('resize', on_)
-    vv?.addEventListener('scroll', on_)
-    on_()
-    return () => (at.removeEventListener('resize', on_), vv?.removeEventListener('scroll', on_))
-  }, [on])
-  return room
-}
 // fn once what's drawn now is on screen (the next frame; or soon all the same, with no frames: a hidden tab, a busy
 // page) -> a cleanup. (Its own timers per caller: a raise batched with a reset into no change at all can't strand it)
 function afterPaint(fn) {

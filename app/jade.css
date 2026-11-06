@@ -54,3 +54,36 @@
 .is-offline .jd-state { color: var(--color-lofi-secondary); }
 .jd-note { margin: 0; min-height: 18px; text-align: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
 @media (prefers-reduced-motion: reduce) { .jd-ring, .jd-msg { animation: none !important; } }
+
+/* typing (app/jade.js): the box under the button, 🔊 (she answers aloud too) on its left, send on its right */
+.jd-type { flex: none; display: flex; align-items: center; gap: 8px; }
+.jd-input {
+  flex: 1; min-width: 0; height: 44px; padding: 0 16px; border-radius: 999px; font: inherit; font-size: 16px; color: #fff;
+  background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12); outline: none; transition: border-color 0.15s, background 0.15s;
+}
+.jd-input::placeholder { color: var(--color-lofi-muted); }
+.jd-input:focus { border-color: rgb(255 138 92 / 0.6); background: rgb(255 255 255 / 0.08); }
+.jd-voice, .jd-send {
+  width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center; cursor: pointer; border: none;
+  -webkit-tap-highlight-color: transparent; transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.jd-voice { color: var(--color-lofi-muted); background: rgb(255 255 255 / 0.06); }
+.jd-voice[aria-pressed='true'] { color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
+.jd-send { color: var(--color-lofi-base); background: var(--color-lofi-primary); }
+.jd-send:disabled { opacity: 0.35; cursor: default; }
+.jd-voice:focus-visible, .jd-send:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* the box has the focus: the button steps back (smaller, no state line under it) */
+.jd.is-typing .jd-talk { padding-top: 0; }
+.jd.is-typing .jd-btn { width: 56px; height: 56px; }
+.jd.is-typing .jd-btn svg { width: 24px; height: 24px; }
+.jd.is-typing .jd-state { display: none; }
+/* compact (a phone's keyboard up): the sheet takes the visible part of the screen from its top (--jd-vv-h / --jd-vv-top:
+   the visual viewport, as Pins' compact sheet), and the button gives its room to the chat (the note line stays: her tool,
+   an error) */
+.jd-sheet[data-compact][open] { margin: var(--jd-vv-top, 0px) 0 auto; height: var(--jd-vv-h, 100svh); max-height: var(--jd-vv-h, 100svh); border-radius: 0 0 1.5rem 1.5rem; animation: none; }
+@media (min-width: 640px) {
+  .jd-sheet[data-compact][open] { margin: calc(var(--jd-vv-top, 0px) + 0.5rem) auto auto; height: calc(var(--jd-vv-h, 100svh) - 1rem); max-height: calc(var(--jd-vv-h, 100svh) - 1rem); border-radius: 1.5rem; }
+}
+.jd.is-compact { padding-top: 14px; padding-bottom: 12px; gap: 8px; }
+.jd.is-compact .jd-btn { display: none; }
+.jd.is-compact .jd-talk.no-hint { display: none; }
