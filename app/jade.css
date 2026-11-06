@@ -1,89 +1,102 @@
-/* Talk to Jade (app/jade.js): a sheet of a fixed height, the chat scrolling on top, the hold-to-talk button below it.
-   The page's own tokens; jd- keeps it to itself, like Pins' pn-. The button's ring follows the mic's level (--jd-lvl,
-   0–1, set from the recorder without a re-render). */
-/* (mostly empty space before the chat fills it: more opaque than the other sheets, so the page behind doesn't show through) */
-.jd-sheet.wx-sheet { background: rgb(26 26 46 / 0.96); }
-.jd-sheet[open] { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; height: min(40rem, 88svh); }
-@media (min-width: 640px) { .jd-sheet[open] { height: min(40rem, calc(100svh - 4rem)); } }
-.jd { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 20px 20px 16px; }
-@media (min-width: 640px) { .jd { padding: 24px; } }
-.jd-head { display: flex; align-items: center; gap: 12px; }
-.jd-mark { width: 32px; height: 32px; flex: none; border-radius: 10px; display: grid; place-items: center; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
-.jd-title { flex: 1; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
-.jd-title h2 { margin: 0; font-size: 1.0625rem; font-weight: 500; color: #fff; }
-.jd-sub { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
+/* Talk to Jade (app/jade.js): laid out like a messenger. A sheet of a fixed height on a solid background: the header
+   (her status line), the chat scrolling in the middle, the bar at the bottom (the box and one round button: hold to talk
+   / send). The page's own tokens; jd- keeps it to itself, like Pins' pn-. --jd-lvl (0–1) is the mic's level, set on the
+   bar from the recorder without a re-render. */
+.jd-sheet.wx-sheet.glass-panel { background: #17172a; backdrop-filter: none; border: 1px solid rgb(255 255 255 / 0.07); }
+.jd-sheet[open] { display: flex; flex-direction: column; overflow: hidden; overscroll-behavior: contain; height: min(42rem, 88svh); }
+@media (min-width: 640px) { .jd-sheet[open] { height: min(42rem, calc(100svh - 4rem)); } }
+.jd { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* the header */
+.jd-head { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 14px 12px 18px; border-bottom: 1px solid rgb(255 255 255 / 0.06); }
+.jd-mark { width: 38px; height: 38px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--color-lofi-base); background: radial-gradient(circle at 35% 30%, #ffb08c, var(--color-lofi-primary) 60%, #e56b6f); }
+.jd-title { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-left: 4px; }
+.jd-title h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.2; color: #fff; }
+.jd-status { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.4; color: var(--color-lofi-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jd-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #5fd38d; }
+.is-listening .jd-dot { background: #ff5d5d; animation: jd-blink 1s ease-in-out infinite; }
+.is-thinking .jd-dot, .is-speaking .jd-dot { background: var(--color-lofi-primary); animation: jd-blink 1.2s ease-in-out infinite; }
+.is-offline .jd-dot { background: var(--color-lofi-muted); }
+.is-thinking .jd-status, .is-speaking .jd-status, .is-listening .jd-status { color: #fff; }
+.jd-stop {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 999px; cursor: pointer;
+  font-size: 12px; font-weight: 500; color: #fff; background: rgb(255 255 255 / 0.08); border: 1px solid rgb(255 255 255 / 0.12);
+}
+.jd-stop:hover { background: rgb(255 255 255 / 0.14); }
+.jd-voice[aria-pressed='true'] { color: var(--color-lofi-primary); }
+.jd-voice[aria-pressed='false'] { color: var(--color-lofi-muted); }
 
 /* the chat: newest at the bottom */
 .jd-chat {
-  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 4px 2px;
-  display: flex; flex-direction: column; gap: 8px;
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 16px 16px 8px;
+  display: flex; flex-direction: column; gap: 6px;
 }
 .jd-chat > :first-child { margin-top: auto; }
-.jd-empty { align-self: center; text-align: center; max-width: 22rem; font-size: 13px; color: var(--color-lofi-muted); padding: 12px; }
-.jd-msg { max-width: 85%; padding: 9px 13px; border-radius: 18px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; animation: jd-in 0.25s ease-out; }
-.jd-me { align-self: flex-end; background: rgb(255 138 92 / 0.18); border: 1px solid rgb(255 138 92 / 0.35); color: #fff; border-bottom-right-radius: 6px; }
-.jd-jade { align-self: flex-start; display: flex; gap: 8px; align-items: flex-start; background: rgb(42 42 74 / 0.85); border: 1px solid rgb(255 255 255 / 0.08); border-bottom-left-radius: 6px; }
-.jd-emoji { font-size: 18px; line-height: 20px; flex: none; }
-.jd-sys { align-self: center; max-width: 95%; padding: 4px 10px; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-highlight); background: rgb(252 227 138 / 0.08); border-radius: 999px; }
-@keyframes jd-in { from { opacity: 0; transform: translateY(6px); } }
+.jd-msg { max-width: 82%; padding: 9px 14px; border-radius: 20px; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; animation: jd-in 0.2s ease-out; }
+.jd-me { align-self: flex-end; color: var(--color-lofi-base); background: var(--color-lofi-primary); border-bottom-right-radius: 6px; }
+.jd-me + .jd-jade, .jd-jade + .jd-me, .jd-sys + .jd-msg, .jd-msg + .jd-sys { margin-top: 8px; }
+.jd-jade { align-self: flex-start; display: flex; gap: 8px; align-items: flex-start; color: #f2f2f7; background: #26263f; border-bottom-left-radius: 6px; }
+.jd-emoji { font-size: 17px; line-height: 21px; flex: none; }
+.jd-sys { align-self: center; max-width: 95%; padding: 3px 10px; font-size: 12px; color: var(--color-lofi-muted); }
+.jd-dots { display: inline-flex; gap: 4px; align-items: center; height: 21px; }
+.jd-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--color-lofi-muted); animation: jd-bounce 1.2s ease-in-out infinite; }
+.jd-dots i:nth-child(2) { animation-delay: 0.15s; }
+.jd-dots i:nth-child(3) { animation-delay: 0.3s; }
 
-/* the button and its state */
-.jd-talk { flex: none; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 8px; }
-.jd-btn {
-  --jd-lvl: 0;
-  position: relative; width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
-  color: var(--color-lofi-base); background: radial-gradient(circle at 35% 30%, #ffb08c, var(--color-lofi-primary) 60%, #e56b6f);
-  border: none; box-shadow: 0 10px 30px rgb(255 138 92 / 0.35), inset 0 -4px 10px rgb(0 0 0 / 0.15);
-  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
-  transition: transform 0.15s, filter 0.2s;
+/* empty: who she is, and three things to ask */
+.jd-empty { align-self: center; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 8px 4px 12px; max-width: 24rem; }
+.jd-hello { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 4px; color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
+.jd-hello-t { margin: 0; font-size: 16px; font-weight: 600; color: #fff; }
+.jd-hello-s { margin: 0; font-size: 13px; color: var(--color-lofi-muted); }
+.jd-hello-s svg { display: inline; vertical-align: -2px; }
+@media (hover: none) { .jd-kbd { display: none; } }
+.jd-suggest { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 10px; }
+.jd-suggest button {
+  padding: 8px 14px; border-radius: 999px; cursor: pointer; font-size: 13px; color: #fff;
+  background: rgb(255 255 255 / 0.05); border: 1px solid rgb(255 255 255 / 0.12); transition: background 0.15s, border-color 0.15s;
 }
-.jd-btn:focus-visible { outline: 2px solid #fff; outline-offset: 6px; }
-.jd-btn:hover { filter: brightness(1.05); }
-.jd-ring {
-  position: absolute; inset: -8px; border-radius: 50%; pointer-events: none; border: 2px solid rgb(255 138 92 / 0.45);
-  opacity: 0; transform: scale(calc(1 + var(--jd-lvl) * 0.28)); transition: opacity 0.2s, transform 0.08s linear;
-}
-.is-listening .jd-btn { transform: scale(0.95); filter: brightness(1.08); }
-.is-listening .jd-ring { opacity: 1; box-shadow: 0 0 calc(8px + var(--jd-lvl) * 28px) rgb(255 138 92 / 0.55); }
-.is-thinking .jd-ring { opacity: 1; border-style: dashed; animation: jd-spin 2.4s linear infinite; }
-.is-speaking .jd-ring { opacity: 1; animation: jd-pulse 1.1s ease-in-out infinite; }
-.is-offline .jd-btn { filter: grayscale(0.7) brightness(0.8); }
-@keyframes jd-spin { to { transform: rotate(1turn); } }
-@keyframes jd-pulse { 50% { transform: scale(1.12); opacity: 0.4; } }
-.jd-state { margin: 6px 0 0; font-size: 14px; font-weight: 500; color: #fff; }
-.is-offline .jd-state { color: var(--color-lofi-secondary); }
-.jd-note { margin: 0; min-height: 18px; text-align: center; font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 11px; color: var(--color-lofi-muted); }
-@media (prefers-reduced-motion: reduce) { .jd-ring, .jd-msg { animation: none !important; } }
+.jd-suggest button:hover { background: rgb(255 138 92 / 0.12); border-color: rgb(255 138 92 / 0.45); }
 
-/* typing (app/jade.js): the box under the button, 🔊 (she answers aloud too) on its left, send on its right */
-.jd-type { flex: none; display: flex; align-items: center; gap: 8px; }
+/* a hint over the bar (an error, a too-short press) */
+.jd-hint { flex: none; margin: 0 16px 6px; padding: 7px 12px; border-radius: 12px; font-size: 12.5px; text-align: center; color: var(--color-lofi-highlight); background: rgb(252 227 138 / 0.08); animation: jd-in 0.2s ease-out; }
+
+/* the bar: the box (or the recording strip) and the round button */
+.jd-bar { --jd-lvl: 0; flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 16px 14px; border-top: 1px solid rgb(255 255 255 / 0.06); }
+.jd-input, .jd-rec { flex: 1; min-width: 0; height: 46px; border-radius: 999px; }
 .jd-input {
-  flex: 1; min-width: 0; height: 44px; padding: 0 16px; border-radius: 999px; font: inherit; font-size: 16px; color: #fff;
-  background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.12); outline: none; transition: border-color 0.15s, background 0.15s;
+  padding: 0 18px; font: inherit; font-size: 16px; color: #fff; outline: none;
+  background: rgb(255 255 255 / 0.06); border: 1px solid rgb(255 255 255 / 0.1); transition: border-color 0.15s, background 0.15s;
 }
 .jd-input::placeholder { color: var(--color-lofi-muted); }
-.jd-input:focus { border-color: rgb(255 138 92 / 0.6); background: rgb(255 255 255 / 0.08); }
-.jd-voice, .jd-send {
-  width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center; cursor: pointer; border: none;
-  -webkit-tap-highlight-color: transparent; transition: background 0.15s, color 0.15s, opacity 0.15s;
+.jd-input:focus { border-color: rgb(255 138 92 / 0.55); background: rgb(255 255 255 / 0.08); }
+.jd-rec { display: flex; align-items: center; gap: 10px; padding: 0 16px; background: rgb(255 93 93 / 0.1); border: 1px solid rgb(255 93 93 / 0.35); }
+.jd-rec-dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #ff5d5d; animation: jd-blink 1s ease-in-out infinite; }
+.jd-rec-time { font-family: var(--font-space-mono), ui-monospace, monospace; font-size: 13px; color: #fff; font-variant-numeric: tabular-nums; }
+.jd-lvl { display: inline-flex; align-items: center; gap: 3px; height: 22px; }
+.jd-lvl i { width: 3px; height: 22px; border-radius: 2px; background: #ff8a8a; transform: scaleY(calc(0.15 + var(--jd-lvl) * var(--k) * 0.85)); transition: transform 0.08s linear; }
+.jd-rec-hint { margin-left: auto; font-size: 12px; color: var(--color-lofi-muted); white-space: nowrap; }
+.jd-act {
+  width: 46px; height: 46px; flex: none; border-radius: 50%; display: grid; place-items: center; cursor: pointer; border: none;
+  color: var(--color-lofi-base); background: var(--color-lofi-primary); box-shadow: 0 4px 14px rgb(255 138 92 / 0.3);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
 }
-.jd-voice { color: var(--color-lofi-muted); background: rgb(255 255 255 / 0.06); }
-.jd-voice[aria-pressed='true'] { color: var(--color-lofi-primary); background: rgb(255 138 92 / 0.12); }
-.jd-send { color: var(--color-lofi-base); background: var(--color-lofi-primary); }
-.jd-send:disabled { opacity: 0.35; cursor: default; }
-.jd-voice:focus-visible, .jd-send:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-/* the box has the focus: the button steps back (smaller, no state line under it) */
-.jd.is-typing .jd-talk { padding-top: 0; }
-.jd.is-typing .jd-btn { width: 56px; height: 56px; }
-.jd.is-typing .jd-btn svg { width: 24px; height: 24px; }
-.jd.is-typing .jd-state { display: none; }
+.jd-act:hover { filter: brightness(1.06); }
+.jd-act:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.is-listening .jd-act { background: #ff5d5d; transform: scale(1.06); box-shadow: 0 0 0 calc(3px + var(--jd-lvl) * 8px) rgb(255 93 93 / 0.25); }
+.is-offline .jd-act:not(.is-send) { filter: grayscale(0.6) brightness(0.85); }
+
 /* compact (a phone's keyboard up): the sheet takes the visible part of the screen from its top (--jd-vv-h / --jd-vv-top:
-   the visual viewport, as Pins' compact sheet), and the button gives its room to the chat (the note line stays: her tool,
-   an error) */
+   the visual viewport, as Pins' compact sheet) */
 .jd-sheet[data-compact][open] { margin: var(--jd-vv-top, 0px) 0 auto; height: var(--jd-vv-h, 100svh); max-height: var(--jd-vv-h, 100svh); border-radius: 0 0 1.5rem 1.5rem; animation: none; }
 @media (min-width: 640px) {
   .jd-sheet[data-compact][open] { margin: calc(var(--jd-vv-top, 0px) + 0.5rem) auto auto; height: calc(var(--jd-vv-h, 100svh) - 1rem); max-height: calc(var(--jd-vv-h, 100svh) - 1rem); border-radius: 1.5rem; }
 }
-.jd.is-compact { padding-top: 14px; padding-bottom: 12px; gap: 8px; }
-.jd.is-compact .jd-btn { display: none; }
-.jd.is-compact .jd-talk.no-hint { display: none; }
+.jd.is-compact .jd-head { padding-top: 10px; padding-bottom: 8px; }
+.jd.is-compact .jd-bar { padding-bottom: 10px; }
+.jd.is-compact .jd-hello, .jd.is-compact .jd-hello-s { display: none; }
+
+@keyframes jd-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes jd-blink { 50% { opacity: 0.35; } }
+@keyframes jd-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: 0.5; } 30% { transform: translateY(-4px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .jd-msg, .jd-hint, .jd-dots i, .jd-dot, .jd-rec-dot { animation: none !important; } }

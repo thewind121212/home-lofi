@@ -1,7 +1,10 @@
 'use client'
 
-// Talk to Jade: the owner's Vietnamese voice assistant on the Razer, from this page. An icon by the header's bell (the
-// owner's only, like Pins) opens a sheet: one big hold-to-talk button and the chat of this page's session. The protocol
+// Talk to Jade: the owner's Vietnamese voice assistant on the Razer, from this page. A button on the dock (the owner's
+// only, like Pins) opens a sheet laid out like a messenger: the header says what she's doing (Dừng stops her, 🔊 picks
+// whether she answers aloud), the chat of this page's session, and the bar at the bottom: the box, and one round
+// button, hold to talk while the box is empty (a recording strip with a timer and the mic's level in the box's place),
+// send once there's text. The protocol
 // and the relay live on the server (lib/jade.js, lib/jade-relay.js, app/api/private/settings/jade): the browser can't
 // reach Jade itself (an https page can't open her ws:// on the LAN, and her port never faces the internet).
 // - Hold: the mic records (the browser's echo cancelling / noise suppression / auto gain on), downsampled to 16 kHz
@@ -19,7 +22,7 @@
 //   silent, the radio left playing). Typing on a phone, the sheet takes the part of the screen the keyboard leaves.
 import './jade.css'
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Mic, SendHorizontal, Volume2, VolumeX, X } from 'lucide-react'
+import { AudioLines, Mic, SendHorizontal, Square, Volume2, VolumeX, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, load, save, useStillPage } from './settings'
 import { useRoom } from './use-room'
@@ -30,6 +33,8 @@ const URL_ = '/api/private/settings/jade'
 const LEAD = 0.12 // s: how far ahead Jade's voice is scheduled (a small buffer against the network's unevenness)
 const CLIENT_KEY = 'jadeClient'
 const VOICE_KEY = 'jadeVoice' // typed turns: she answers aloud too (true) or in text only
+// the empty chat's suggestions: a tap sends one (nothing that changes anything at home)
+const SUGGEST = ['Mấy giờ rồi?', 'Thời tiết hôm nay thế nào?', 'Kể chuyện vui đi']
 const COMPACT_H = 560 // typing on a touch screen with less room than this (a phone's keyboard up): the compact sheet
 
 // its button on the dock, over Focus (the header's row was full on phones): the owner's only (owner known); its stand-in
@@ -70,7 +75,8 @@ const nextId = () => ++ids
 export function JadeSheet({ dlg, onTalk }) {
   const [open, setOpen] = useState(false)
   const [state, setState] = useState('idle') // idle | listening | thinking | speaking | offline
-  const [note, setNote] = useState(null) // a hint under the button (Vietnamese)
+  const [note, setNote] = useState(null) // a hint over the bar: an error, a too-short press (Vietnamese)
+  const [secs, setSecs] = useState(0) // how long this press has recorded (the bar's timer)
   const [tool, setTool] = useState(null) // the tool Jade is calling right now ("% thoi_tiet"): a status line, not a bubble
   const [msgs, setMsgs] = useState([]) // { id, who: 'me' | 'jade' | 'sys', text, emoji }
   const [draft, setDraft] = useState('') // the box's text
@@ -81,7 +87,8 @@ export function JadeSheet({ dlg, onTalk }) {
   const [touch] = useState(() => typeof matchMedia === 'function' && matchMedia('(hover: none)').matches)
   const compact = typing && touch && (room.h < room.full * 0.75 || room.h < COMPACT_H)
   const r = useRef({ sources: new Set() }).current // the recorder, the player and the turn: plain mutable state, no re-render
-  const btn = useRef(null)
+  const btn = useRef(null) // the bar's round button: hold to talk (empty box), send (text in it)
+  const bar = useRef(null)
   const list = useRef(null)
   const talk = useRef(onTalk)
   talk.current = onTalk
@@ -98,7 +105,19 @@ export function JadeSheet({ dlg, onTalk }) {
   // closed: Jade stops (the fetch aborted), the mic and her voice too
   useEffect(() => void (!open && stopAll()), [open])
   useEffect(() => () => stopAll(), [])
-  useEffect(() => void list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }), [msgs, compact])
+  useEffect(() => void list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' }), [msgs, compact, state])
+  // a tap that was too short to be speech: the hint goes again by itself
+  useEffect(() => {
+    if (note !== MSG.short) return
+    const t = setTimeout(() => setNote((n) => (n === MSG.short ? null : n)), 2500)
+    return () => clearTimeout(t)
+  }, [note])
+  // recording: the bar's timer
+  useEffect(() => {
+    if (state !== 'listening') return void setSecs(0)
+    const t = setInterval(() => setSecs(Math.floor((performance.now() - r.at) / 1000)), 250)
+    return () => clearInterval(t)
+  }, [state, r])
   // the compact sheet: the dialog sized to the visible part (--jd-vv-h / --jd-vv-top, app/jade.css; as Pins does)
   useEffect(() => {
     const d = dlg.current
@@ -117,7 +136,7 @@ export function JadeSheet({ dlg, onTalk }) {
       if (last?.who === 'jade' && last.turn === r.turn) return [...all.slice(0, -1), fn(last)]
       return [...all, fn({ id: nextId(), who: 'jade', turn: r.turn, text: '', emoji: '' })]
     })
-  const ring = (v) => btn.current?.style.setProperty('--jd-lvl', v.toFixed(3))
+  const ring = (v) => bar.current?.style.setProperty('--jd-lvl', v.toFixed(3))
 
   // ---- the mic ----
   function stopMic() {
@@ -283,9 +302,9 @@ export function JadeSheet({ dlg, onTalk }) {
   }
 
   // a typed turn: Linh's bubble at once; sent while Jade thinks or talks, it interrupts her (as pressing does)
-  function type(e) {
+  function type(e, said) {
     e?.preventDefault()
-    const text = chatText(draft)
+    const text = chatText(said ?? draft)
     if (!text || r.recording) return
     if (voice) {
       // (iOS: her voice can start only from a context woken in a gesture: this submit is one)
@@ -402,10 +421,26 @@ export function JadeSheet({ dlg, onTalk }) {
   const isKey = (e) => e.code === 'Space' && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && !(e.target.tagName === 'BUTTON' && e.target !== btn.current)
   const live = state === 'listening'
   const busy = state === 'thinking' || state === 'speaking'
-  // the line under the button: an error or her tool first; then a hint (typing: what she's doing, the button's own state
-  // line steps aside)
-  const said = note ?? (tool && busy ? toolLabel(tool) : null)
-  const hint = said ?? (typing ? (busy ? `${STATES[state]}…` : null) : state === 'idle' ? 'Giữ nút (hoặc phím Space) để nói' : busy ? 'Nhấn lại để ngắt lời' : null)
+  const hasText = draft.trim().length > 0
+  // the header's line: what she's doing now (her tool first)
+  const status = busy && tool ? toolLabel(tool).replace(/^Jade đ/, 'Đ') : live ? 'Đang nghe…' : state === 'thinking' ? 'Đang nghĩ…' : state === 'speaking' ? 'Đang nói…' : STATES[state]
+  // her bubble for this turn not there yet: the dots stand in for it
+  const last = msgs.at(-1)
+  const pending = busy && !(last?.who === 'jade' && last.turn === r.turn)
+  // the round button: hold to talk while the box is empty
+  const hold = {
+    onPointerDown: (e) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+      press()
+    },
+    onPointerUp: () => (wake(), release()),
+    onPointerCancel: () => release(),
+    onContextMenu: (e) => e.preventDefault(),
+    onKeyDown: (e) => e.key === 'Enter' && e.preventDefault(),
+  }
+  const keep = (e) => typing && e.preventDefault() // (the box keeps the focus: a phone's keyboard stays up)
   return (
     <dialog
       ref={dlg}
@@ -417,78 +452,91 @@ export function JadeSheet({ dlg, onTalk }) {
       onKeyUp={(e) => isKey(e) && (e.preventDefault(), wake(), release())}
       className="wx-sheet jd-sheet sm:max-w-lg glass-panel text-lofi-text"
     >
-      <section aria-labelledby="jd-title" className={`jd${typing ? ' is-typing' : ''}${compact ? ' is-compact' : ''}`}>
+      <section aria-labelledby="jd-title" className={`jd is-${state}${typing ? ' is-typing' : ''}${compact ? ' is-compact' : ''}`}>
         <div className="jd-head">
-          <span className="jd-mark" aria-hidden="true"><AudioLines size={17} strokeWidth={1.9} /></span>
+          <span className="jd-mark" aria-hidden="true"><AudioLines size={18} strokeWidth={1.9} /></span>
           <div className="jd-title">
             <h2 id="jd-title">Jade</h2>
-            <span className="jd-sub">trợ lý giọng nói ở nhà</span>
+            <span className="jd-status" role="status"><i className="jd-dot" aria-hidden="true" />{status}</span>
           </div>
-          <button type="button" className="hb-iconbtn" aria-label="Close" onClick={close}><X size={18} aria-hidden="true" /></button>
-        </div>
-        <ol ref={list} className="jd-chat" data-scroll aria-live="polite">
-          {msgs.length === 0 && <li className="jd-empty">Giữ nút và nói, hoặc nhắn bên dưới, ví dụ “Jade ơi, mấy giờ rồi?”</li>}
-          {msgs.map((m) => (
-            <li key={m.id} className={`jd-msg jd-${m.who}`}>
-              {m.who === 'jade' && m.emoji && <span className="jd-emoji" aria-hidden="true">{m.emoji}</span>}
-              <span className="jd-text">{m.text || '…'}</span>
-            </li>
-          ))}
-        </ol>
-        <div className={`jd-talk is-${state}${hint ? '' : ' no-hint'}`}>
-          <button
-            ref={btn}
-            type="button"
-            className="jd-btn"
-            aria-label={`Giữ để nói với Jade (${STATES[state]})`}
-            aria-pressed={live}
-            onPointerDown={(e) => {
-              if (e.button !== 0) return
-              e.preventDefault()
-              e.currentTarget.setPointerCapture?.(e.pointerId)
-              press()
-            }}
-            onPointerUp={() => (wake(), release())}
-            onPointerCancel={() => release()}
-            onContextMenu={(e) => e.preventDefault()}
-            onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
-          >
-            <span className="jd-ring" aria-hidden="true" />
-            <Mic size={34} strokeWidth={1.8} aria-hidden="true" />
-          </button>
-          <p className="jd-state" role="status">{STATES[state]}</p>
-          <p className="jd-note">{hint ?? '\u00a0'}</p>
-        </div>
-        <form className="jd-type" onSubmit={type}>
+          {busy && (
+            <button type="button" className="jd-stop" onPointerDown={keep} onClick={stopAll}>
+              <Square size={11} fill="currentColor" aria-hidden="true" />Dừng
+            </button>
+          )}
           <button
             type="button"
-            className="jd-voice"
+            className="hb-iconbtn jd-voice"
             aria-pressed={voice}
             aria-label="Jade đọc to câu trả lời"
             title={voice ? 'Jade trả lời bằng giọng nói' : 'Jade chỉ trả lời bằng chữ'}
-            onPointerDown={(e) => typing && e.preventDefault()} // (the box keeps the focus: a phone's keyboard stays up)
+            onPointerDown={keep}
             onClick={toggleVoice}
           >
             {voice ? <Volume2 size={18} aria-hidden="true" /> : <VolumeX size={18} aria-hidden="true" />}
           </button>
-          <input
-            className="jd-input"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onFocus={() => setTyping(true)}
-            onBlur={() => setTyping(false)}
-            maxLength={TEXT_MAX}
-            placeholder="Nhắn cho Jade…"
-            aria-label="Nhắn cho Jade"
-            enterKeyHint="send"
-            autoComplete="off"
-            lang="vi"
-          />
-          <button type="submit" className="jd-send" aria-label="Gửi" disabled={!draft.trim()} onPointerDown={(e) => typing && e.preventDefault()}>
-            <SendHorizontal size={18} aria-hidden="true" />
+          <button type="button" className="hb-iconbtn" aria-label="Close" onClick={close}><X size={18} aria-hidden="true" /></button>
+        </div>
+        <ol ref={list} className="jd-chat" data-scroll aria-live="polite">
+          {msgs.length === 0 && (
+            <li className="jd-empty">
+              <span className="jd-hello" aria-hidden="true"><AudioLines size={26} strokeWidth={1.7} /></span>
+              <p className="jd-hello-t">Chào Linh, Jade đây</p>
+              <p className="jd-hello-s">Nhắn tin, hoặc giữ <Mic size={13} aria-label="nút micro" /> để nói<span className="jd-kbd"> (hay giữ phím Space)</span></p>
+              <div className="jd-suggest">
+                {SUGGEST.map((q) => (
+                  <button key={q} type="button" onPointerDown={keep} onClick={() => type(null, q)}>{q}</button>
+                ))}
+              </div>
+            </li>
+          )}
+          {msgs.map((m) => (
+            <li key={m.id} className={`jd-msg jd-${m.who}`}>
+              {m.who === 'jade' && m.emoji && <span className="jd-emoji" aria-hidden="true">{m.emoji}</span>}
+              {m.text ? <span className="jd-text">{m.text}</span> : <Dots />}
+            </li>
+          ))}
+          {pending && <li className="jd-msg jd-jade" aria-label="Jade đang trả lời"><Dots /></li>}
+        </ol>
+        {note && <p className="jd-hint">{note}</p>}
+        <form ref={bar} className="jd-bar" onSubmit={type}>
+          {live ? (
+            <div className="jd-rec" aria-hidden="true">
+              <i className="jd-rec-dot" />
+              <span className="jd-rec-time">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}</span>
+              <span className="jd-lvl">{[0.6, 1, 0.8, 1, 0.7].map((k, i) => <i key={i} style={{ '--k': k }} />)}</span>
+              <span className="jd-rec-hint">Thả để gửi</span>
+            </div>
+          ) : (
+            <input
+              className="jd-input"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onFocus={() => setTyping(true)}
+              onBlur={() => setTyping(false)}
+              maxLength={TEXT_MAX}
+              placeholder="Nhắn cho Jade…"
+              aria-label="Nhắn cho Jade"
+              enterKeyHint="send"
+              autoComplete="off"
+              lang="vi"
+            />
+          )}
+          <button
+            ref={btn}
+            type={hasText ? 'submit' : 'button'}
+            className={`jd-act${hasText ? ' is-send' : ''}`}
+            aria-label={hasText ? 'Gửi' : `Giữ để nói với Jade (${STATES[state]})`}
+            aria-pressed={hasText ? undefined : live}
+            {...(hasText ? { onPointerDown: keep } : hold)}
+          >
+            {hasText ? <SendHorizontal size={20} aria-hidden="true" /> : <Mic size={21} strokeWidth={1.9} aria-hidden="true" />}
           </button>
         </form>
       </section>
     </dialog>
   )
 }
+
+// "she's typing": three dots
+const Dots = () => <span className="jd-dots" aria-hidden="true"><i /><i /><i /></span>
