@@ -12,6 +12,7 @@
 .jd-mark { width: 38px; height: 38px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--color-lofi-base); background: radial-gradient(circle at 35% 30%, #ffb08c, var(--color-lofi-primary) 60%, #e56b6f); }
 .jd-title { flex: 1; min-width: 0; display: flex; flex-direction: column; margin-left: 4px; }
 .jd-title h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.2; color: #fff; }
+.jd-title h2:focus { outline: none; }
 .jd-status { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 1.4; color: var(--color-lofi-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jd-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #5fd38d; }
 .is-listening .jd-dot { background: #ff5d5d; animation: jd-blink 1s ease-in-out infinite; }
@@ -51,7 +52,9 @@
   background: rgb(255 255 255 / 0.05); border: 1px solid rgb(255 255 255 / 0.1); transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 .jd-top button:hover { background: rgb(255 255 255 / 0.1); }
-.jd-top button.is-sure { color: #fff; background: rgb(229 107 111 / 0.25); border-color: rgb(229 107 111 / 0.6); }
+/* the header's 🗑: one tap asks (red, "Xoá?"), a second within 3 s clears */
+.jd-wipe { color: var(--color-lofi-muted); }
+.jd-wipe.is-sure { display: inline-flex; align-items: center; width: auto; gap: 4px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 500; color: #fff; background: rgb(229 107 111 / 0.3); }
 
 /* empty: who she is, and three things to ask */
 .jd-empty { align-self: center; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 8px 4px 12px; max-width: 24rem; }

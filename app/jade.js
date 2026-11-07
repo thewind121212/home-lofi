@@ -22,7 +22,7 @@
 //   silent, the radio left playing). Typing on a phone, the sheet takes the part of the screen the keyboard leaves.
 import './jade.css'
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { AudioLines, Mic, SendHorizontal, Square, Volume2, VolumeX, X } from 'lucide-react'
+import { AudioLines, Mic, SendHorizontal, Square, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { HeadIcon, HeadIconSkeleton } from './head-icon'
 import { closeDialog, load, save, useStillPage } from './settings'
 import { useRoom } from './use-room'
@@ -83,7 +83,7 @@ export function JadeSheet({ dlg, onTalk }) {
   const [secs, setSecs] = useState(0) // how long this press has recorded (the bar's timer)
   const [more, setMore] = useState(false) // older turns on the server than the ones shown
   const [loaded, setLoaded] = useState(false) // the history asked for once (the empty state waits for it)
-  const [wipe, setWipe] = useState(false) // Xoá lịch sử tapped once: the next tap clears
+  const [wipe, setWipe] = useState(false) // the header's 🗑 tapped once: the next tap (within 3 s) clears
   const [tool, setTool] = useState(null) // the tool Jade is calling right now ("% thoi_tiet"): a status line, not a bubble
   const [msgs, setMsgs] = useState([]) // { id, who: 'me' | 'jade' | 'sys', text, emoji }
   const [draft, setDraft] = useState('') // the box's text
@@ -97,6 +97,7 @@ export function JadeSheet({ dlg, onTalk }) {
   const btn = useRef(null) // the bar's round button: hold to talk (empty box), send (text in it)
   const bar = useRef(null)
   const list = useRef(null)
+  const box = useRef(null) // the text box
   const talk = useRef(onTalk)
   talk.current = onTalk
   const stateRef = useRef(state)
@@ -109,6 +110,11 @@ export function JadeSheet({ dlg, onTalk }) {
     seen.observe(d, { attributes: true, attributeFilter: ['open'] })
     return () => seen.disconnect()
   }, [dlg])
+  // a press done (Space or the mouse): the box is back, and takes the focus again (a phone's keyboard stays down)
+  useEffect(() => {
+    if (r.wasLive && state !== 'listening' && open && !touch) box.current?.focus()
+    r.wasLive = state === 'listening'
+  }, [state])
   // closed: Jade stops (the fetch aborted), the mic and her voice too
   useEffect(() => void (!open && stopAll()), [open])
   useEffect(() => () => stopAll(), [])
@@ -498,7 +504,13 @@ export function JadeSheet({ dlg, onTalk }) {
 
   const close = () => closeDialog(dlg.current)
   // Space: hold to talk on a keyboard (not while a button or a field has it: Space presses those)
-  const isKey = (e) => e.code === 'Space' && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) && !(e.target.tagName === 'BUTTON' && e.target !== btn.current)
+  // Space holds to talk: anywhere in the sheet but a button (its own click) or the box with text in it (a space typed).
+  // From the box, the round button takes the focus first: the box goes while she listens, and its key-up with it
+  const isKey = (e) =>
+    e.code === 'Space' &&
+    !(e.target.tagName === 'INPUT' && (e.target !== box.current || draft !== '')) &&
+    !/^(TEXTAREA|SELECT)$/.test(e.target.tagName) &&
+    !(e.target.tagName === 'BUTTON' && e.target !== btn.current)
   const live = state === 'listening'
   const busy = state === 'thinking' || state === 'speaking'
   const hasText = draft.trim().length > 0
@@ -528,7 +540,7 @@ export function JadeSheet({ dlg, onTalk }) {
       onClick={(e) => e.target === dlg.current && close()}
       onCancel={(e) => (e.preventDefault(), close())}
       onClose={() => delete dlg.current.dataset.closing}
-      onKeyDown={(e) => isKey(e) && (e.preventDefault(), e.repeat || press())}
+      onKeyDown={(e) => isKey(e) && (e.preventDefault(), e.repeat || (e.target === box.current && btn.current?.focus(), press()))}
       onKeyUp={(e) => isKey(e) && (e.preventDefault(), wake(), release())}
       className="wx-sheet jd-sheet sm:max-w-lg glass-panel text-lofi-text"
     >
@@ -536,7 +548,7 @@ export function JadeSheet({ dlg, onTalk }) {
         <div className="jd-head">
           <span className="jd-mark" aria-hidden="true"><AudioLines size={18} strokeWidth={1.9} /></span>
           <div className="jd-title">
-            <h2 id="jd-title">Jade</h2>
+            <h2 id="jd-title" tabIndex={-1}>Jade</h2>
             <span className="jd-status" role="status"><i className="jd-dot" aria-hidden="true" />{status}</span>
           </div>
           {busy && (
@@ -555,6 +567,19 @@ export function JadeSheet({ dlg, onTalk }) {
           >
             {voice ? <Volume2 size={18} aria-hidden="true" /> : <VolumeX size={18} aria-hidden="true" />}
           </button>
+          {loaded && msgs.length > 0 && (
+            <button
+              type="button"
+              className={`hb-iconbtn jd-wipe${wipe ? ' is-sure' : ''}`}
+              aria-label={wipe ? 'Nhấn lần nữa để xoá lịch sử' : 'Xoá lịch sử'}
+              title={wipe ? 'Nhấn lần nữa để xoá' : 'Xoá lịch sử'}
+              onPointerDown={keep}
+              onClick={clearHistory}
+            >
+              <Trash2 size={17} aria-hidden="true" />
+              {wipe && <span>Xoá?</span>}
+            </button>
+          )}
           <button type="button" className="hb-iconbtn" aria-label="Close" onClick={close}><X size={18} aria-hidden="true" /></button>
         </div>
         <ol ref={list} className="jd-chat" data-scroll aria-live="polite" onScroll={onScroll}>
@@ -566,7 +591,6 @@ export function JadeSheet({ dlg, onTalk }) {
           {!more && loaded && msgs.length > 0 && (
             <li className="jd-top">
               <span>Đầu cuộc trò chuyện</span>
-              <button type="button" className={wipe ? 'is-sure' : ''} onClick={clearHistory}>{wipe ? 'Nhấn lần nữa để xoá' : 'Xoá lịch sử'}</button>
             </li>
           )}
           {loaded && msgs.length === 0 && (
@@ -603,6 +627,7 @@ export function JadeSheet({ dlg, onTalk }) {
             </div>
           ) : (
             <input
+              ref={box}
               className="jd-input"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
