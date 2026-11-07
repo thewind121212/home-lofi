@@ -515,12 +515,14 @@ export default function Home() {
   const openNews = openSheet(newsDlg)
   const openGithub = openSheet(ghDlg)
   const openFocus = openSheet(focusDlg)
-  // Talk to Jade: its button takes the focus, so Space holds it straight away
+  // Talk to Jade: the box takes the focus (type straight away; Space in the empty box holds to talk). Not on a phone:
+  // its keyboard would cover the chat, so the sheet's title takes it there
   const openJade = () => {
     const d = jadeDlg.current
     if (!d) return
     d.open || d.showModal()
-    d.querySelector('.jd-btn')?.focus()
+    const touch = matchMedia('(hover: none)').matches
+    d.querySelector(touch ? '#jd-title' : '.jd-input')?.focus()
   }
   // while Jade listens and talks the radio pauses, and plays again after if it was playing (the home station and
   // Spotify are left alone: one is the phone's locked-screen lifeline, app/player.js; the other plays elsewhere)
