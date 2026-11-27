@@ -220,6 +220,7 @@ Change it for your own domain.
 | `NEWS_URL` | empty = off (Coolify: `http://10.10.0.162:8090`) | News and GitHub (everyone reads, the owner refreshes), see [News](#news-everyone-refresh-owner-only) |
 | `REMIND_URL` | empty = off (Coolify: `http://10.10.0.162:8098`) | Reminders with a time, see [Reminders with a time](#reminders-with-a-time-owner-only) |
 | `PC_URL`, `PC_WAKE_TOKEN` | empty = off (Coolify: `PC_URL` = `http://10.10.0.217:5007`) | the gaming PC on the Server card and its Wake / Turn off buttons, see [Gaming PC](#gaming-pc) |
+| `FAN_URL` | empty = off (Coolify: `http://10.10.0.162:8088`) | the router's fans on the Server card (owner-only), see [Router fans](#router-fans-owner-only) |
 | `JADE_WS_URL`, `JADE_DEVICE_ID` | `ws://10.10.0.162:8004/xiaozhi/v1/`, `home-lofi` | Talk to Jade (owner-only, the sound-wave button on the dock): the server relays each push-to-talk or typed turn (`chat`, aloud or text only; Jade allows it only from `home-lofi` / `iphone-linh`) to Jade's xiaozhi WebSocket, and keeps each turn in `jade_turns` (the sheet's history, lib/jade-store.js; last 2000) (`app/api/private/settings/jade`, lib/jade-relay.js); the browser never reaches Jade's port |
 | `DB_POOL_MAX` | `4` | connections the server keeps to Postgres, all features together (`lib/db.js`). The `home_lofi` role allows 10, and a deploy runs two containers for a moment |
 | `POWER_URL` | empty = hidden (Coolify: `http://power-meter:8080/power.json`) | ⚡ watts on the Server line. Docker hides the CPU's power counters (Intel RAPL) from containers, so a separate root container on the host reads them and serves a 10 s average as `{"watts","cpu","ram","at"}`; it measures CPU package + RAM, not the whole PC at the wall |
@@ -830,6 +831,23 @@ PC stops reporting. The button only appears once the key is set both in the rela
 | --- | --- | --- |
 | `PC_URL` | empty = off (Coolify: `http://10.10.0.217:5007`) | moni-relay. The host's LAN address: the relay uses host networking (LAN broadcasts don't reach a bridged container) |
 | `PC_WAKE_TOKEN` | empty = no Wake / Turn off button | the relay's `MONI_WAKE_TOKEN` (≥ 16 chars). **Only in Coolify's env**: never in git, a log or a browser |
+
+## Router fans (owner-only)
+
+The owner's Server card ends with a **Router fans** row: the **Switch fan** and the **Router fan**, each with its speed,
+a slider and presets (0 · 30 · 50 · 75 · 100), and a fan icon that spins faster the faster it runs. **🔗 Link** makes one
+slider or preset move both (kept in this browser). A slider sends once it rests for 300 ms, so a drag is a few requests;
+while you set a speed, the 4 s refresh leaves that slider alone. The header says **offline** when the Razer or its
+service doesn't answer, **Arduino not answering** when the service is up but the board isn't, and **couldn't set the
+speed** when a change didn't go through.
+
+The fans hang off an Arduino on the Razer's USB, driven by fan-control on the Razer (`FAN_URL`, port 8088):
+`GET /api/status` -> `{ fan1, fan2 }` and `POST /api/fan { fan, speed }` (fan1 = output 3 = Switch fan, fan2 = output 4 =
+Router fan). That service has no login, so the browser never talks to it: this server does, through
+`/api/private/settings/fans` (`GET` the speeds, `POST { fan: 1 | 2 | 'both', speed: 0-100 }`), which is behind the
+Authelia login on every network like Wake / Turn off. Guests don't see the row at all, and the speeds aren't in
+`/api/private` (open on the LAN). `lib/fans.js` asks the service at most every 2 s for all tabs and gives up after
+1.5 s (a failure is remembered 10 s). Tests: `lib/fans.test.js`.
 
 ## Deploy (Coolify)
 

@@ -42,6 +42,9 @@ services:
       # "Gaming PC". PC_WAKE_TOKEN = the relay's MONI_WAKE_TOKEN: the owner's Wake button (empty = no button)
       PC_URL: ${PC_URL:-http://10.10.0.217:5007}
       PC_WAKE_TOKEN: ${PC_WAKE_TOKEN:-}
+      # the router's fans on the Server card (owner-only): fan-control on the Razer (an Arduino on its USB), see README
+      # "Router fans". It has no login: only this server talks to it
+      FAN_URL: ${FAN_URL:-http://10.10.0.162:8088}
       # Talk to Jade (lib/jade.js): the voice assistant's xiaozhi WebSocket on the Razer, and this page's device id there
       JADE_WS_URL: ${JADE_WS_URL:-ws://10.10.0.162:8004/xiaozhi/v1/}
       JADE_DEVICE_ID: ${JADE_DEVICE_ID:-home-lofi}

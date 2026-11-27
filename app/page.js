@@ -3549,6 +3549,194 @@ function usePrivate() {
   return [d, failed]
 }
 
+// The router's fans (lib/fans.js: an Arduino on the Razer's USB), the owner's only: read and set through
+// /api/private/settings/fans, which always asks for the login, so a guest's page never learns they exist (a 401 / 403 /
+// 404 / login redirect hides the row). Each fan: a slider (sent once it rests for FAN_SEND_AFTER ms, so a drag is a few
+// requests, not one per step), the presets, and a fan icon that spins with the speed. 🔗 links them: one slider or
+// preset moves both (kept in this browser). While the owner is setting a speed, polls don't move that slider; only
+// the latest answer counts.
+const FAN_PRESETS = [0, 30, 50, 75, 100]
+const FAN_POLL = 4000
+const FAN_SEND_AFTER = 300
+const FAN_LINK_KEY = 'home-fans-linked'
+const FANS_URL = '/api/private/settings/fans'
+function RouterFans({ className = '' }) {
+  const { reduced } = useContext(Prefs)
+  const [st, setSt] = useState(undefined) // undefined: loading, null: hidden, else { reachable, ok, fans }
+  const [draft, setDraft] = useState({}) // fan id -> the speed being set, shown until the service answers
+  const [failed, setFailed] = useState(false) // the last set didn't go through
+  const [linked, setLinked] = useState(false)
+  const seq = useRef(0)
+  const pending = useRef(null) // { fan, speed, t }: a slider's send waiting for the drag to rest
+
+  useEffect(() => {
+    try {
+      setLinked(localStorage.getItem(FAN_LINK_KEY) === '1')
+    } catch {}
+  }, [])
+  useEffect(() => {
+    let alive = true
+    let t
+    async function get() {
+      if (document.visibilityState === 'visible') {
+        try {
+          const r = await fetch(FANS_URL, { cache: 'no-store', redirect: 'manual' })
+          if (!alive) return
+          if (r.type === 'opaqueredirect' || [401, 403, 404].includes(r.status)) return setSt(null) // not ours: stop asking
+          if (r.ok) setSt(await r.json())
+        } catch {} // (the last speeds stay on screen meanwhile)
+      }
+      if (alive) t = setTimeout(get, FAN_POLL)
+    }
+    get()
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [])
+  useEffect(() => {
+    return () => clearTimeout(pending.current?.t)
+  }, [])
+
+  async function send(fan, speed) {
+    const my = ++seq.current
+    let ok = false
+    try {
+      const r = await fetch(FANS_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fan, speed }),
+      })
+      if (my !== seq.current) return
+      if (r.ok) {
+        ok = true
+        setSt(await r.json())
+      }
+    } catch {}
+    if (my !== seq.current) return
+    setFailed(!ok)
+    setDraft({})
+  }
+  // a slider moved (rest: send after FAN_SEND_AFTER) or a preset pressed (now). A wait for the other fan goes out first
+  function change(id, speed, now = false) {
+    const fan = linked ? 'both' : id
+    const ids = linked ? st.fans.map((f) => f.id) : [id]
+    setDraft((d) => ({ ...d, ...Object.fromEntries(ids.map((i) => [i, speed])) }))
+    const p = pending.current
+    if (p) {
+      clearTimeout(p.t)
+      pending.current = null
+      if (p.fan !== fan) send(p.fan, p.speed)
+    }
+    if (now) return send(fan, speed)
+    const t = setTimeout(() => {
+      pending.current = null
+      send(fan, speed)
+    }, FAN_SEND_AFTER)
+    pending.current = { fan, speed, t }
+  }
+  function toggleLink() {
+    const on = !linked
+    setLinked(on)
+    try {
+      localStorage.setItem(FAN_LINK_KEY, on ? '1' : '0')
+    } catch {}
+  }
+
+  if (!st) return null
+  const live = st.reachable && st.ok
+  const status = !st.reachable ? (
+    <span className="text-red-400">offline</span>
+  ) : !st.ok ? (
+    <span className="text-amber-300">Arduino not answering</span>
+  ) : failed ? (
+    <span className="text-red-400" role="status">couldn&apos;t set the speed</span>
+  ) : null
+  const fans = st.fans ?? []
+
+  return (
+    <section aria-label="Router fans" className={`flex flex-col gap-3 ${className}`}>
+      <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 text-[10px] font-mono text-lofi-muted">
+        <p className="flex flex-wrap items-center gap-2 min-w-0">
+          <i className="fa-solid fa-network-wired text-lofi-text/80" aria-hidden="true" />
+          <span className="text-lofi-text/80 uppercase tracking-widest">Router fans</span>
+          {status}
+        </p>
+        {live && fans.length > 1 && (
+          <button
+            type="button"
+            onClick={toggleLink}
+            aria-pressed={linked}
+            aria-label={linked ? 'Fans linked: one slider moves both. Unlink' : 'Link the fans: one slider moves both'}
+            title={linked ? 'Linked: one slider moves both' : 'Link: one slider moves both'}
+            className={`shrink-0 inline-flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-full border transition-colors ${
+              linked ? 'text-lofi-primary bg-lofi-primary/10 hover:bg-lofi-primary/20 border-lofi-primary/20' : 'text-lofi-muted hover:text-lofi-text bg-lofi-text/5 hover:bg-lofi-text/10 border-lofi-text/10'
+            }`}
+          >
+            <i className={`fa-solid ${linked ? 'fa-link' : 'fa-link-slash'}`} aria-hidden="true" />
+            {linked ? 'Linked' : 'Link'}
+          </button>
+        )}
+      </div>
+      <div className={`grid grid-cols-1 @lg:grid-cols-2 gap-x-6 gap-y-3 transition-opacity ${live ? '' : 'opacity-40'}`}>
+        {fans.map((f) => {
+          const v = draft[f.id] ?? f.speed ?? 0
+          const spin = live && v > 0 && !reduced
+          return (
+            <div key={f.id} className="min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 min-w-0 text-xs font-mono text-lofi-text/90">
+                  <i
+                    className={`fa-solid fa-fan text-lofi-primary ${spin ? 'fa-spin' : ''}`}
+                    style={spin ? { '--fa-animation-duration': `${(0.4 + ((100 - v) / 100) * 2.4).toFixed(2)}s` } : undefined}
+                    aria-hidden="true"
+                  />
+                  <span className="truncate">{f.name}</span>
+                </span>
+                <span className="text-sm text-white font-medium tabular-nums" aria-hidden="true">
+                  {f.speed == null && draft[f.id] == null ? '--' : `${v}%`}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={v}
+                disabled={!live}
+                onChange={(e) => change(f.id, Number(e.target.value))}
+                aria-label={`${f.name} speed`}
+                aria-valuetext={`${v}%`}
+                className="radio-volume w-full mt-2"
+                style={{ '--v': `${v}%` }}
+              />
+              <div className="flex justify-between gap-1 mt-1">
+                {FAN_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    disabled={!live}
+                    onClick={() => change(f.id, p, true)}
+                    aria-label={`${linked ? 'Both fans' : f.name} to ${p}%`}
+                    aria-pressed={v === p}
+                    className={`min-w-0 flex-1 text-[10px] font-mono py-1 rounded-full transition-colors disabled:pointer-events-none ${
+                      v === p ? 'text-lofi-primary bg-lofi-primary/10' : 'text-lofi-muted hover:text-lofi-text hover:bg-lofi-text/5'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 // The Hub's second row: host stats when unlocked, otherwise a sign-in line. Internal services render inside Services.
 function Server({ d, failed, owner }) {
   const { unit } = useContext(Prefs)
@@ -3584,7 +3772,8 @@ function Server({ d, failed, owner }) {
   const tiles = all.map((h, i) => <HostStats key={`${i}:${h.name}`} name={h.name} st={h.st} offline={h.offline} unit={unit} />)
   // the gaming PC (PC_URL, lib/pc.js) under the machines; nothing while its relay doesn't answer
   const pc = d.pc?.reachable && <GamingPc pc={d.pc} unit={unit} owner={owner} />
-  if (all.length === 1) return <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">{tiles}{pc}</section>
+  // the router's fans: the owner's only (it hides itself while FAN_URL is off or the login says no)
+  if (all.length === 1) return <section aria-label="Server" className="z-10 border-t border-white/5 pt-4 flex flex-col gap-3">{tiles}{pc}{owner && <RouterFans />}</section>
   // 2+ machines: a compact table while the Hub is narrow (the 2xl side column), so Weather still fits below it on a
   // 1080p screen; the tiles once it is wide
   return (
@@ -3592,6 +3781,7 @@ function Server({ d, failed, owner }) {
       <HostTable hosts={all} unit={unit} />
       <div className="hidden @lg:flex flex-col gap-3">{tiles}</div>
       {pc && <div className="mt-3">{pc}</div>}
+      {owner && <RouterFans className="mt-3" />}
     </section>
   )
 }
