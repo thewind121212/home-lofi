@@ -3552,10 +3552,9 @@ function usePrivate() {
 // The router's fans (lib/fans.js: an Arduino on the Razer's USB), the owner's only: read and set through
 // /api/private/settings/fans, which always asks for the login, so a guest's page never learns they exist (a 401 / 403 /
 // 404 / login redirect hides the row). Each fan: a slider (sent once it rests for FAN_SEND_AFTER ms, so a drag is a few
-// requests, not one per step), the presets, and a fan icon that spins with the speed. 🔗 links them: one slider or
-// preset moves both (kept in this browser). While the owner is setting a speed, polls don't move that slider; only
+// requests, not one per step) and a fan icon that spins with the speed. 🔗 links them: one slider moves both (kept in
+// this browser). While the owner is setting a speed, polls don't move that slider; only
 // the latest answer counts.
-const FAN_PRESETS = [0, 30, 50, 75, 100]
 const FAN_POLL = 4000
 const FAN_SEND_AFTER = 300
 const FAN_LINK_KEY = 'home-fans-linked'
@@ -3619,8 +3618,8 @@ function RouterFans({ className = '' }) {
     setFailed(!ok)
     setDraft({})
   }
-  // a slider moved (rest: send after FAN_SEND_AFTER) or a preset pressed (now). A wait for the other fan goes out first
-  function change(id, speed, now = false) {
+  // a slider moved: sent once it rests for FAN_SEND_AFTER. A wait for the other fan goes out first
+  function change(id, speed) {
     const fan = linked ? 'both' : id
     const ids = linked ? st.fans.map((f) => f.id) : [id]
     setDraft((d) => ({ ...d, ...Object.fromEntries(ids.map((i) => [i, speed])) }))
@@ -3630,7 +3629,6 @@ function RouterFans({ className = '' }) {
       pending.current = null
       if (p.fan !== fan) send(p.fan, p.speed)
     }
-    if (now) return send(fan, speed)
     const t = setTimeout(() => {
       pending.current = null
       send(fan, speed)
@@ -3712,23 +3710,6 @@ function RouterFans({ className = '' }) {
                 className="radio-volume w-full mt-2"
                 style={{ '--v': `${v}%` }}
               />
-              <div className="flex justify-between gap-1 mt-1">
-                {FAN_PRESETS.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    disabled={!live}
-                    onClick={() => change(f.id, p, true)}
-                    aria-label={`${linked ? 'Both fans' : f.name} to ${p}%`}
-                    aria-pressed={v === p}
-                    className={`min-w-0 flex-1 text-[10px] font-mono py-1 rounded-full transition-colors disabled:pointer-events-none ${
-                      v === p ? 'text-lofi-primary bg-lofi-primary/10' : 'text-lofi-muted hover:text-lofi-text hover:bg-lofi-text/5'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
             </div>
           )
         })}
