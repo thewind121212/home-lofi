@@ -835,8 +835,8 @@ PC stops reporting. The button only appears once the key is set both in the rela
 ## Router fans (owner-only)
 
 The owner's Server card ends with a **Router fans** row: the **Switch fan** and the **Router fan**, each with its speed,
-a slider and presets (0 · 30 · 50 · 75 · 100), and a fan icon that spins faster the faster it runs. **🔗 Link** makes one
-slider or preset move both (kept in this browser). A slider sends once it rests for 300 ms, so a drag is a few requests;
+a slider and a fan icon that spins faster the faster it runs. **🔗 Link** makes one slider move both (kept in this
+browser). A slider sends once it rests for 300 ms, so a drag is a few requests;
 while you set a speed, the 4 s refresh leaves that slider alone. The header says **offline** when the Razer or its
 service doesn't answer, **Arduino not answering** when the service is up but the board isn't, and **couldn't set the
 speed** when a change didn't go through.
